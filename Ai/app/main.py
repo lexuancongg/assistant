@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from dotenv import load_dotenv
+load_dotenv()
 from app.routers.extract import router as extract_router
 from  app.routers.chat import router as chat_router
 app = FastAPI(

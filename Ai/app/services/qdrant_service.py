@@ -14,9 +14,11 @@ BATCH_SIZE = 100
 class QdrantService:
 
     def __init__(self):
+        qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+        qdrant_api_key = os.getenv("QDRANT_API_KEY") or None
         self.client = QdrantClient(
-            url=os.getenv("QDRANT_URL", "http://localhost:6333"),
-            api_key=os.getenv("QDRANT_API_KEY", "41ab5da2446a03d6068765a0cb0145b7e33178d331cd4da674752454855e7e6b"),
+            url=qdrant_url,
+            api_key=qdrant_api_key,
         )
         self._ensure_collection()
 

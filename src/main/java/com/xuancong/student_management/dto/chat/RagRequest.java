@@ -2,9 +2,18 @@ package com.xuancong.student_management.dto.chat;
 
 import lombok.Builder;
 
+import java.util.List;
+
 @Builder
 public record RagRequest(
         Long documentId,
-        String question
+        String question,
+        String persona,
+        List<ChatHistoryMessage> history
 ) {
+    public record ChatHistoryMessage(
+            String role,
+            String content
+    ) {
+    }
 }

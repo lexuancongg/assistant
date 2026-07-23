@@ -14,7 +14,54 @@ interface RequestOptions{
     body?: any;
 }
 
-const callApi = async (method : string , endPoint:string , data:any = null, contentType : string| null =null):Promise<Response> =>{
+const AUTH_BASE = "http://localhost:8080/api/v1/auth";
+
+let refreshInProgress: Promise<boolean> | null = null;
+
+function getAccessToken(): string | null {
+    try { return typeof window !== 'undefined' ? window.localStorage.getItem('accessToken') : null; } catch { return null; }
+}
+function setAccessToken(token: string | null){ try { if(typeof window !== 'undefined'){ if(token) window.localStorage.setItem('accessToken', token); else window.localStorage.removeItem('accessToken'); } } catch(e){} }
+function getRefreshToken(): string | null { try { return typeof window !== 'undefined' ? window.localStorage.getItem('refreshToken') : null; } catch { return null; } }
+function setRefreshToken(token: string | null){ try { if(typeof window !== 'undefined'){ if(token) window.localStorage.setItem('refreshToken', token); else window.localStorage.removeItem('refreshToken'); } } catch(e){} }
+function clearAuthStorage(){ try{ if(typeof window !== 'undefined'){ window.localStorage.removeItem('accessToken'); window.localStorage.removeItem('refreshToken'); window.localStorage.removeItem('authUsername'); } }catch(e){}
+}
+
+async function tryRefreshToken(): Promise<boolean> {
+    if (refreshInProgress) return refreshInProgress;
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return false;
+
+    refreshInProgress = (async () => {
+        try{
+            const resp = await fetch(`${AUTH_BASE}/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken })
+            });
+            if (!resp.ok) {
+                clearAuthStorage();
+                return false;
+            }
+            const json = await resp.json();
+            const newAccess = json.accessToken ?? json.access_token ?? null;
+            const newRefresh = json.refreshToken ?? json.refresh_token ?? null;
+            if (newAccess) setAccessToken(newAccess);
+            if (newRefresh) setRefreshToken(newRefresh);
+            return true;
+        }catch(e){
+            clearAuthStorage();
+            return false;
+        } finally {
+            // allow next calls to set new promise if needed
+            refreshInProgress = null;
+        }
+    })();
+
+    return refreshInProgress;
+}
+
+const callApi = async (method : string , endPoint:string , data:any = null, contentType : string| null =null, _retry:boolean = false):Promise<Response> =>{
     const contentTypeDefault: string = 'application/json; charset=UTF-8';
     const requestOptions : RequestOptions = {
         
@@ -26,18 +73,43 @@ const callApi = async (method : string , endPoint:string , data:any = null, cont
         redirect:"manual"
 
     }
+
+    // Attach Authorization if accessToken exists
+    try {
+        const token = getAccessToken();
+        if (token) {
+            requestOptions.headers['Authorization'] = `Bearer ${token}`;
+        }
+    } catch (e) {
+        // ignore
+    }
+
     if(data){
         if(data instanceof FormData){
             delete requestOptions.headers['Content-type']
         }
         requestOptions.body = data;
     }
-    try {
-        return await fetch(endPoint,  requestOptions);
-    }catch (err){
 
+    let response: Response;
+    try {
+        response = await fetch(endPoint,  requestOptions);
+    }catch (err){
         throw err;
     }
+
+    // If unauthorized and we haven't retried yet, attempt token refresh
+    if (response.status === 401 && !_retry) {
+        const refreshed = await tryRefreshToken();
+        if (refreshed) {
+            // retry the original request once
+            return callApi(method, endPoint, data, contentType, true);
+        }
+        // else clear auth and redirect to login
+        try{ if(typeof window !== 'undefined'){ clearAuthStorage(); window.location.href = '/(auth)/login'; } }catch(e){}
+    }
+
+    return response;
 }
 
 const apiClient = {

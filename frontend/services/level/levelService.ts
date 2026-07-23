@@ -1,5 +1,5 @@
 import { Level } from "@/models/level/level";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class LevelService {
     private baseUrl:string

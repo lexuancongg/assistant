@@ -1,6 +1,6 @@
 import { LoginResponse } from "@/models/auth/loginResponse";
 import { AuthRequest } from "@/models/auth/authRequest";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 import { PageResponse } from "@/models/page/pageResponse";
 import { BranchCreateRequest, Branch } from "@/models/branch/branch";
 import { promises } from "dns";

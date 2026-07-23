@@ -1,5 +1,5 @@
 import { JobTitle } from "@/models/jobtitle/jobtitle";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class JobTitleService{
      private managementUrl: string;

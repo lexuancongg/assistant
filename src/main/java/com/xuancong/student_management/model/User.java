@@ -25,7 +25,8 @@ public class User extends BaseAuditEntity {
 
 
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "role_id")
     private Role role;
 
 }

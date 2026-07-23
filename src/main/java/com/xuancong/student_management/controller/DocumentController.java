@@ -4,7 +4,10 @@ import com.xuancong.student_management.dto.docs.DashboardStatsResponse;
 import com.xuancong.student_management.dto.docs.DocumentDetailResponse;
 import com.xuancong.student_management.dto.docs.DocumentPreviewResponse;
 import com.xuancong.student_management.dto.docs.DocumentResponse;
+import com.xuancong.student_management.dto.docs.DocumentSearchResult;
 import com.xuancong.student_management.dto.paging.PageResponse;
+import com.xuancong.student_management.enums.DocumentStatus;
+import com.xuancong.student_management.enums.DocumentType;
 import com.xuancong.student_management.service.DocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -42,10 +45,40 @@ public class DocumentController {
 //        );
 //    }
 
-    @GetMapping()
-    public ResponseEntity<List<DocumentResponse>> getDocuments() {
+    @GetMapping("/page")
+    public ResponseEntity<PageResponse<DocumentResponse>> getDocsPaging(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) DocumentType type,
+            @RequestParam(required = false) DocumentStatus status,
+            @RequestParam(required = false) Long uploadedBy
+    ) {
         return ResponseEntity.ok(
-                this.documentService.getDocs()
+                this.documentService.getDocsPaging(page, size, query, type, status, uploadedBy)
+        );
+    }
+
+    @GetMapping("/semantic-search")
+    public ResponseEntity<List<DocumentSearchResult>> semanticSearch(
+            @RequestParam String query,
+            @RequestParam(required = false) DocumentType type,
+            @RequestParam(required = false, defaultValue = "10") Integer topK
+    ) {
+        return ResponseEntity.ok(
+                this.documentService.semanticSearch(query, type, topK)
+        );
+    }
+
+    @GetMapping()
+    public ResponseEntity<List<DocumentResponse>> getDocuments(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) DocumentType type,
+            @RequestParam(required = false) DocumentStatus status,
+            @RequestParam(required = false) Long uploadedBy
+    ) {
+        return ResponseEntity.ok(
+                this.documentService.getDocs(query, type, status, uploadedBy)
         );
     }
 

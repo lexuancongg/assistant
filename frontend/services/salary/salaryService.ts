@@ -1,6 +1,6 @@
 import { PageResponse } from "@/models/page/pageResponse";
 import { SalaryCreateRequest, SalaryDetailResponse } from "@/models/salary/salary";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class SalaryService {
     private managementUrl: string;

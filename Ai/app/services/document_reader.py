@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 import boto3
 import requests
 from docx import Document
+from openpyxl import load_workbook
+from xlrd import open_workbook
 
 from app.services.pdf_service import PdfService
 from app.services.ocr_service import OCRService
@@ -22,7 +24,7 @@ class DocumentReader:
     Hỗ trợ nguồn: local path, S3 URI (s3://bucket/key), HTTP(S) URL
     """
 
-    SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".docx", ".eml", ".msg"}
+    SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".docx", ".xlsx", ".xls", ".eml", ".msg"}
 
     def __init__(self):
         self.pdf_service = PdfService()
@@ -64,6 +66,8 @@ class DocumentReader:
             return self._read_image(file_path)
         if ext == ".docx":
             return self._read_docx(file_path)
+        if ext in {".xlsx", ".xls"}:
+            return self._read_excel(file_path)
         if ext in {".eml", ".msg"}:
             return self._read_email(file_path)
 
@@ -128,6 +132,40 @@ class DocumentReader:
                             if row_text:
                                 parts.append(row_text)
                         break
+
+        return "\n".join(parts)
+
+    # =========================================================
+    # EXCEL
+    # =========================================================
+
+    def _read_excel(self, file_path: str) -> str:
+        parts = []
+        try:
+            workbook = load_workbook(filename=file_path, read_only=True, data_only=True)
+            for sheet in workbook.worksheets:
+                parts.append(f"Sheet: {sheet.title}")
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = " | ".join(
+                        str(cell).strip()
+                        for cell in row
+                        if cell is not None and str(cell).strip()
+                    )
+                    if row_text:
+                        parts.append(row_text)
+        except Exception:
+            workbook = open_workbook(file_path)
+            for sheet in workbook.sheets():
+                parts.append(f"Sheet: {sheet.name}")
+                for row_idx in range(sheet.nrows):
+                    row_values = sheet.row_values(row_idx)
+                    row_text = " | ".join(
+                        str(cell).strip()
+                        for cell in row_values
+                        if cell is not None and str(cell).strip()
+                    )
+                    if row_text:
+                        parts.append(row_text)
 
         return "\n".join(parts)
 

@@ -1,6 +1,6 @@
 import { Employee, EmployeeCreateRequest, EmployeeDetail, EmployeeDetailResponse, EmployeeField } from "@/models/employee/employee";
 import { PageResponse } from "@/models/page/pageResponse";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class EmployeeService {
   private managementUrl: string;

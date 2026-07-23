@@ -2,8 +2,8 @@ import Sidebar from "@/components/common/sidebar";
 import Topbar from "@/components/common/topbar";
 
 export default function AiLayout({
-                                            children,
-                                        }: {
+                                     children,
+                                 }: {
     children: React.ReactNode;
 }) {
     return (

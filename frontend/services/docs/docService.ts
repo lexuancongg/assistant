@@ -1,4 +1,4 @@
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 import {DashboardStats, DocumentDetail, DocumentItem} from "@/models/docs/docs";
 
 class DocService{

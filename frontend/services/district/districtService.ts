@@ -1,6 +1,6 @@
 import { DistrictCreateRequest, DistrictResponse } from "@/models/district/district";
 import { PageResponse } from "@/models/page/pageResponse";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class  DistrictService {
     private managementUrl:string;

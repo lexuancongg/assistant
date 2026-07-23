@@ -24,7 +24,7 @@ class OpenAIService:
             raise RuntimeError("Thiếu biến môi trường GEMINI_API_KEY")
 
         self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-3.1-flash-lite"
+        self.model = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
     def extract(self, text: str) -> AIExtractResult:
         system_prompt = """You are an enterprise document extraction engine.

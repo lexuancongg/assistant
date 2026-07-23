@@ -26,19 +26,36 @@ public record DocumentResponse(
     }
 
     public static DocumentResponse fromDocument(Document document) {
+        String uploaderId = document.getUploadedBy() != null ? document.getUploadedBy().toString() : "0";
+        String uploaderName = document.getUploadedBy() != null ? "uploaded-user-" + document.getUploadedBy() : "system";
+        String subtitle = "";
+        if (document.getSummary() != null && !document.getSummary().isBlank()) {
+            subtitle = document.getSummary().strip();
+            if (subtitle.length() > 120) {
+                subtitle = subtitle.substring(0, 120).strip() + "...";
+            }
+        }
+        String extension = document.getMimeType();
+        if (extension == null || extension.isBlank()) {
+            String path = document.getFilePath();
+            if (path != null && path.contains(".")) {
+                extension = path.substring(path.lastIndexOf('.') + 1);
+            }
+        }
+
         return DocumentResponse.builder()
                 .id(document.getId().toString())
                 .name(document.getDocumentName())
-                .subtitle("")
+                .subtitle(subtitle)
                 .type(document.getDocumentType())
                 .status(document.getStatus())
                 .uploader(new Uploader(
-                        "1",
-                        "lê xuân công"
+                        uploaderId,
+                        uploaderName
                 ))
-                .uploadedAt(document.getCreatedAt().toLocalDateTime())
+                .uploadedAt(document.getUploadedAt() != null ? document.getUploadedAt() : document.getCreatedAt().toLocalDateTime())
                 .sizeBytes(document.getFileSize())
-                .extension(document.getMimeType())
+                .extension(extension)
                 .build();
     }
 

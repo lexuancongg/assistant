@@ -16,7 +16,7 @@ class EmbeddingService:
             raise RuntimeError("Thiếu biến môi trường GEMINI_API_KEY")
 
         self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-embedding-001"  # embedding model hiện tại của Gemini
+        self.model = os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 
     def embed(self, chunks: list[str]) -> list[list[float]]:
         if not chunks:

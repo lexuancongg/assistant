@@ -1,4 +1,8 @@
 export type LoginResponse = {
-  expiresIn: number
-  role: string
+  id?: number;
+  username?: string;
+  email?: string | null;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  role?: string | null;
 }

@@ -1,5 +1,5 @@
 import { Role } from "@/models/role/role";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class RoleService {
     private managementUrl: string;

@@ -32,7 +32,14 @@
         @ManyToOne(fetch = FetchType.LAZY)
         @JoinColumn(name = "document_id")
         private Document document;
-    
+
+        @Column(name = "assistant_persona", length = 100)
+        private String assistantPersona;
+
+        @Builder.Default
+        @Column(name = "favorite")
+        private Boolean favorite = false;
+
         /**
          * Tiêu đề cuộc hội thoại
          */

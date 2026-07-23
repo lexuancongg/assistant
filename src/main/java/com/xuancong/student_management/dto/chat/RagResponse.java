@@ -10,7 +10,8 @@ public record RagResponse(
     public record SourceChunk(
             String chunkId,
             String content,
-            Double score
+            Double score,
+            Long documentId
     ) {
     }
 }

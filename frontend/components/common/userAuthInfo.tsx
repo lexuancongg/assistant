@@ -12,6 +12,9 @@ export type authenticationInfoVm = {
 }
 
 
+import authenticationService from "@/services/auth/authenticationService";
+import { useRouter } from 'next/navigation';
+
 function UserAuthInfo() {
 
     const [authenticationInfoVm, setUserAuthenticationVm] = useState<authenticationInfoVm>({
@@ -20,17 +23,56 @@ function UserAuthInfo() {
             username: ''
         }
     });
+    const router = useRouter();
 
+    useEffect(() => {
+        // check localStorage first for quick UI update
+        try{
+            if (typeof window !== 'undefined'){
+                const username = window.localStorage.getItem('authUsername');
+                const token = window.localStorage.getItem('accessToken');
+                if (token) {
+                    setUserAuthenticationVm({
+                        isAuthenticated: true,
+                        authenticatedUser: { username: username ?? '' }
+                    });
+                    return;
+                }
+            }
+        }catch(e){/* ignore */}
 
-   
+        // fallback to calling backend
+        authenticationService.checkAuthenticated()
+            .then(resp => {
+                if (resp && resp.isAuthenticated) {
+                    setUserAuthenticationVm({
+                        isAuthenticated: true,
+                        authenticatedUser: { username: resp.authenticatedUser.username }
+                    });
+                } else {
+                    setUserAuthenticationVm({
+                        isAuthenticated: false,
+                        authenticatedUser: { username: '' }
+                    });
+                }
+            })
+            .catch(() => {
+                setUserAuthenticationVm({
+                    isAuthenticated: false,
+                    authenticatedUser: { username: '' }
+                });
+            });
+    }, []);
 
-    // useEffect(() => {
-    //     customerService.getAuthenticationInfo()
-    //         // .then((userAuthInfo) => {
-    //         //     console.log(userAuthInfo)
-    //         //     setUserAuthenticationVm(userAuthInfo)
-    //         // })
-    // }, [])
+    const handleLogout = async () => {
+        try{
+            await authenticationService.logout();
+        }catch(e){
+            console.warn('Logout failed', e);
+        }
+        setUserAuthenticationVm({ isAuthenticated: false, authenticatedUser: { username: '' } });
+        router.push('/(auth)/login');
+    };
 
     return (
         <>
@@ -50,7 +92,7 @@ function UserAuthInfo() {
                             </Dropdown.Item>
 
                             <Dropdown.Item as={Link} href={"/my-orders"} className="d-block h-full">My orders</Dropdown.Item>
-                            <Dropdown.Item className="d-block h-full">Logout</Dropdown.Item>
+                            <Dropdown.Item className="d-block h-full" onClick={handleLogout}>Logout</Dropdown.Item>
                         </Dropdown.Menu>
                     </Dropdown>
                 )

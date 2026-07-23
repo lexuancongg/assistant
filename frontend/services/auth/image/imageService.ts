@@ -1,5 +1,5 @@
 import { Image } from "@/models/image/image";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class ImageService {
       private managementUrl: string;

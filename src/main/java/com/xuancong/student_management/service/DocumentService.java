@@ -5,18 +5,32 @@ import com.xuancong.student_management.dto.docs.DashboardStatsResponse;
 import com.xuancong.student_management.dto.docs.DocumentDetailResponse;
 import com.xuancong.student_management.dto.docs.DocumentPreviewResponse;
 import com.xuancong.student_management.dto.docs.DocumentResponse;
+import com.xuancong.student_management.dto.docs.DocumentSearchResult;
 import com.xuancong.student_management.dto.paging.PageResponse;
+import com.xuancong.student_management.dto.chat.SearchRequest;
+import com.xuancong.student_management.dto.chat.SearchResponse;
 import com.xuancong.student_management.enums.DocumentStatus;
+import com.xuancong.student_management.enums.DocumentType;
 import com.xuancong.student_management.model.Contract;
 import com.xuancong.student_management.model.Document;
 import com.xuancong.student_management.model.Email;
 import com.xuancong.student_management.model.Invoice;
+import com.xuancong.student_management.model.User;
 import com.xuancong.student_management.repository.ContractRepository;
 import com.xuancong.student_management.repository.DocumentRepository;
 import com.xuancong.student_management.repository.EmailRepository;
 import com.xuancong.student_management.repository.InvoiceRepository;
+import com.xuancong.student_management.repository.UserRepository;
+import com.xuancong.student_management.service.AIServiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,9 +50,11 @@ public class DocumentService {
     private final EmailRepository emailRepository;
     private final ContractRepository contractRepository;
     private final InvoiceRepository invoiceRepository;
-    private  final ObjectMapper objectMapper;
+    private final UserRepository userRepository;
+    private final ObjectMapper objectMapper;
     private final S3FileService s3FileService;
     private final AiService aiService;
+    private final AIServiceClient aiServiceClient;
 
     public DocumentPreviewResponse upload(MultipartFile file) {
         String filePathS3;
@@ -55,6 +71,7 @@ public class DocumentService {
                 .fileSize(file.getSize())
                 .mimeType(file.getContentType())
                 .status(DocumentStatus.PROCESSING)
+                .uploadedBy(getAuthenticatedUser().getId())
                 .uploadedAt(LocalDateTime.now())
                 .build();
 
@@ -166,25 +183,139 @@ public class DocumentService {
                 - emailRepository.countByCreatedAtBetween(start, end);
     }
 
-    public PageResponse<DocumentResponse> getDocsPaging(){
-        List<DocumentResponse> datas = this.documentRepository.findAll()
-                .stream()
-                .map(DocumentResponse::fromDocument)
-                .toList();
-        return PageResponse.<DocumentResponse>builder()
-                .totalPages(10)
-                .totalElements(100)
-                .data(datas)
-                .isLast(false)
-                .build();
+    public PageResponse<DocumentResponse> getDocsPaging(int page, int size, String query, DocumentType type, DocumentStatus status, Long uploadedBy){
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, size);
 
+        Specification<Document> spec = buildDocumentSpecification(query, type, status, uploadedBy);
+        Page<Document> documentPage = spec == null
+                ? this.documentRepository.findAll(PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt")))
+                : this.documentRepository.findAll(spec, PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt")));
+
+        return PageResponse.<DocumentResponse>builder()
+                .totalPages(documentPage.getTotalPages())
+                .totalElements(documentPage.getTotalElements())
+                .data(documentPage.stream().map(DocumentResponse::fromDocument).toList())
+                .isLast(documentPage.isLast())
+                .build();
     }
 
-    public List<DocumentResponse> getDocs(){
-        return this.documentRepository.findAll()
-                .stream()
+    public List<DocumentResponse> getDocs(String query, DocumentType type, DocumentStatus status, Long uploadedBy){
+        Specification<Document> spec = buildDocumentSpecification(query, type, status, uploadedBy);
+        List<Document> documents = spec == null
+                ? this.documentRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"))
+                : this.documentRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        return documents.stream()
                 .map(DocumentResponse::fromDocument)
                 .toList();
+    }
+
+    private Specification<Document> buildDocumentSpecification(String query, DocumentType type, DocumentStatus status, Long uploadedBy) {
+        Specification<Document> spec = null;
+
+        if (query != null && !query.isBlank()) {
+            String search = "%" + query.trim().toLowerCase() + "%";
+            Specification<Document> querySpec = (root, criteriaQuery, criteriaBuilder) -> criteriaBuilder.or(
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get("documentName")), search),
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get("summary")), search)
+            );
+            spec = spec == null ? querySpec : spec.and(querySpec);
+        }
+
+        if (type != null) {
+            Specification<Document> typeSpec = (root, criteriaQuery, criteriaBuilder) -> criteriaBuilder.equal(root.get("documentType"), type);
+            spec = spec == null ? typeSpec : spec.and(typeSpec);
+        }
+
+        if (status != null) {
+            Specification<Document> statusSpec = (root, criteriaQuery, criteriaBuilder) -> criteriaBuilder.equal(root.get("status"), status);
+            spec = spec == null ? statusSpec : spec.and(statusSpec);
+        }
+
+        if (uploadedBy != null) {
+            Specification<Document> uploaderSpec = (root, criteriaQuery, criteriaBuilder) -> criteriaBuilder.equal(root.get("uploadedBy"), uploadedBy);
+            spec = spec == null ? uploaderSpec : spec.and(uploaderSpec);
+        }
+
+        return spec;
+    }
+
+    public List<DocumentSearchResult> semanticSearch(String query, DocumentType documentType, Integer topK) {
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException("query is required for semantic search");
+        }
+
+        SearchResponse searchResponse = aiServiceClient.search(
+                SearchRequest.builder()
+                        .query(query)
+                        .topK(topK != null && topK > 0 ? topK : 10)
+                        .build()
+        );
+
+        return searchResponse.sources().stream()
+                .filter(source -> source.documentId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(SearchResponse.SourceChunk::documentId))
+                .entrySet().stream()
+                .map(entry -> {
+                    Long documentId = entry.getKey();
+                    return documentRepository.findById(documentId)
+                            .filter(doc -> documentType == null || documentType == doc.getDocumentType())
+                            .map(document -> {
+                                List<DocumentSearchResult.SourceInfo> sources = entry.getValue().stream()
+                                        .map(source -> new DocumentSearchResult.SourceInfo(
+                                                source.documentId(),
+                                                source.chunkId(),
+                                                source.chunkIndex(),
+                                                source.content(),
+                                                source.score()
+                                        ))
+                                        .toList();
+                                double bestScore = sources.stream()
+                                        .mapToDouble(DocumentSearchResult.SourceInfo::score)
+                                        .max()
+                                        .orElse(0.0);
+                                String uploaderId = document.getUploadedBy() != null ? document.getUploadedBy().toString() : "0";
+                                String uploaderName = document.getUploadedBy() != null
+                                        ? userRepository.findById(document.getUploadedBy())
+                                        .map(User::getUsername)
+                                        .orElse("uploaded-user-" + document.getUploadedBy())
+                                        : "system";
+                                DocumentSearchResult.Uploader uploader = new DocumentSearchResult.Uploader(
+                                        uploaderId,
+                                        uploaderName
+                                );
+                                String snippet = sources.stream()
+                                        .map(DocumentSearchResult.SourceInfo::content)
+                                        .filter(text -> text != null && !text.isBlank())
+                                        .findFirst()
+                                        .orElse(document.getSummary());
+
+                                return DocumentSearchResult.builder()
+                                        .id(document.getId())
+                                        .name(document.getDocumentName())
+                                        .type(document.getDocumentType())
+                                        .status(document.getStatus())
+                                        .snippet(snippet)
+                                        .score(bestScore)
+                                        .uploader(uploader)
+                                        .uploadedAt(document.getUploadedAt())
+                                        .sources(sources)
+                                        .build();
+                            })
+                            .orElse(null);
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
+
+    private User getAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated() || authentication instanceof AnonymousAuthenticationToken) {
+            throw new RuntimeException("User is not authenticated");
+        }
+        return userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new RuntimeException("Authenticated user not found: " + authentication.getName()));
     }
 
     @Transactional(readOnly = true)

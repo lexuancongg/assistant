@@ -1,17 +1,23 @@
 "use client"
 
+"use client"
+
 import { LoginResponse } from "@/models/auth/loginResponse"
 import { AuthRequest } from "@/models/auth/authRequest"
 import { useState } from "react"
 import authenticationService from "@/services/auth/authenticationService"
+import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
 
     const [email,setEmail] = useState("")
     const [password,setPassword] = useState("")
+    const [error, setError] = useState<string | null>(null)
+    const router = useRouter()
 
     const handleLogin = (e:React.FormEvent) => {
         e.preventDefault()
+        setError(null)
         const authRequest:AuthRequest = {
             password: password.trim(),
             username:email.trim()
@@ -21,16 +27,25 @@ export default function LoginPage() {
         .then(response =>{
             handleLoginSuccess(response)
         })
-        .catch(error=>{
-            console.log(error)
+        .catch(async (response)=>{
+            try{
+                if(response instanceof Response){
+                    const json = await response.json().catch(()=>null)
+                    setError(json?.message || 'Đăng nhập thất bại')
+                }else{
+                    setError('Đăng nhập thất bại')
+                }
+            }catch(e){
+                setError('Đăng nhập thất bại')
+            }
         })
         
 
     }
     const handleLoginSuccess = (res:LoginResponse)=>{
-        const role :string = res.role;
-
-        
+        const role :string = res.role ?? '';
+        // redirect to dashboard or home
+        router.push('/')
     }
 
     return (
@@ -69,6 +84,8 @@ export default function LoginPage() {
                             required
                         />
                     </div>
+
+                    {error && <div className="text-red-600 text-sm">{error}</div>}
 
                     <div className="flex justify-between text-sm">
                         <label className="flex items-center gap-2">

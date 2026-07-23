@@ -36,3 +36,7 @@ build/
 ./.env
 ./Ai/.env
 src/main/resources/application.yaml
+
+# Python caches
+**/__pycache__/
+**/*.py[cod]

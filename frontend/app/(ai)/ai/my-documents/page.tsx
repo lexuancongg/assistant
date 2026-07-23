@@ -1,6 +1,6 @@
 'use client';
 
-import {useEffect, useState} from 'react';
+import {useEffect, useState, useRef} from 'react';
 import {
     AlertTriangle,
     CheckCircle2,
@@ -126,6 +126,16 @@ export default function SavedDataPage() {
 
     const [chatSession,setChatSession] = useState<ChatSession>();
 
+    // chat UI states
+    const [loadingReply, setLoadingReply] = useState(false);
+    const [persona, setPersona] = useState<string | null>('default');
+    const messagesEndRef = useRef<HTMLDivElement | null>(null);
+    const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+
+    // citation highlight & toast
+    const [highlightedSnippet, setHighlightedSnippet] = useState<string | null>(null);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+
     const selectedDoc = documents.find((d) => d.id === selectedId) ?? null;
 
     function openRow(id: number) {
@@ -137,34 +147,60 @@ export default function SavedDataPage() {
         setSelectedId(null);
     }
 
-    function sendMessage() {
-        const text = chatInput.trim();
+    async function sendMessage(prefill?: string) {
+        const text = (prefill ?? chatInput).trim();
         if (!text) return;
+
+        // push user message and clear input
         setMessages((prev) => [
             ...prev,
             { role: MessageRole.USER, content: text, time: nowLabel() },
         ]);
         setChatInput('');
-        // Phản hồi AI mô phỏng — thay bằng gọi API thật khi tích hợp backend
-        // setTimeout(() => {
-        //     setMessages((prev) => [
-        //         ...prev,
-        //         {
-        //             role: MessageRole.AL,
-        //             content: 'Tôi đang xử lý câu hỏi của bạn dựa trên nội dung tài liệu…',
-        //             time: nowLabel(),
-        //         },
-        //     ]);
-        // }, 500);
+
+        // start loading
+        setLoadingReply(true);
+
         const chatRequest:ChatRequest = {
-            sessionId:undefined,
+            sessionId: chatSession?.session ?? undefined,
             documentId: selectedId,
-            question:text
+            question: text,
+            persona: persona ?? undefined,
         }
-        chatService.ask(chatRequest)
-            .then(res=>{
-                console.log(res.answer)
-            })
+
+        try{
+            const res = await chatService.ask(chatRequest);
+            const sources = res.sources ?? [];
+            const sourceText = sources.length > 0 ? sources.map(s=>{
+                const docPart = s.documentId ? `Doc ${s.documentId}` : 'Unknown doc';
+                const chunkPart = s.chunkIndex!=null ? `chunk ${s.chunkIndex}` : '';
+                const contentPart = s.content ? s.content.substring(0,200) : '';
+                return `${docPart} ${chunkPart}: ${contentPart}`;
+            }).join('\n') : undefined;
+
+            setMessages(prev=>[
+                ...prev,
+                {
+                    role: MessageRole.AL,
+                    content: res.answer,
+                    time: nowLabel(),
+                    source: sourceText,
+                    sources: sources
+                }
+            ]);
+
+            if(res.sessionId){
+                setChatSession((cs:any)=>({...cs, session: res.sessionId}));
+            }
+        }catch(err){
+            console.error('Chat ask error',err);
+            setMessages(prev=>[
+                ...prev,
+                { role: MessageRole.AL, content: 'Đã có lỗi khi gọi AI. Vui lòng thử lại sau.', time: nowLabel() }
+            ])
+        } finally{
+            setLoadingReply(false);
+        }
     }
 
     useEffect(() => {
@@ -175,6 +211,7 @@ export default function SavedDataPage() {
 
         docService.getDocsPaging()
             .then(setDocuments)
+            .catch(()=>setToastMessage('Không tải được danh sách tài liệu'))
     }, []);
 
     useEffect(() => {
@@ -194,9 +231,42 @@ export default function SavedDataPage() {
 
     }, [selectedId]);
 
+    // auto-scroll to bottom and toast cleanup
+    useEffect(() => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        } else if (messagesContainerRef.current) {
+            const el = messagesContainerRef.current;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        if (toastMessage) {
+            const t = setTimeout(() => setToastMessage(null), 3000);
+            return () => clearTimeout(t);
+        }
+    }, [messages, toastMessage]);
+
+    // auto-scroll to bottom when messages change
+    useEffect(() => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        } else if (messagesContainerRef.current) {
+            // fallback: scroll container to bottom
+            const el = messagesContainerRef.current;
+            el.scrollTop = el.scrollHeight;
+        }
+    }, [messages]);
+
     const statKeys = Object.keys(statMeta) as (keyof DashboardStats)[];
     return (
         <div>
+            {/* Toast */}
+            {toastMessage && (
+                <div className="fixed right-4 top-4 bg-black text-white px-4 py-2 rounded shadow z-50">
+                    {toastMessage}
+                </div>
+            )}
+
             {/* Header */}
             <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">Dữ liệu đã lưu</h1>
@@ -554,10 +624,25 @@ export default function SavedDataPage() {
                                                     className="w-6 h-6 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center">
                                                     <MessageSquareText className="w-3.5 h-3.5"/>
                                                 </div>
-                                                <p className="text-sm font-semibold text-gray-800">Chat với tài liệu
-                                                    này</p>
-                                            </div>
-                                            <div className="space-y-3">
+
+                                                    <p className="text-sm font-semibold text-gray-800">Chat với tài liệu này</p>
+
+                                                    {/* persona selector */}
+                                                    <div className="ml-3">
+                                                        <select
+                                                            value={persona ?? 'default'}
+                                                            onChange={(e) => setPersona(e.target.value)}
+                                                            className="text-xs border rounded px-2 py-1 ml-2"
+                                                        >
+                                                            <option value="default">Mặc định</option>
+                                                            <option value="legal">Trợ lý pháp lý</option>
+                                                            <option value="sales">Trợ lý sales</option>
+                                                            <option value="technical">Trợ lý kỹ thuật</option>
+                                                        </select>
+                                                    </div>
+
+                                                </div>
+                                                                    <div className="space-y-3" ref={messagesContainerRef}>
                                                 {messages.map((m, i) => (
                                                     <div
                                                         key={i}
@@ -574,22 +659,80 @@ export default function SavedDataPage() {
                                                             >
                                                                 {m.content}
                                                             </div>
-                                                            {m.source && (
-                                                                <p className="text-xs text-gray-400 px-1">{m.source}</p>
-                                                            )}
-                                                            <p className="text-[11px] text-gray-300 px-1">{m.time}</p>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                                                                                {m.sources && m.sources.length > 0 && (
+                                                                                                    <div className="flex flex-col gap-1 mt-1">
+                                                                                                        {m.sources.map((s, idx) => (
+                                                                                                            <button
+                                                                                                                key={idx}
+                                                                                                                onClick={() => {
+                                                                                                                    // open document detail and highlight snippet
+                                                                                                                    if (s.documentId) {
+                                                                                                                        setSelectedId(s.documentId);
+                                                                                                                    }
+                                                                                                                    setActiveTab('ocr');
+                                                                                                                    setHighlightedSnippet(s.content ?? null);
+                                                                                                                }}
+                                                                                                                className="text-xs text-gray-500 hover:text-blue-600 text-left underline"
+                                                                                                            >
+                                                                                                                {s.documentId ? `Tài liệu #${s.documentId}` : 'Tài liệu không rõ'} — {s.content ? s.content.substring(0,100) : '— trích đoạn không có'}
+                                                                                                            </button>
+                                                                                                        ))}
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {m.source && !m.sources && (
+                                                                                                    <p className="text-xs text-gray-400 px-1 whitespace-pre-line">{m.source}</p>
+                                                                                                )}
+                                                                                                <div className="flex items-center gap-2">
+                                                                                                    <p className="text-[11px] text-gray-300 px-1">{m.time}</p>
+                                                                                                    {m.role === MessageRole.AL && (
+                                                                                                        <button
+                                                                                                            onClick={() => {
+                                                                                                                // prefill follow-up question with a short excerpt of the assistant answer
+                                                                                                                const excerpt = m.content ? m.content.substring(0,120) : '';
+                                                                                                                const follow = excerpt ? `Bạn có thể giải thích thêm về: "${excerpt}"?` : 'Bạn có thể giải thích thêm?';
+                                                                                                                setChatInput(follow);
+                                                                                                                // focus input
+                                                                                                                const inputEl = document.querySelector('input[placeholder="Nhập câu hỏi về tài liệu..."]') as HTMLInputElement | null;
+                                                                                                                inputEl?.focus();
+                                                                                                            }}
+                                                                                                            className="text-xs text-blue-600 hover:underline"
+                                                                                                        >
+                                                                                                            Hỏi tiếp
+                                                                                                        </button>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                    <div ref={messagesEndRef} />
+                                                                                </div>
                                         </div>
                                     </>
                                 )}
 
                                 {(activeTab === 'ocr' && documentDetail) && (
-                                    <div
-                                        className="text-sm text-gray-400 flex items-center justify-center h-full py-16">
-                                        {documentDetail.ocrText}
+                                    <div className="py-3">
+                                        {highlightedSnippet && (
+                                            <div className="mb-3 p-3 rounded-md bg-yellow-50 border border-yellow-100">
+                                                <div className="text-sm text-gray-700 font-medium mb-1">Trích dẫn</div>
+                                                <div className="text-sm text-gray-600 whitespace-pre-line">{highlightedSnippet}</div>
+                                                <div className="mt-2 flex gap-2">
+                                                    <button className="text-xs text-blue-600 hover:underline" onClick={()=>{
+                                                        // clear highlight
+                                                        setHighlightedSnippet(null);
+                                                    }}>Bỏ đánh dấu</button>
+                                                    <button className="text-xs text-gray-600 hover:underline" onClick={()=>{
+                                                        // scroll OCR area to top
+                                                        const ocrEl = document.querySelector('[data-ocr]') as HTMLDivElement | null;
+                                                        ocrEl?.scrollIntoView({behavior:'smooth', block:'start'});
+                                                    }}>Mở vị trí trong tài liệu</button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div data-ocr className="text-sm text-gray-700 whitespace-pre-line">
+                                            {documentDetail.ocrText}
+                                        </div>
                                     </div>
                                 )}
 
@@ -617,10 +760,18 @@ export default function SavedDataPage() {
                                         className="flex-1 min-w-0 text-sm px-3 py-2 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-100 placeholder:text-gray-400"
                                     />
                                     <button
-                                        onClick={sendMessage}
-                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 shrink-0"
+                                        onClick={() => sendMessage()}
+                                        disabled={loadingReply}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
-                                        <Send className="w-3.5 h-3.5"/>
+                                        {loadingReply ? (
+                                            <svg className="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                                                <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" className="opacity-75" />
+                                            </svg>
+                                        ) : (
+                                            <Send className="w-3.5 h-3.5"/>
+                                        )}
                                     </button>
                                 </div>
                             )}

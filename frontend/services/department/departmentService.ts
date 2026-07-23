@@ -1,6 +1,6 @@
 import { DepartmentCreateRequest, Department } from "@/models/department/department";
 import { PageResponse } from "@/models/page/pageResponse";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class DepartmentService {
     private managementUrl: string;

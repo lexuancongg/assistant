@@ -5,6 +5,7 @@ from PIL import Image
 import numpy as np
 from urllib.parse import urlparse
 import os
+from io import BytesIO
 
 class OCRService:
 
@@ -14,6 +15,22 @@ class OCRService:
     def extract_text_from_image(self, image):
         results = self.reader.readtext(image)
         return " ".join([text for (_, text, _) in results])
+
+    def extract_text_from_bytes(self, image_bytes: bytes) -> str:
+        try:
+            image = Image.open(BytesIO(image_bytes)).convert("RGB")
+            image_array = np.array(image)
+            return self.extract_text_from_image(image_array)
+        except Exception:
+            # Fallback: treat bytes as a PDF/image stream via fitz if PIL parsing fails.
+            doc = fitz.open(stream=image_bytes, filetype="png")
+            full_text = []
+            for page in doc:
+                pix = page.get_pixmap()
+                img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+                full_text.append(self.extract_text_from_image(img))
+            doc.close()
+            return "\n".join(full_text)
 
     def _load_bytes(self, path: str) -> bytes:
         """Hỗ trợ cả URL (http/https) lẫn local file path."""

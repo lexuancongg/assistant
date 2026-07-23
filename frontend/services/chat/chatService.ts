@@ -1,5 +1,5 @@
 import {ChatRequest, ChatSession, MessageAnswer} from "@/models/chat-message/chat";
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 
 class ChatService{
     private managementUrl: string;

@@ -1,1 +1,15 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic
+google-genai
+qdrant-client
+python-docx
+PyMuPDF
+easyocr
+numpy
+Pillow
+requests
 boto3
+openpyxl
+xlrd

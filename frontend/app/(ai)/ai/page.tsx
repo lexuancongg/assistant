@@ -203,6 +203,7 @@ export default function HomePage() {
     const [status, setStatus] = useState<UploadStatus>('idle');
     const [errorMessage, setErrorMessage] = useState('');
     const [isDragging, setIsDragging] = useState(false);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
 
     function getExtension(fileName: string) {
         const dotIndex = fileName.lastIndexOf('.');
@@ -248,8 +249,10 @@ export default function HomePage() {
             documentService.uploadDocumentToS3(formData)
                 .then((res)=>{
                     setStatus('success');
+                    setToastMessage('Tải lên thành công. AI đang xử lý tài liệu của bạn.');
                 })
                 .catch(()=>{
+                  setToastMessage('Tải lên thất bại. Vui lòng thử lại.');
                   throw new Error('Upload thất bại');
                 })
 
@@ -258,6 +261,7 @@ export default function HomePage() {
         } catch (err) {
             setStatus('error');
             setErrorMessage('Đã có lỗi xảy ra khi tải lên. Vui lòng thử lại.');
+            setToastMessage('Đã có lỗi xảy ra khi tải lên. Vui lòng thử lại.');
         } finally {
             setTimeout(() => setStatus('idle'), 2500);
         }
@@ -295,6 +299,12 @@ export default function HomePage() {
 
     return (
         <div className="flex flex-col gap-6">
+            {/* toast */}
+            {toastMessage && (
+                <div className="fixed right-4 top-4 bg-black text-white px-4 py-2 rounded shadow z-50">
+                    {toastMessage}
+                </div>
+            )}
             {/* Welcome */}
             <div>
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

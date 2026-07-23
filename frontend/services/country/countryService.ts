@@ -1,4 +1,4 @@
-import apiClient from "@/utils/api/apiClient";
+import apiClient from "@/utils/api/apiClientFixed";
 import { PageResponse } from "@/models/page/pageResponse";
 import { CountryCreateRequest, CountryResponse } from "@/models/country/countryResponse";
 
