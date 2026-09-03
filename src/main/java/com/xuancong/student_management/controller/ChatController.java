@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
@@ -19,9 +20,28 @@ public class ChatController {
     private final ChatService chatService;
 
     @GetMapping("/document/{id}")
-    public ResponseEntity<ChatSessionResponse> getChatSession(@PathVariable Long id) {
+    public ResponseEntity<ChatSessionResponse> getChatSession(@PathVariable String id) {
+        UUID sessionId;
+        try {
+            sessionId = UUID.fromString(id);
+        } catch (Exception e) {
+            return ResponseEntity.ok(ChatSessionResponse.builder().session(null).messages(List.of()).build());
+        }
         return ResponseEntity.ok(
-                this.chatService.getChatSession(id)
+                this.chatService.getChatSession(sessionId)
+        );
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ChatSessionResponse> getChatSessionById(@PathVariable String id) {
+        UUID sessionId;
+        try {
+            sessionId = UUID.fromString(id);
+        } catch (Exception e) {
+            return ResponseEntity.ok(ChatSessionResponse.builder().session(null).messages(List.of()).build());
+        }
+        return ResponseEntity.ok(
+                this.chatService.getChatSession(sessionId)
         );
     }
 
@@ -46,6 +66,17 @@ public class ChatController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteSession(@PathVariable String id) {
+        try {
+            UUID sessionId = UUID.fromString(id);
+            this.chatService.deleteSession(sessionId);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/stats")
     public ResponseEntity<ChatStatsResponse> getChatStats() {
         return ResponseEntity.ok(this.chatService.getChatStats());
@@ -59,6 +90,4 @@ public class ChatController {
                 this.chatService.questionAnswer(chatRequest)
         );
     }
-
-
 }

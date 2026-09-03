@@ -10,6 +10,17 @@ export default {
   ],
   theme: {
   	extend: {
+		fontFamily: {
+			sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+		},
+		fontSize: {
+			xs: ['0.75rem', { lineHeight: '1rem' }],
+			sm: ['0.8125rem', { lineHeight: '1.125rem' }],
+			base: ['0.875rem', { lineHeight: '1.45' }],
+			lg: ['1rem', { lineHeight: '1.45' }],
+			xl: ['1.125rem', { lineHeight: '1.25' }],
+			'2xl': ['1.25rem', { lineHeight: '1.2' }]
+		},
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',

@@ -1,11 +1,13 @@
 package com.xuancong.student_management.dto.docs;
 
+import com.xuancong.student_management.entity.FileItem;
 import com.xuancong.student_management.enums.DocumentStatus;
 import com.xuancong.student_management.enums.DocumentType;
-import com.xuancong.student_management.model.Document;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+
 @Builder
 public record DocumentResponse(
         String id,
@@ -25,38 +27,26 @@ public record DocumentResponse(
     ) {
     }
 
-    public static DocumentResponse fromDocument(Document document) {
-        String uploaderId = document.getUploadedBy() != null ? document.getUploadedBy().toString() : "0";
-        String uploaderName = document.getUploadedBy() != null ? "uploaded-user-" + document.getUploadedBy() : "system";
-        String subtitle = "";
-        if (document.getSummary() != null && !document.getSummary().isBlank()) {
-            subtitle = document.getSummary().strip();
-            if (subtitle.length() > 120) {
-                subtitle = subtitle.substring(0, 120).strip() + "...";
-            }
-        }
-        String extension = document.getMimeType();
-        if (extension == null || extension.isBlank()) {
-            String path = document.getFilePath();
-            if (path != null && path.contains(".")) {
-                extension = path.substring(path.lastIndexOf('.') + 1);
-            }
-        }
+    public static DocumentResponse fromFileItem(FileItem file) {
+        String uploaderId = file.getUploadedBy() != null && file.getUploadedBy().getId() != null
+                ? file.getUploadedBy().getId().toString() : "0";
+        String uploaderName = file.getUploadedBy() != null && file.getUploadedBy().getName() != null
+                ? file.getUploadedBy().getName() : "system";
+
+        LocalDateTime uploadedAt = file.getCreatedAt() != null
+                ? LocalDateTime.ofInstant(file.getCreatedAt(), ZoneId.systemDefault())
+                : LocalDateTime.now();
 
         return DocumentResponse.builder()
-                .id(document.getId().toString())
-                .name(document.getDocumentName())
-                .subtitle(subtitle)
-                .type(document.getDocumentType())
-                .status(document.getStatus())
-                .uploader(new Uploader(
-                        uploaderId,
-                        uploaderName
-                ))
-                .uploadedAt(document.getUploadedAt() != null ? document.getUploadedAt() : document.getCreatedAt().toLocalDateTime())
-                .sizeBytes(document.getFileSize())
-                .extension(extension)
+                .id(file.getId() != null ? file.getId().toString() : "")
+                .name(file.getName())
+                .subtitle(file.getFileType())
+                .type(DocumentType.OTHER)
+                .status(file.isAiIndexed() ? DocumentStatus.PROCESSED : DocumentStatus.PROCESSING)
+                .uploader(new Uploader(uploaderId, uploaderName))
+                .uploadedAt(uploadedAt)
+                .sizeBytes(file.getSizeBytes() != null ? file.getSizeBytes() : 0L)
+                .extension(file.getFileType())
                 .build();
     }
-
 }

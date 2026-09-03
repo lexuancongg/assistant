@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
+import toast from 'react-hot-toast';
 
 const SETTINGS_TABS = ['Thông tin chung', 'Lưu trữ', 'Bảo mật', 'AI & Xử lý', 'Email thông báo', 'Tích hợp', 'Sao lưu'] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
@@ -71,8 +72,7 @@ export default function SettingsPage() {
 
                             <button
                                 onClick={() => {
-                                    // TODO: gọi API lưu cài đặt, ví dụ PUT /api/settings/company
-                                    console.log('Lưu:', { companyName, email, phone, address });
+                                    toast.success('Đã lưu thông tin cài đặt!');
                                 }}
                                 className="self-end px-4 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
                             >

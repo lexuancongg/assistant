@@ -8,6 +8,24 @@ export interface FolderNode {
     children: FolderNode[];
 }
 
+// lib/types.ts — bổ sung
+export type DepartmentRole = 'Trưởng phòng' | 'Thành viên';
+
+export type DepartmentMember = {
+    userId: string;
+    name: string;
+    email: string;
+    role: DepartmentRole;
+    avatarInitial: string;
+    avatarColor: string; // class Tailwind, ví dụ 'bg-green-100 text-green-700'
+};
+
+export type Department = {
+    id: string;
+    name: string;
+    members: DepartmentMember[];
+};
+
 export interface FileItem {
     id: string;
     name: string;

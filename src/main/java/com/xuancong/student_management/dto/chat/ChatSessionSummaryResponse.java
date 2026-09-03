@@ -4,6 +4,7 @@ import lombok.Builder;
 
 @Builder
 public record ChatSessionSummaryResponse(
+        String id,
         Long sessionId,
         String title,
         String assistantPersona,

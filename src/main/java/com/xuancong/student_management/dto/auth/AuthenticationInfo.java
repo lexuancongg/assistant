@@ -1,4 +1,3 @@
 package com.xuancong.student_management.dto.auth;
 
-public class AuthenticationInfo {
-}
+public record AuthenticationInfo(UserAuthenticationInfo user, boolean authenticated) {}

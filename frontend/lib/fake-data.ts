@@ -3,7 +3,6 @@ import type {
     ChatMessage,
     ChatSession,
     FileItem,
-    FolderNode,
     PermissionEntry,
     TrashItem,
     UploadingFile,
@@ -19,103 +18,106 @@ export const CURRENT_USER = {
 };
 
 // ── Cây thư mục ──
-export const FOLDER_TREE: FolderNode[] = [
+export const FOLDER_TREE = [
     {
         id: 'company-docs',
         name: 'Tài liệu công ty',
         children: [
-            { id: 'hr', name: 'Nhân sự', children: [] },
-            { id: 'finance', name: 'Tài chính', children: [] },
-            {
-                id: 'projects',
-                name: 'Dự án',
-                children: [
-                    { id: 'project-a', name: 'Dự án A', children: [] },
-                    { id: 'project-b', name: 'Dự án B', children: [] },
-                ],
-            },
+            { id: 'hr', name: 'Nhân sự' },
+            { id: 'finance', name: 'Tài chính' },
+            { id: 'project', name: 'Dự án', children: [] },
         ],
     },
     {
-        id: 'contracts',
+        id: 'contract',
         name: 'Hợp đồng',
         children: [
-            { id: 'contracts-2024', name: 'Năm 2024', children: [] },
-            { id: 'contracts-2025', name: 'Năm 2025', children: [] },
+            { id: 'contract-2024', name: 'Năm 2024' },
+            { id: 'contract-2025', name: 'Năm 2025' },
         ],
     },
-    { id: 'reports', name: 'Báo cáo', children: [] },
-    { id: 'personal', name: 'Tài liệu cá nhân', children: [] },
+    { id: 'report', name: 'Báo cáo' },
+    { id: 'personal', name: 'Tài liệu cá nhân' },
 ];
 
-// ── Danh sách file ──
-export const FILES: FileItem[] = [
+export const FILES = [
     {
-        id: 'file-1',
+        id: '1',
         name: 'Hợp đồng lao động Trần Văn Nam.pdf',
         type: 'pdf',
+        folderId: 'hr',
         owner: 'Phòng Nhân sự',
         uploadedByName: 'Nguyễn Văn A',
         uploadedByEmail: 'admin@rikai.com',
         updatedAt: '16/05/2024 10:30',
         size: '2.4 MB',
-        tags: ['Hợp đồng', 'Nhân sự', 'Quan trọng'],
-        path: '/hop-dong/2024/HDLD_TranVanNam.pdf',
     },
     {
-        id: 'file-2',
+        id: '2',
         name: 'Báo cáo tài chính Q1.xlsx',
         type: 'xlsx',
+        folderId: 'finance',
         owner: 'Phòng Tài chính',
         uploadedByName: 'Trần Văn Minh',
         uploadedByEmail: 'minh.tran@rikai.com',
         updatedAt: '15/05/2024 09:15',
         size: '1.8 MB',
-        tags: ['Báo cáo', 'Tài chính'],
     },
     {
-        id: 'file-3',
+        id: '3',
         name: 'Hợp đồng khách hàng A.docx',
         type: 'docx',
+        folderId: 'contract-2024',
         owner: 'Phòng Kinh doanh',
         uploadedByName: 'Lê Thị Thu',
         uploadedByEmail: 'thu.le@rikai.com',
         updatedAt: '14/05/2024 16:45',
         size: '880 KB',
-        tags: ['Hợp đồng'],
     },
     {
-        id: 'file-4',
+        id: '4',
         name: 'Chính sách bảo mật.pdf',
         type: 'pdf',
+        folderId: 'personal',
         owner: 'Phòng IT',
         uploadedByName: 'Phạm Đức Anh',
         uploadedByEmail: 'anh.pham@rikai.com',
         updatedAt: '14/05/2024 14:20',
         size: '1.2 MB',
-        tags: ['Chính sách'],
     },
     {
-        id: 'file-5',
+        id: '5',
         name: 'Kế hoạch dự án B.pptx',
         type: 'pptx',
+        folderId: 'project',
         owner: 'Phòng Dự án',
         uploadedByName: 'Vũ Thị Lan',
         uploadedByEmail: 'lan.vu@rikai.com',
         updatedAt: '13/05/2024 11:30',
         size: '5.1 MB',
-        tags: ['Dự án'],
     },
     {
-        id: 'file-6',
+        id: '6',
         name: 'Hướng dẫn sử dụng.txt',
         type: 'txt',
+        folderId: 'personal',
         owner: 'Nguyễn Văn A',
         uploadedByName: 'Nguyễn Văn A',
         uploadedByEmail: 'admin@rikai.com',
         updatedAt: '12/05/2024 08:20',
         size: '45 KB',
     },
+];
+
+export const NEEDS_REVIEW_COUNT = 8;
+
+export const RECENT_ACTIVITY = [
+    { id: 1, fileName: 'HopDong_NguyenVanA.pdf', uploader: 'Trần Thị B', status: 'done', time: '5 phút trước' },
+    { id: 2, fileName: 'Bien_ban_thuc_tap_03.docx', uploader: 'Lê Văn C', status: 'processing', time: '18 phút trước' },
+    { id: 3, fileName: 'HoSo_KhaiSinh_045.pdf', uploader: 'Phạm Thị D', status: 'needs_review', time: '32 phút trước' },
+    { id: 4, fileName: 'HopDong_LaoDong_112.pdf', uploader: 'Trần Thị B', status: 'done', time: '1 giờ trước' },
+    { id: 5, fileName: 'GiayPhep_LaoDong.pdf', uploader: 'Nguyễn Văn E', status: 'needs_review', time: '2 giờ trước' },
+    { id: 6, fileName: 'BaoCao_ThucTap_Q3.docx', uploader: 'Lê Văn C', status: 'done', time: '3 giờ trước' },
 ];
 
 // ── 1. Dashboard: thống kê tổng quan ──
@@ -134,6 +136,50 @@ export const UPLOAD_TREND = [
     { date: '22/05', value: 160 },
     { date: '23/05', value: 130 },
     { date: '24/05', value: 200 },
+];
+
+// lib/fake-data.ts — bổ sung
+import type { Department } from './types';
+
+export const DEPARTMENTS: Department[] = [
+    {
+        id: 'dept-hr',
+        name: 'Phòng Nhân sự',
+        members: [
+            { userId: 'u1', name: 'Nguyễn Văn A', email: 'admin@rikai.com', role: 'Trưởng phòng', avatarInitial: 'NA', avatarColor: 'bg-green-100 text-green-700' },
+            { userId: 'u2', name: 'Trần Thị Lan', email: 'lan.tran@rikai.com', role: 'Thành viên', avatarInitial: 'TL', avatarColor: 'bg-purple-100 text-purple-700' },
+            { userId: 'u3', name: 'Phạm Đức Hùng', email: 'hung.pham@rikai.com', role: 'Thành viên', avatarInitial: 'PH', avatarColor: 'bg-amber-100 text-amber-700' },
+            { userId: 'u4', name: 'Vũ Thị Thu', email: 'thu.vu@rikai.com', role: 'Thành viên', avatarInitial: 'VT', avatarColor: 'bg-red-100 text-red-700' },
+        ],
+    },
+    {
+        id: 'dept-finance',
+        name: 'Phòng Tài chính',
+        members: [
+            { userId: 'u5', name: 'Trần Văn Minh', email: 'minh.tran@rikai.com', role: 'Trưởng phòng', avatarInitial: 'TM', avatarColor: 'bg-blue-100 text-blue-700' },
+        ],
+    },
+    {
+        id: 'dept-sales',
+        name: 'Phòng Kinh doanh',
+        members: [
+            { userId: 'u6', name: 'Lê Thị Thu', email: 'thu.le@rikai.com', role: 'Trưởng phòng', avatarInitial: 'LT', avatarColor: 'bg-pink-100 text-pink-700' },
+        ],
+    },
+    {
+        id: 'dept-it',
+        name: 'Phòng IT',
+        members: [
+            { userId: 'u7', name: 'Phạm Đức Anh', email: 'anh.pham@rikai.com', role: 'Trưởng phòng', avatarInitial: 'PA', avatarColor: 'bg-teal-100 text-teal-700' },
+        ],
+    },
+    {
+        id: 'dept-project',
+        name: 'Phòng Dự án',
+        members: [
+            { userId: 'u8', name: 'Vũ Thị Lan', email: 'lan.vu@rikai.com', role: 'Trưởng phòng', avatarInitial: 'VL', avatarColor: 'bg-indigo-100 text-indigo-700' },
+        ],
+    },
 ];
 
 export const FILE_TYPE_BREAKDOWN = [
@@ -250,3 +296,33 @@ export const ACTIVITY_LOG: ActivityLogItem[] = [
     { id: 'a4', actorName: 'Phạm Đức Anh', action: 'đã xóa file', targetName: 'Tài liệu cũ.pdf', timestamp: '15/05/2024 14:10', type: 'delete' },
     { id: 'a5', actorName: 'Vũ Thị Lan', action: 'đã cập nhật thông tin file', targetName: 'Hợp đồng hợp tác.docx', timestamp: '14/05/2024 11:30', type: 'update' },
 ];
+
+
+
+// ── Gộp file vào cây thư mục ──
+export type FolderNode = {
+    id: string;
+    name: string;
+    type?: 'folder' | 'file';
+    children?: FolderNode[];
+};
+
+function attachFiles(folders: typeof FOLDER_TREE, files: typeof FILES): FolderNode[] {
+    return folders.map((folder) => {
+        const childFolders = folder.children ? attachFiles(folder.children, files) : [];
+        const childFiles: FolderNode[] = files
+            .filter((f) => f.folderId === folder.id)
+            .map((f) => ({ id: f.id, name: f.name, type: 'file' }));
+
+        const children = [...childFolders, ...childFiles];
+
+        return {
+            id: folder.id,
+            name: folder.name,
+            type: 'folder',
+            children: children.length ? children : undefined,
+        };
+    });
+}
+
+export const FOLDER_TREE_WITH_FILES = attachFiles(FOLDER_TREE, FILES);

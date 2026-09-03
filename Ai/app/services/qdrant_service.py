@@ -1,5 +1,6 @@
 import uuid
 import os
+from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct,
@@ -30,7 +31,7 @@ class QdrantService:
                 vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
             )
 
-    def save(self, document_id: str, chunks: list[str], vectors: list[list[float]]) -> list[str]:
+    def save(self, document_id: Any, chunks: list[str], vectors: list[list[float]]) -> list[str]:
         if not chunks or not vectors:
             return []
 
@@ -44,12 +45,12 @@ class QdrantService:
                 id=str(uuid.uuid4()),
                 vector=vector,
                 payload={
-                    "document_id": document_id,
+                    "document_id": str(document_id) if document_id is not None else None,
                     "chunk_index": i,
                     "text": chunk,
                 },
             )
-        for i, (chunk, vector) in enumerate(zip(chunks, vectors))
+            for i, (chunk, vector) in enumerate(zip(chunks, vectors))
         ]
 
         for i in range(0, len(points), BATCH_SIZE):
@@ -59,17 +60,17 @@ class QdrantService:
             )
 
         return [point.id for point in points]
+
     def search(
             self,
             query_vector: list[float],
-            document_id: int = 0,
+            document_id: Any = None,
             top_k: int = 5,
     ) -> list[dict]:
         query_filter = None
-        print("documentId, ",document_id)
-        if document_id:
+        if document_id is not None and str(document_id) not in ("0", "", "None"):
             query_filter = Filter(
-                must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
+                must=[FieldCondition(key="document_id", match=MatchValue(value=str(document_id)))]
             )
 
         results = self.client.query_points(
@@ -82,10 +83,10 @@ class QdrantService:
 
         return [
             {
-                "id": r.id,              # <-- thêm dòng này
+                "id": r.id,
                 "text": r.payload["text"],
-                "document_id": r.payload["document_id"],
-                "chunk_index": r.payload["chunk_index"],
+                "document_id": r.payload.get("document_id"),
+                "chunk_index": r.payload.get("chunk_index"),
                 "score": r.score,
             }
             for r in results.points

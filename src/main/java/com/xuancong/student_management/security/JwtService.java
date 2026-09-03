@@ -1,10 +1,9 @@
 package com.xuancong.student_management.security;
 
-import com.xuancong.student_management.model.User;
+import com.xuancong.student_management.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,7 +19,7 @@ import java.util.Optional;
 @Component
 public class JwtService {
 
-    @Value("${jwt.secret:change-me-this-secret-key-please-1234567890}")
+    @Value("${jwt.secret}")
     private String jwtSecret;
 
     @Value("${jwt.access-token-expiration-minutes:15}")
@@ -43,26 +42,25 @@ public class JwtService {
         }
     }
 
+    /** Subject = email của entity/User */
     public String createAccessToken(User user) {
         Instant now = Instant.now();
+        String role = user.getRole() != null ? "ROLE_" + user.getRole().name() : "ROLE_USER";
         return Jwts.builder()
-                .setSubject(user.getUsername())
-                .claim("role", user.getRole() != null ? user.getRole().getName() : "ROLE_USER")
+                .setSubject(user.getEmail())
+                .claim("role", role)
+                .claim("name", user.getName())
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(now.plus(accessTokenExpirationMinutes, ChronoUnit.MINUTES)))
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    public Claims parseClaims(String token) {
-        return Jwts.parserBuilder()
-                .setSigningKey(signingKey)
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
+    public Instant calculateRefreshTokenExpiry() {
+        return Instant.now().plus(refreshTokenExpirationDays, ChronoUnit.DAYS);
     }
 
-    public Optional<String> getUsernameFromToken(String token) {
+    public Optional<String> getEmailFromToken(String token) {
         try {
             return Optional.ofNullable(parseClaims(token).getSubject());
         } catch (Exception ex) {
@@ -79,7 +77,22 @@ public class JwtService {
         }
     }
 
-    public Instant calculateRefreshTokenExpiry() {
-        return Instant.now().plus(refreshTokenExpirationDays, ChronoUnit.DAYS);
+    private Claims parseClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(signingKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
+
+    // Backward-compat alias for JwtAuthenticationFilter
+    public Optional<String> getUsernameFromToken(String token) {
+        return getEmailFromToken(token);
+    }
+
+    public boolean isTokenValid(String token, org.springframework.security.core.userdetails.UserDetails userDetails) {
+        return getEmailFromToken(token)
+                .map(email -> email.equals(userDetails.getUsername()) && validateToken(token))
+                .orElse(false);
     }
 }

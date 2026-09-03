@@ -29,6 +29,16 @@ class AuthenticationService{
         throw response;
     }
 
+    public async register(request: { username: string; password: string; email?: string }): Promise<LoginResponse> {
+        const response = await apiClient.post(`${this.baseUrl}/register`, JSON.stringify(request));
+        if (response.ok || response.status === 201) {
+            const json = await response.json().catch(() => null);
+            // register returns AuthResponse without tokens; do not store tokens automatically
+            return json;
+        }
+        throw response;
+    }
+
     public  async checkAuthenticated():Promise<AuthStateResponse>{
         const response = await apiClient.get(`${this.baseUrl}/me`);
         if(response.ok){

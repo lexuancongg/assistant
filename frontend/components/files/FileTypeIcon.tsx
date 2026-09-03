@@ -10,8 +10,9 @@ const FILE_ICON_MAP: Record<FileType, { icon: LucideIcon; className: string }> =
     image: { icon: FileImage, className: 'text-purple-500' },
 };
 
-export default function FileTypeIcon({ type, className = 'w-4 h-4' }: { type: FileType; className?: string }) {
-    const entry = FILE_ICON_MAP[type] ?? FILE_ICON_MAP.txt;
+export default function FileTypeIcon({ type, className = 'w-4 h-4' }: { type: string | FileType; className?: string }) {
+    const key = (type || 'txt').toLowerCase() as FileType;
+    const entry = FILE_ICON_MAP[key] ?? FILE_ICON_MAP.txt;
     const Icon = entry.icon;
     return <Icon className={`shrink-0 ${entry.className} ${className}`} strokeWidth={2} />;
 }

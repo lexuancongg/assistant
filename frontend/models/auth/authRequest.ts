@@ -1,4 +1,5 @@
 export type AuthRequest = {
-  username: string
+  username?: string
+  email?: string
   password: string
-}
+}

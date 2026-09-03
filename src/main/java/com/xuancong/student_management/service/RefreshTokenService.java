@@ -1,10 +1,11 @@
 package com.xuancong.student_management.service;
 
-import com.xuancong.student_management.model.RefreshToken;
-import com.xuancong.student_management.model.User;
+import com.xuancong.student_management.entity.User;
+import com.xuancong.student_management.entity.RefreshToken;
 import com.xuancong.student_management.repository.RefreshTokenRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -16,11 +17,14 @@ public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
 
+    @Transactional
     public RefreshToken createRefreshToken(User user, Instant expiresAt) {
-        String token = UUID.randomUUID().toString();
+        // Xóa token cũ nếu có
+        refreshTokenRepository.deleteAllByUser(user);
+
         RefreshToken refreshToken = RefreshToken.builder()
                 .user(user)
-                .token(token)
+                .token(UUID.randomUUID().toString())
                 .expiresAt(expiresAt)
                 .revoked(false)
                 .build();
@@ -31,6 +35,7 @@ public class RefreshTokenService {
         return refreshTokenRepository.findByToken(token);
     }
 
+    @Transactional
     public void deleteByUser(User user) {
         refreshTokenRepository.deleteAllByUser(user);
     }

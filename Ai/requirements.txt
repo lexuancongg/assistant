@@ -13,3 +13,5 @@ requests
 boto3
 openpyxl
 xlrd
+# Optional: prophet for improved forecasting. Install if available in your environment
+# prophet

@@ -1,8 +1,4 @@
 package com.xuancong.student_management.dto.auth;
 
-public record RegisterRequest(
-        String username,
-        String password,
-        String email
-) {
-}
+/** Đăng ký tài khoản mới bằng email + tên + mật khẩu */
+public record RegisterRequest(String name, String email, String password) {}

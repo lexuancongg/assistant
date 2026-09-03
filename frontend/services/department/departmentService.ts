@@ -1,55 +1,54 @@
-import { DepartmentCreateRequest, Department } from "@/models/department/department";
-import { PageResponse } from "@/models/page/pageResponse";
 import apiClient from "@/utils/api/apiClientFixed";
 
+export interface DepartmentMemberDto {
+    userId: string;
+    name: string;
+    email: string;
+    role: string;
+}
+
+export interface DepartmentDto {
+    id: string;
+    name: string;
+    members: DepartmentMemberDto[];
+}
+
 class DepartmentService {
-    private managementUrl: string;
-    private employeeUrl: string;
+    private baseUrl: string;
+
     constructor() {
-        this.managementUrl = "http://localhost:8080/api/management/departments";
-        this.employeeUrl = "http://localhost:8080/api/employee/departments";
+        this.baseUrl = "http://localhost:8080/api/v1/departments";
     }
 
-    public async getDepartments(pageIndex: number, keyword: string, branchId?: number): Promise<PageResponse<Department>> {
-        const params = new URLSearchParams();
-        params.append('pageIndex', pageIndex.toString());
-        params.append('keyword', keyword);
-        if (branchId) params.append('branchId', branchId.toString());
-        const response = await apiClient.get(`${this.managementUrl}?${params.toString()}`);
+    public async getDepartments(): Promise<DepartmentDto[]> {
+        const response = await apiClient.get(this.baseUrl);
         if (response.ok) {
             return await response.json();
         }
         throw response;
     }
 
-    public async createDepartment(department:DepartmentCreateRequest):Promise<Department>{
-        const response = await apiClient.post(this.managementUrl,JSON.stringify(department))
-        if(response.ok){
+    public async createDepartment(name: string): Promise<DepartmentDto> {
+        const response = await apiClient.post(this.baseUrl, JSON.stringify({ name }));
+        if (response.ok) {
             return await response.json();
         }
         throw response;
     }
 
-    public async updateDepartment(id:number,department:DepartmentCreateRequest):Promise<void>{
-        const response  =  await apiClient.put(`${this.managementUrl}/${id}`,JSON.stringify(department));
-        if(!response.ok){
-            throw response;
-        }
-    }
-
-    public async deleteDepartment(id:number):Promise<void>{
-        const response = await apiClient.delete(`${this.managementUrl}/${id}`);
-        if(!response.ok){
-            throw response;
-        }
-    }
-
-    public async getDepartmentByBranch(branchId:number):Promise<Department[]>{
-        const response = await apiClient.get(`${this.employeeUrl}/${branchId}`);
-        if(response.ok){
-            return await response.json()
+    public async addMember(deptId: string, userId: string): Promise<DepartmentDto> {
+        const response = await apiClient.post(`${this.baseUrl}/${deptId}/members`, JSON.stringify({ userId }));
+        if (response.ok) {
+            return await response.json();
         }
         throw response;
+    }
+
+    public async removeMember(deptId: string, userId: string): Promise<void> {
+        const response = await apiClient.delete(`${this.baseUrl}/${deptId}/members/${userId}`);
+        if (!response.ok) {
+            throw response;
+        }
     }
 }
 

@@ -1,33 +1,48 @@
 'use client';
+import { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { FILE_TYPE_BREAKDOWN } from '@/lib/fake-data';
 
 export default function FileTypeDonut() {
-    const total = FILE_TYPE_BREAKDOWN.reduce((sum, d) => sum + d.value, 0) * 12.48; // fake total files match dashboard stat
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    const total = FILE_TYPE_BREAKDOWN.reduce((sum, d) => sum + d.value, 0) * 12.48;
 
     return (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="text-sm font-semibold text-gray-900 mb-4">Phân loại tài liệu</h3>
             <div className="flex items-center gap-4">
                 <div className="relative w-36 h-36 shrink-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                                data={FILE_TYPE_BREAKDOWN}
-                                dataKey="value"
-                                nameKey="label"
-                                innerRadius={38}
-                                outerRadius={60}
-                                paddingAngle={2}
-                                stroke="none"
-                            >
-                                {FILE_TYPE_BREAKDOWN.map((entry) => (
-                                    <Cell key={entry.label} fill={entry.color} />
-                                ))}
-                            </Pie>
-                        </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex items-center justify-center">
+                    {mounted ? (
+                        <div style={{ width: '100%', height: '100%', minWidth: 0 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={FILE_TYPE_BREAKDOWN}
+                                        dataKey="value"
+                                        nameKey="label"
+                                        innerRadius={38}
+                                        outerRadius={60}
+                                        paddingAngle={2}
+                                        stroke="none"
+                                    >
+                                        {FILE_TYPE_BREAKDOWN.map((entry) => (
+                                            <Cell key={entry.label} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gray-50 rounded-full text-xs text-gray-400">
+                            ...
+                        </div>
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <span className="text-lg font-semibold text-gray-900">{Math.round(total).toLocaleString()}</span>
                     </div>
                 </div>

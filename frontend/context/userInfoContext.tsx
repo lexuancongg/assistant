@@ -1,6 +1,7 @@
 "use client"
 import authenticationService from "@/services/auth/authenticationService";
 import React, { Context, ReactElement, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {error} from "console";
 
 export const UserInfoContext: Context<UserInfo> = React.createContext({
     name:'',
@@ -22,7 +23,10 @@ export function UserInfoProvider({ children }: React.PropsWithChildren): ReactEl
         .then((response)=>{
             if(response.isAuthenticated){
                 setName(response.authenticatedUser.username)
+                setEmail(response.authenticatedUser.email)
             }
+        }).catch((error)=>{
+            console.log(error)
         })
     }, [])
 

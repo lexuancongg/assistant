@@ -1,4 +1,3 @@
 package com.xuancong.student_management.dto.auth;
 
-public class UserAuthenticationInfo {
-}
+public record UserAuthenticationInfo(String name, String email) {}

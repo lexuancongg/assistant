@@ -9,7 +9,8 @@ public record RagRequest(
         Long documentId,
         String question,
         String persona,
-        List<ChatHistoryMessage> history
+        List<ChatHistoryMessage> history,
+        List<String> availableFiles
 ) {
     public record ChatHistoryMessage(
             String role,

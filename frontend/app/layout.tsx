@@ -1,46 +1,24 @@
-"use client";
-
+import type { Metadata } from "next";
 import React from "react";
-import { AppProvider } from "@/context/appContext";
-import { Toaster } from "react-hot-toast";
+import ClientProviders from "@/components/providers/ClientProviders";
 
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "../styles/global.css";
 
-function App({ children }: React.PropsWithChildren) {
-  return (
-    <html lang="en">
-      <body>
-        <AppProvider>
-          {children}
+export const metadata: Metadata = {
+    title: "Enterprise AI Assistant",
+    description: "Hệ thống Quản trị Tri thức và Trợ lý AI Doanh nghiệp",
+};
 
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              style: {
-                borderRadius: "10px",
-                padding: "12px 14px",
-                fontSize: "14px",
-              },
-              success: {
-                style: {
-                  background: "#10b981",
-                  color: "#fff",
-                },
-              },
-              error: {
-                style: {
-                  background: "#ef4444",
-                  color: "#fff",
-                },
-              },
-            }}
-          />
-        </AppProvider>
-      </body>
-    </html>
-  );
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+    return (
+        <html lang="vi">
+            <body suppressHydrationWarning={true}>
+                <ClientProviders>
+                    {children}
+                </ClientProviders>
+            </body>
+        </html>
+    );
 }
-
-export default App;

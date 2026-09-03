@@ -3,7 +3,7 @@ package com.xuancong.student_management.dto.chat;
 import java.util.List;
 
 public record ChatRequest(
-        Long sessionId,
+        String sessionId,
         Long documentId,
         String question,
         String persona,

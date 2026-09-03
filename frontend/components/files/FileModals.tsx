@@ -1,6 +1,6 @@
 'use client';
 import { useState, ReactNode } from 'react';
-import { X, UploadCloud, File as FileIcon } from 'lucide-react';
+import { X, UploadCloud, File as FileIcon, Loader2 } from 'lucide-react';
 
 // ── Khung modal dùng chung ──
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -22,15 +22,22 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
 interface CreateFolderModalProps {
     parentFolderName: string;
     onClose: () => void;
-    onCreate: (name: string) => void;
+    onCreate: (name: string) => Promise<void> | void;
 }
 
 export function CreateFolderModal({ parentFolderName, onClose, onCreate }: CreateFolderModalProps) {
     const [name, setName] = useState('');
-    const handleSubmit = () => {
-        if (!name.trim()) return;
-        onCreate(name.trim());
-        onClose();
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleSubmit = async () => {
+        if (!name.trim() || submitting) return;
+        setSubmitting(true);
+        try {
+            await onCreate(name.trim());
+            onClose();
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -47,19 +54,24 @@ export function CreateFolderModal({ parentFolderName, onClose, onCreate }: Creat
                     className="mt-1.5 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors"
                 />
                 <p className="mt-2 text-xs text-gray-400">
-                    Thư mục sẽ được tạo trong <span className="text-gray-600">{parentFolderName}</span>
+                    Thư mục sẽ được tạo trong <span className="text-gray-600 font-medium">{parentFolderName}</span>
                 </p>
             </div>
             <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
-                <button onClick={onClose} className="px-3.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                <button
+                    onClick={onClose}
+                    disabled={submitting}
+                    className="px-3.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
                     Hủy
                 </button>
                 <button
                     onClick={handleSubmit}
-                    disabled={!name.trim()}
-                    className="px-3.5 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                    disabled={!name.trim() || submitting}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                    Tạo thư mục
+                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {submitting ? 'Đang tạo...' : 'Tạo thư mục'}
                 </button>
             </div>
         </ModalShell>
@@ -80,15 +92,16 @@ function formatFileSize(bytes: number): string {
 interface UploadFileModalProps {
     parentFolderName: string;
     onClose: () => void;
-    onUpload: (files: File[]) => void;
+    onUpload: (files: File[]) => Promise<void> | void;
 }
 
 export function UploadFileModal({ parentFolderName, onClose, onUpload }: UploadFileModalProps) {
     const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
     const [isDragging, setIsDragging] = useState(false);
+    const [uploading, setUploading] = useState(false);
 
     const addFiles = (fileList: FileList | null) => {
-        if (!fileList) return;
+        if (!fileList || uploading) return;
         const newOnes: PendingFile[] = Array.from(fileList).map((file) => ({
             id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
             file,
@@ -96,12 +109,20 @@ export function UploadFileModal({ parentFolderName, onClose, onUpload }: UploadF
         setPendingFiles((prev) => [...prev, ...newOnes]);
     };
 
-    const removeFile = (id: string) => setPendingFiles((prev) => prev.filter((f) => f.id !== id));
+    const removeFile = (id: string) => {
+        if (uploading) return;
+        setPendingFiles((prev) => prev.filter((f) => f.id !== id));
+    };
 
-    const handleSubmit = () => {
-        if (pendingFiles.length === 0) return;
-        onUpload(pendingFiles.map((f) => f.file));
-        onClose();
+    const handleSubmit = async () => {
+        if (pendingFiles.length === 0 || uploading) return;
+        setUploading(true);
+        try {
+            await onUpload(pendingFiles.map((f) => f.file));
+            onClose();
+        } finally {
+            setUploading(false);
+        }
     };
 
     return (
@@ -110,7 +131,7 @@ export function UploadFileModal({ parentFolderName, onClose, onUpload }: UploadF
                 <label
                     onDragOver={(e) => {
                         e.preventDefault();
-                        setIsDragging(true);
+                        if (!uploading) setIsDragging(true);
                     }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={(e) => {
@@ -118,8 +139,8 @@ export function UploadFileModal({ parentFolderName, onClose, onUpload }: UploadF
                         setIsDragging(false);
                         addFiles(e.dataTransfer.files);
                     }}
-                    className={`flex flex-col items-center justify-center gap-2 py-8 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
-                        isDragging ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
+                    className={`flex flex-col items-center justify-center gap-2 py-8 rounded-lg border-2 border-dashed transition-colors ${
+                        uploading ? 'opacity-50 cursor-not-allowed border-gray-200' : isDragging ? 'border-blue-400 bg-blue-50 cursor-pointer' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
                     }`}
                 >
                     <UploadCloud className="w-7 h-7 text-gray-400" strokeWidth={1.5} />
@@ -127,7 +148,7 @@ export function UploadFileModal({ parentFolderName, onClose, onUpload }: UploadF
                         Kéo thả file vào đây, hoặc <span className="text-blue-600 font-medium">chọn file</span>
                     </p>
                     <p className="text-xs text-gray-400">Hỗ trợ PDF, Word, Excel, PowerPoint, hình ảnh</p>
-                    <input type="file" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
+                    <input type="file" multiple disabled={uploading} className="hidden" onChange={(e) => addFiles(e.target.files)} />
                 </label>
 
                 {pendingFiles.length > 0 && (
@@ -139,7 +160,12 @@ export function UploadFileModal({ parentFolderName, onClose, onUpload }: UploadF
                                     <span className="truncate text-gray-700">{file.name}</span>
                                     <span className="shrink-0 text-xs text-gray-400">{formatFileSize(file.size)}</span>
                                 </div>
-                                <button onClick={() => removeFile(id)} className="shrink-0 p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Xóa file">
+                                <button
+                                    onClick={() => removeFile(id)}
+                                    disabled={uploading}
+                                    className="shrink-0 p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                                    aria-label="Xóa file"
+                                >
                                     <X className="w-3.5 h-3.5" strokeWidth={2} />
                                 </button>
                             </div>
@@ -148,19 +174,24 @@ export function UploadFileModal({ parentFolderName, onClose, onUpload }: UploadF
                 )}
 
                 <p className="mt-3 text-xs text-gray-400">
-                    File sẽ được tải lên <span className="text-gray-600">{parentFolderName}</span>
+                    File sẽ được tải lên thư mục <span className="text-gray-700 font-medium">{parentFolderName}</span>
                 </p>
             </div>
             <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
-                <button onClick={onClose} className="px-3.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                <button
+                    onClick={onClose}
+                    disabled={uploading}
+                    className="px-3.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
                     Hủy
                 </button>
                 <button
                     onClick={handleSubmit}
-                    disabled={pendingFiles.length === 0}
-                    className="px-3.5 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                    disabled={pendingFiles.length === 0 || uploading}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                    Upload {pendingFiles.length > 0 ? `(${pendingFiles.length})` : ''}
+                    {uploading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {uploading ? 'Đang tải lên...' : `Upload ${pendingFiles.length > 0 ? `(${pendingFiles.length})` : ''}`}
                 </button>
             </div>
         </ModalShell>

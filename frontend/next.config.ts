@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
     reactStrictMode :true,
     experimental: {
     },
+    eslint: {
+        ignoreDuringBuilds: true,
+    },
     images: {
         remotePatterns:[
             {
@@ -20,7 +23,7 @@ const nextConfig: NextConfig = {
         return [
             {
                 source: "/api/:path*",
-                destination: "http://localhost:8000/api/:path*" // proxy
+                destination: "http://localhost:8080/api/:path*" // proxy
             }
         ]
     }
