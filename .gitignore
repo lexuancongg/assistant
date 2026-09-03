@@ -32,9 +32,9 @@ build/
 ### VS Code ###
 .vscode/
 
-./db
-./.env
-./Ai/.env
+db/
+.env
+Ai/.env
 src/main/resources/application.yaml
 
 # Python caches
