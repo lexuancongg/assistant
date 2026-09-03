@@ -1,21 +1,30 @@
-import Sidebar from "@/components/common/sidebar";
-import Topbar from "@/components/common/topbar";
+'use client';
+import { useState } from 'react';
+import Sidebar from '@/components/layout/Sidebar';
+import Topbar from '@/components/layout/Topbar';
+import { BreadcrumbProvider, useBreadcrumb } from '@/lib/breadcrumb-context';
 
+function DashboardShell({ children }: { children: React.ReactNode }) {
+    const [isOpen, setIsOpen] = useState(true);
+    const { breadcrumb } = useBreadcrumb();
 
-export default function DashboardLayout({
-                                            children,
-                                        }: {
-    children: React.ReactNode;
-}) {
     return (
-        <div className="flex overflow-x-hidden">
-            <Sidebar />
-            <div className="ml-64 flex flex-col min-h-screen w-full">
-                <Topbar />
-                <main className="p-6 bg-gray-50 flex-1">
-                    {children}
-                </main>
+        <div className="min-h-screen bg-gray-50">
+            <Sidebar isOpen={isOpen} setIsOpen={setIsOpen} />
+            <div
+                className={`transition-all duration-300 ease-in-out ${isOpen ? 'pl-56' : 'pl-16'}`}
+            >
+                <Topbar breadcrumb={breadcrumb} />
+                <main>{children}</main>
             </div>
         </div>
+    );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+    return (
+        <BreadcrumbProvider>
+            <DashboardShell>{children}</DashboardShell>
+        </BreadcrumbProvider>
     );
 }
