@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
 import DepartmentList from '@/components/departments/DepartmentList';
 import DepartmentMembersPanel from '@/components/departments/DepartmentMembersPanel';
-import { CreateDepartmentModal, AddMemberModal, ConfirmDeleteMemberModal } from '@/components/departments/DepartmentModals';
+import { CreateDepartmentModal, AddMemberModal, ConfirmDeleteMemberModal, RenameDepartmentModal, ConfirmDeleteDepartmentModal } from '@/components/departments/DepartmentModals';
 import departmentService, { DepartmentDto } from '@/services/department/departmentService';
 import userService, { UserDto } from '@/services/user/userService';
 import type { DepartmentRole } from '@/lib/types';
@@ -14,7 +14,7 @@ import LoadingOverlay from '@/components/common/LoadingOverlay';
 export default function DepartmentsPage() {
     usePageBreadcrumb(['Quản lý phòng ban']);
     const [departments, setDepartments] = useState<any[]>([]);
-    const [selectedId, setSelectedId] = useState<string>('');
+    const [selectedId, setSelectedId] = useState<string | number>('');
     const [allUsers, setAllUsers] = useState<UserDto[]>([]);
     const [loading, setLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -23,7 +23,9 @@ export default function DepartmentsPage() {
     // Modals state
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showAddMemberModal, setShowAddMemberModal] = useState(false);
-    const [memberToDelete, setMemberToDelete] = useState<{ userId: string; name: string } | null>(null);
+    const [memberToDelete, setMemberToDelete] = useState<{ userId: string | number; name: string } | null>(null);
+    const [departmentToRename, setDepartmentToRename] = useState<{ id: string | number; name: string } | null>(null);
+    const [departmentToDelete, setDepartmentToDelete] = useState<{ id: string | number; name: string } | null>(null);
 
     const loadDepartments = async (keepSelection = true) => {
         setLoading(true);
@@ -66,9 +68,9 @@ export default function DepartmentsPage() {
         loadDepartments(false);
     }, []);
 
-    const selectedDept = departments.find((d) => d.id === selectedId) ?? departments[0];
+    const selectedDept = departments.find((d) => d.id.toString() === selectedId.toString()) ?? departments[0];
 
-    async function handleAddMember(userId: string, role: DepartmentRole) {
+    async function handleAddMember(userId: string | number, role: DepartmentRole) {
         if (!selectedId) return;
 
         setIsProcessing(true);
@@ -104,11 +106,11 @@ export default function DepartmentsPage() {
         }
     }
 
-    function handleChangeRole(userId: string, role: DepartmentRole) {
+    function handleChangeRole(userId: string | number, role: DepartmentRole) {
         setDepartments((prev) =>
             prev.map((d) =>
-                d.id === selectedId
-                    ? { ...d, members: d.members.map((m: any) => (m.userId === userId ? { ...m, role } : m)) }
+                d.id.toString() === selectedId.toString()
+                    ? { ...d, members: d.members.map((m: any) => (m.userId.toString() === userId.toString() ? { ...m, role } : m)) }
                     : d
             )
         );
@@ -129,6 +131,46 @@ export default function DepartmentsPage() {
             throw err;
         } finally {
             setIsProcessing(false);
+        }
+    }
+
+    async function handleRenameDepartment(newName: string) {
+        if (!departmentToRename) return;
+        setIsProcessing(true);
+        setProcessingText('Đang cập nhật tên phòng ban...');
+        const tId = toast.loading('Đang lưu tên phòng ban...');
+        try {
+            await departmentService.updateDepartmentName(departmentToRename.id, newName);
+            toast.success('Cập nhật tên phòng ban thành công!', { id: tId });
+            await loadDepartments(true);
+        } catch (err: any) {
+            toast.error('Cập nhật tên thất bại: ' + (err?.message || err), { id: tId });
+            throw err;
+        } finally {
+            setIsProcessing(false);
+            setDepartmentToRename(null);
+        }
+    }
+
+    async function handleDeleteDepartmentConfirm() {
+        if (!departmentToDelete) return;
+        setIsProcessing(true);
+        setProcessingText('Đang xóa phòng ban...');
+        const tId = toast.loading('Đang xóa phòng ban...');
+        try {
+            await departmentService.deleteDepartment(departmentToDelete.id);
+            toast.success('Đã xóa phòng ban thành công!', { id: tId });
+            const remaining = departments.filter((d) => d.id.toString() !== departmentToDelete.id.toString());
+            if (selectedId.toString() === departmentToDelete.id.toString()) {
+                setSelectedId(remaining.length > 0 ? remaining[0].id : '');
+            }
+            await loadDepartments(true);
+        } catch (err: any) {
+            toast.error('Xóa phòng ban thất bại: ' + (err?.message || err), { id: tId });
+            throw err;
+        } finally {
+            setIsProcessing(false);
+            setDepartmentToDelete(null);
         }
     }
 
@@ -163,6 +205,8 @@ export default function DepartmentsPage() {
                         selectedId={selectedDept?.id ?? ''}
                         onSelect={setSelectedId}
                         onCreate={() => setShowCreateModal(true)}
+                        onRename={(dept) => setDepartmentToRename({ id: dept.id, name: dept.name })}
+                        onDelete={(dept) => setDepartmentToDelete({ id: dept.id, name: dept.name })}
                     />
                     {selectedDept && (
                         <DepartmentMembersPanel
@@ -170,6 +214,7 @@ export default function DepartmentsPage() {
                             onOpenAddMember={() => setShowAddMemberModal(true)}
                             onOpenRemoveMember={(member) => setMemberToDelete({ userId: member.userId, name: member.name })}
                             onChangeRole={handleChangeRole}
+                            onRename={(dept) => setDepartmentToRename({ id: dept.id, name: dept.name })}
                         />
                     )}
                 </div>
@@ -180,6 +225,22 @@ export default function DepartmentsPage() {
                 <CreateDepartmentModal
                     onClose={() => setShowCreateModal(false)}
                     onCreate={handleCreateDepartment}
+                />
+            )}
+
+            {departmentToRename && (
+                <RenameDepartmentModal
+                    department={departmentToRename}
+                    onClose={() => setDepartmentToRename(null)}
+                    onRename={handleRenameDepartment}
+                />
+            )}
+
+            {departmentToDelete && (
+                <ConfirmDeleteDepartmentModal
+                    department={departmentToDelete}
+                    onClose={() => setDepartmentToDelete(null)}
+                    onConfirm={handleDeleteDepartmentConfirm}
                 />
             )}
 

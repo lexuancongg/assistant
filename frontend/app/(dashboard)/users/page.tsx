@@ -17,7 +17,7 @@ export default function UsersPage() {
     const [role, setRole] = useState('USER');
     const [loading, setLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
-    const [togglingId, setTogglingId] = useState<string | null>(null);
+    const [togglingId, setTogglingId] = useState<string | number | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [processingText, setProcessingText] = useState('Đang xử lý...');
 
@@ -70,7 +70,7 @@ export default function UsersPage() {
         }
     };
 
-    const handleToggleStatus = async (id: string, currentStatus: string) => {
+    const handleToggleStatus = async (id: string | number, currentStatus: string) => {
         const nextStatus = currentStatus.toUpperCase() === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
         setTogglingId(id);
         setIsProcessing(true);

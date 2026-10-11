@@ -1,5 +1,5 @@
 export interface ChatSession {
-    session: number | null;
+    session: number | string | null;
     messages: ChatMessage[];
 }
 
@@ -21,22 +21,21 @@ export enum MessageRole {
 
 
 export type ChatRequest = {
-    sessionId?: number;
-    documentId: number|null;
+    sessionId?: number | string;
+    documentId: number | string | null;
     question: string;
-    persona?: string | null;
 };
 
 export type SourceCitation = {
-    documentId: number | null;
-    chunkId: string | null;
+    documentId: number | string | null;
+    chunkId: number | string | null;
     chunkIndex: number | null;
     content: string | null;
     score: number | null;
 }
 
 export type MessageAnswer = {
-    sessionId: number;
+    sessionId: number | string;
     answer: string;
     sources?: SourceCitation[];
 };

@@ -28,12 +28,12 @@ export enum DocumentType {
 }
 
 export type Uploader = {
-    id: string;
+    id: number | string;
     name: string;
 };
 
 export type DocumentItem = {
-    id: number;
+    id: number | string;
     name: string;
     subtitle: string;
     type: DocumentType;
@@ -45,7 +45,7 @@ export type DocumentItem = {
 };
 
 export type DocumentDetail = {
-    id: string;
+    id: number | string;
     name: string;
     type: DocumentType;
     status: DocumentStatus;

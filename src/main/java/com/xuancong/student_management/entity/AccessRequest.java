@@ -19,8 +19,8 @@ import java.util.UUID;
 public class AccessRequest {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(name = "folder_id")
     private Long folderId;
@@ -29,7 +29,7 @@ public class AccessRequest {
     private String folderName;
 
     @Column(name = "file_id")
-    private String fileId;
+    private Long fileId;
 
     @Column(name = "file_name")
     private String fileName;

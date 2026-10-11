@@ -4,10 +4,10 @@ import { MessageSquare, Plus, Bot, Sparkles, MoreVertical, Trash2 } from 'lucide
 import { ChatSessionSummaryDto } from '@/services/chat/chatService';
 
 interface ChatHistoryListProps {
-    activeId: string | null;
-    onSelect: (id: string) => void;
+    activeId: string | number | null;
+    onSelect: (id: string | number) => void;
     onNewChat: () => void;
-    onDelete?: (id: string) => void;
+    onDelete?: (id: string | number) => void;
     sessions: ChatSessionSummaryDto[];
     loading?: boolean;
 }
@@ -20,7 +20,7 @@ export default function ChatHistoryList({
     sessions,
     loading = false
 }: ChatHistoryListProps) {
-    const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+    const [menuOpenId, setMenuOpenId] = useState<string | number | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -38,12 +38,12 @@ export default function ChatHistoryList({
         };
     }, [menuOpenId]);
 
-    const handleMenuToggle = (e: React.MouseEvent, sid: string) => {
+    const handleMenuToggle = (e: React.MouseEvent, sid: string | number) => {
         e.stopPropagation();
         setMenuOpenId(prev => (prev === sid ? null : sid));
     };
 
-    const handleDeleteClick = (e: React.MouseEvent, sid: string) => {
+    const handleDeleteClick = (e: React.MouseEvent, sid: string | number) => {
         e.stopPropagation();
         setMenuOpenId(null);
         if (onDelete) {

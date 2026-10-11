@@ -7,10 +7,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record FolderPermissionResponse(
-    UUID id,
+    Long id,
     Long folderId,
     PermissionSubjectType subjectType,
-    UUID subjectId,
+    Long subjectId,
     String subjectName,
     String subjectDetail,
     PermissionLevel level,

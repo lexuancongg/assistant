@@ -1,6 +1,6 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { X, Users, UserPlus, Trash2, Search, Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { X, Users, UserPlus, Trash2, Search, Check, AlertTriangle, Loader2, Pencil } from 'lucide-react';
 import { UserDto } from '@/services/user/userService';
 import type { DepartmentRole } from '@/lib/types';
 
@@ -84,10 +84,10 @@ export function CreateDepartmentModal({ onClose, onCreate }: CreateDepartmentMod
 // ── Modal Thêm thành viên vào phòng ban ──
 interface AddMemberModalProps {
     departmentName: string;
-    existingMemberIds: string[];
+    existingMemberIds: (string | number)[];
     allUsers: UserDto[];
     onClose: () => void;
-    onAdd: (userId: string, role: DepartmentRole) => Promise<void>;
+    onAdd: (userId: string | number, role: DepartmentRole) => Promise<void>;
 }
 
 export function AddMemberModal({
@@ -98,12 +98,13 @@ export function AddMemberModal({
     onAdd
 }: AddMemberModalProps) {
     const [search, setSearch] = useState('');
-    const [selectedUserId, setSelectedUserId] = useState<string>('');
+    const [selectedUserId, setSelectedUserId] = useState<string | number>('');
     const [selectedRole, setSelectedRole] = useState<DepartmentRole>('Thành viên');
     const [submitting, setSubmitting] = useState(false);
 
     const availableUsers = useMemo(() => {
-        return allUsers.filter(u => !existingMemberIds.includes(u.id));
+        const existingSet = new Set(existingMemberIds.map(String));
+        return allUsers.filter(u => !existingSet.has(String(u.id)));
     }, [allUsers, existingMemberIds]);
 
     const filteredUsers = useMemo(() => {
@@ -281,6 +282,142 @@ export function ConfirmDeleteMemberModal({
                         onClick={handleConfirm}
                         disabled={submitting}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition shadow-sm disabled:opacity-50"
+                    >
+                        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {submitting ? 'Đang xóa...' : 'Xác nhận xóa'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── Modal Đổi tên phòng ban ──
+interface RenameDepartmentModalProps {
+    department: { id: string | number; name: string };
+    onClose: () => void;
+    onRename: (newName: string) => Promise<void>;
+}
+
+export function RenameDepartmentModal({ department, onClose, onRename }: RenameDepartmentModalProps) {
+    const [name, setName] = useState(department.name);
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const trimmed = name.trim();
+        if (!trimmed || submitting || trimmed === department.name) return;
+        setSubmitting(true);
+        try {
+            await onRename(trimmed);
+            onClose();
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] px-4" onClick={onClose}>
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <Pencil className="w-4 h-4" />
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-900">Đổi tên phòng ban</h3>
+                    </div>
+                    <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
+                    <div>
+                        <label className="text-xs font-semibold text-gray-700 uppercase tracking-wider block mb-1.5">
+                            Tên phòng ban mới <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            autoFocus
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Nhập tên phòng ban mới..."
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                            required
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition"
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={!name.trim() || submitting || name.trim() === department.name}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition cursor-pointer"
+                        >
+                            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                            Lưu thay đổi
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+// ── Modal Xác nhận Xóa phòng ban ──
+interface ConfirmDeleteDepartmentModalProps {
+    department: { id: string | number; name: string };
+    onClose: () => void;
+    onConfirm: () => Promise<void>;
+}
+
+export function ConfirmDeleteDepartmentModal({
+    department,
+    onClose,
+    onConfirm,
+}: ConfirmDeleteDepartmentModalProps) {
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleConfirm = async () => {
+        setSubmitting(true);
+        try {
+            await onConfirm();
+            onClose();
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] px-4" onClick={onClose}>
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 border border-gray-100 flex flex-col items-center text-center" onClick={(e) => e.stopPropagation()}>
+                <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mb-4">
+                    <AlertTriangle className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-gray-900 mb-1.5">Xóa phòng ban</h3>
+                <p className="text-xs text-gray-500 mb-6 leading-relaxed">
+                    Bạn có chắc chắn muốn xóa phòng ban <span className="font-semibold text-gray-800">{department.name}</span>?
+                    <br />
+                    Các nhân viên trong phòng ban này sẽ được chuyển về trạng thái không thuộc phòng ban nào.
+                </p>
+                <div className="flex items-center gap-2.5 w-full">
+                    <button
+                        onClick={onClose}
+                        disabled={submitting}
+                        className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-50 cursor-pointer"
+                    >
+                        Hủy
+                    </button>
+                    <button
+                        onClick={handleConfirm}
+                        disabled={submitting}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition shadow-sm disabled:opacity-50 cursor-pointer"
                     >
                         {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                         {submitting ? 'Đang xóa...' : 'Xác nhận xóa'}

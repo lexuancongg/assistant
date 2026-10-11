@@ -22,8 +22,6 @@ class ExtractService:
         # 1. Đọc file (PDF / DOCX / IMAGE / EMAIL)
         text = self.document_reader.read(request.filePath)
 
-        print(text)
-    
         # 2. Validate text
         if not text or not text.strip():
             raise Exception("Cannot extract text from document")
@@ -38,10 +36,10 @@ class ExtractService:
         vectors = self.embedding_service.embed(chunks)
 
 
-        point_ids = self.qdrant_service.save(
-            document_id=request.documentId,
+        point_ids = self.qdrant_service.upsert(
             chunks=chunks,
-            vectors=vectors
+            vectors=vectors,
+            document_id=request.documentId
         )
         chunk_infos = [
             ChunkInfo(chunkIndex=i, content=chunks[i], embeddingId=point_ids[i])
@@ -56,8 +54,6 @@ class ExtractService:
             chunks=chunk_infos,
             confidence =  ai_result.confidence,
         )
-
-        print(response.model_dump_json(indent=2))
         # 7. Return response
         return ExtractResponse(
             documentType=ai_result.documentType.upper(),

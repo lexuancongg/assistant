@@ -31,7 +31,7 @@ public class UserController {
 
     @PatchMapping("/{id}/status")
     public ResponseEntity<UserResponse> updateStatus(
-            @PathVariable UUID id,
+            @PathVariable Long id,
             @RequestBody Map<String, String> body
     ) {
         String status = body.getOrDefault("status", "ACTIVE");

@@ -29,9 +29,17 @@ public class DepartmentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(departmentManagementService.create(request));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<DepartmentResponse> updateName(
+            @PathVariable Long id,
+            @RequestBody DepartmentCreateRequest request
+    ) {
+        return ResponseEntity.ok(departmentManagementService.updateName(id, request.name()));
+    }
+
     @PostMapping("/{id}/members")
     public ResponseEntity<DepartmentResponse> addMember(
-            @PathVariable UUID id,
+            @PathVariable Long id,
             @RequestBody DepartmentAddMemberRequest request
     ) {
         return ResponseEntity.ok(departmentManagementService.addMember(id, request));
@@ -39,10 +47,16 @@ public class DepartmentController {
 
     @DeleteMapping("/{deptId}/members/{userId}")
     public ResponseEntity<Void> removeMember(
-            @PathVariable UUID deptId,
-            @PathVariable UUID userId
+            @PathVariable Long deptId,
+            @PathVariable Long userId
     ) {
         departmentManagementService.removeMember(deptId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteDepartment(@PathVariable Long id) {
+        departmentManagementService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }

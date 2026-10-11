@@ -1,21 +1,21 @@
 import apiClient from "@/utils/api/apiClientFixed";
 
 export interface AccessRequestCreateDto {
-    folderId?: number;
+    folderId?: number | string;
     folderName?: string;
-    fileId?: string;
+    fileId?: number | string;
     fileName?: string;
     reason: string;
     requestedLevel: 'VIEWER' | 'EDITOR';
 }
 
 export interface AccessRequestDto {
-    id: string;
-    folderId?: number;
+    id: number | string;
+    folderId?: number | string;
     folderName?: string;
-    fileId?: string;
+    fileId?: number | string;
     fileName?: string;
-    requesterId?: string;
+    requesterId?: number | string;
     requesterName: string;
     requesterEmail: string;
     requesterAvatar?: string;
@@ -37,6 +37,22 @@ class AccessRequestService {
         throw new Error("Không thể gửi yêu cầu cấp quyền");
     }
 
+    public async getAllRequests(): Promise<AccessRequestDto[]> {
+        const response = await apiClient.get(this.baseUrl);
+        if (response.ok) {
+            return await response.json();
+        }
+        return [];
+    }
+
+    public async getMyRequests(): Promise<AccessRequestDto[]> {
+        const response = await apiClient.get(`${this.baseUrl}/my`);
+        if (response.ok) {
+            return await response.json();
+        }
+        return [];
+    }
+
     public async getPendingRequests(): Promise<AccessRequestDto[]> {
         const response = await apiClient.get(`${this.baseUrl}/pending`);
         if (response.ok) {
@@ -54,7 +70,7 @@ class AccessRequestService {
         return 0;
     }
 
-    public async approveRequest(id: string): Promise<AccessRequestDto> {
+    public async approveRequest(id: number | string): Promise<AccessRequestDto> {
         const response = await apiClient.put(`${this.baseUrl}/${id}/approve`, {});
         if (response.ok) {
             return await response.json();
@@ -62,7 +78,7 @@ class AccessRequestService {
         throw new Error("Không thể duyệt yêu cầu");
     }
 
-    public async rejectRequest(id: string): Promise<AccessRequestDto> {
+    public async rejectRequest(id: number | string): Promise<AccessRequestDto> {
         const response = await apiClient.put(`${this.baseUrl}/${id}/reject`, {});
         if (response.ok) {
             return await response.json();

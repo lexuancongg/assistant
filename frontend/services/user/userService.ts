@@ -1,12 +1,14 @@
 import apiClient from "@/utils/api/apiClientFixed";
 
 export interface UserDto {
-    id: string;
+    id: number | string;
     name: string;
     email: string;
     role: string;
     status: string;
     avatarInitial: string;
+    departmentName?: string;
+    departmentId?: number | string;
 }
 
 export interface UserCreateDto {
@@ -39,7 +41,7 @@ class UserService {
         throw response;
     }
 
-    public async updateStatus(id: string, status: string): Promise<UserDto> {
+    public async updateStatus(id: number | string, status: string): Promise<UserDto> {
         const response = await apiClient.patch(`${this.baseUrl}/${id}/status`, JSON.stringify({ status }));
         if (response.ok) {
             return await response.json();

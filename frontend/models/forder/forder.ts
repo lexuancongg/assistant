@@ -1,4 +1,4 @@
 export type ForderCreateRequest = {
     name: string;
-    parentId?: string | null;
+    parentId?: number | string | null;
 };

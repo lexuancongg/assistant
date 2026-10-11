@@ -1,14 +1,14 @@
 import apiClient from "@/utils/api/apiClientFixed";
 
 export interface DepartmentMemberDto {
-    userId: string;
+    userId: number | string;
     name: string;
     email: string;
     role: string;
 }
 
 export interface DepartmentDto {
-    id: string;
+    id: number | string;
     name: string;
     members: DepartmentMemberDto[];
 }
@@ -36,7 +36,15 @@ class DepartmentService {
         throw response;
     }
 
-    public async addMember(deptId: string, userId: string): Promise<DepartmentDto> {
+    public async updateDepartmentName(deptId: number | string, name: string): Promise<DepartmentDto> {
+        const response = await apiClient.put(`${this.baseUrl}/${deptId}`, JSON.stringify({ name }));
+        if (response.ok) {
+            return await response.json();
+        }
+        throw response;
+    }
+
+    public async addMember(deptId: number | string, userId: number | string): Promise<DepartmentDto> {
         const response = await apiClient.post(`${this.baseUrl}/${deptId}/members`, JSON.stringify({ userId }));
         if (response.ok) {
             return await response.json();
@@ -44,8 +52,15 @@ class DepartmentService {
         throw response;
     }
 
-    public async removeMember(deptId: string, userId: string): Promise<void> {
+    public async removeMember(deptId: number | string, userId: number | string): Promise<void> {
         const response = await apiClient.delete(`${this.baseUrl}/${deptId}/members/${userId}`);
+        if (!response.ok) {
+            throw response;
+        }
+    }
+
+    public async deleteDepartment(deptId: number | string): Promise<void> {
+        const response = await apiClient.delete(`${this.baseUrl}/${deptId}`);
         if (!response.ok) {
             throw response;
         }

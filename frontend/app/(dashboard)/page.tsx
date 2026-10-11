@@ -1,113 +1,171 @@
-﻿'use client';
-import { useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+'use client';
+
+import React, { useEffect, useState } from 'react';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
-import StatCard from '@/components/dashboard/StatCard';
-import UploadTrendChart from '@/components/dashboard/UploadTrendChart';
-import FileTypeDonut from '@/components/dashboard/FileTypeDonut';
-import RecentActivityTable from '@/components/dashboard/RecentActivityTable';
+import RagHeroBanner from '@/components/dashboard/RagHeroBanner';
+import RagKpiGrid from '@/components/dashboard/RagKpiGrid';
+import RagQueryLatencyChart from '@/components/dashboard/RagQueryLatencyChart';
+import RagFormatDonut from '@/components/dashboard/RagFormatDonut';
+import LiveAuditFeed from '@/components/dashboard/LiveAuditFeed';
+import TopQueriedDocsTable from '@/components/dashboard/TopQueriedDocsTable';
+import { UploadFileModal } from '@/components/files/FileModals';
 import dashboardService, { DashboardStatsDto } from '@/services/dashboard/dashboardService';
-import activityService, { ActivityLogDto } from '@/services/activity/activityService';
-import toast from 'react-hot-toast';
+import authenticationService from '@/services/auth/authenticationService';
 
 export default function DashboardPage() {
     usePageBreadcrumb(['Tổng quan']);
     const [stats, setStats] = useState<DashboardStatsDto | null>(null);
-    const [activities, setActivities] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [showUploadModal, setShowUploadModal] = useState(false);
+    const [currentUser, setCurrentUser] = useState({
+        name: '',
+        role: '',
+        department: '',
+    });
 
-    const loadData = async (isManual = false) => {
-        if (isManual) setRefreshing(true);
-        else setLoading(true);
-
+    const loadData = async (silent = false) => {
+        if (!silent) setLoading(true);
+        else setIsRefreshing(true);
         try {
-            const [statsData, logsData] = await Promise.allSettled([
-                dashboardService.getStats(),
-                activityService.getActivityLogs()
-            ]);
+            // 1. Try local storage user
+            if (typeof window !== 'undefined') {
+                const storedUser = window.localStorage.getItem('user');
+                if (storedUser) {
+                    try {
+                        const parsed = JSON.parse(storedUser);
+                        if (parsed.name) {
+                            const deptName =
+                                typeof parsed.department === 'object' && parsed.department !== null
+                                    ? parsed.department.name || ''
+                                    : parsed.departmentName ||
+                                      (typeof parsed.department === 'string' ? parsed.department : '');
 
-            if (statsData.status === 'fulfilled') {
-                setStats(statsData.value);
+                            setCurrentUser({
+                                name: parsed.name,
+                                role: parsed.role || '',
+                                department: deptName,
+                            });
+                        }
+                    } catch (e) {}
+                }
             }
-            if (logsData.status === 'fulfilled') {
-                const mapped = logsData.value.map(l => ({
-                    id: l.id,
-                    fileName: l.targetName || l.action,
-                    uploader: l.actorName,
-                    status: l.type === 'upload' ? 'done' : 'processing',
-                    time: l.timestamp
-                }));
-                setActivities(mapped);
+
+            // 2. Fetch authenticated profile from server
+            try {
+                const authState = await authenticationService.checkAuthenticated();
+                if (authState && authState.isAuthenticated && authState.authenticatedUser) {
+                    setCurrentUser((prev) => ({
+                        ...prev,
+                        name: authState.authenticatedUser.username || prev.name,
+                    }));
+                }
+            } catch (e) {
+                // auth state check optional fallback
             }
-            if (isManual) toast.success('Đã làm mới dữ liệu tổng quan!');
+
+            // 3. Fetch comprehensive real dashboard statistics
+            const statsData = await dashboardService.getStats();
+            if (statsData) {
+                setStats(statsData);
+            }
         } catch (err) {
-            console.warn('Cannot fetch dashboard data:', err);
+            console.warn('Dashboard data fetch error:', err);
         } finally {
-            setLoading(false);
-            setRefreshing(false);
+            if (!silent) setLoading(false);
+            else setIsRefreshing(false);
         }
     };
 
     useEffect(() => {
         loadData();
+
+        // Realtime polling: tự động đồng bộ thống kê và nhật ký audit mỗi 12 giây
+        const intervalId = setInterval(() => {
+            loadData(true);
+        }, 12000);
+
+        return () => clearInterval(intervalId);
     }, []);
 
-    const statCards = [
-        { label: 'Tổng số file', value: stats ? stats.totalFiles.toString() : '0', delta: '+12% so với tháng trước' },
-        { label: 'Dung lượng đã dùng', value: stats ? stats.totalStorage : '0 B', delta: '+8% so với tháng trước' },
-        { label: 'File đã index AI', value: stats ? stats.aiIndexedFiles.toString() : '0', delta: 'Hoạt động tốt' },
-        { label: 'Người dùng', value: stats ? stats.totalUsers.toString() : '0', delta: '+2 thành viên mới' },
-    ];
-
     return (
-        <div className="px-6 pt-5 pb-6">
-            <div className="flex items-center justify-between">
-                <h1 className="text-xl font-semibold text-gray-900">Tổng quan</h1>
-                <button
-                    onClick={() => loadData(true)}
-                    disabled={refreshing || loading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition disabled:opacity-50"
-                    title="Làm mới dữ liệu"
-                >
-                    <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
-                    Làm mới
-                </button>
-            </div>
+        <div className="flex-1 h-full w-full overflow-y-auto bg-gray-50 dark:bg-slate-950 scrollbar-thin">
+            <div className="p-4 pb-16 space-y-4 max-w-[1600px] mx-auto w-full">
+                {/* 1. Hero Banner */}
+                <RagHeroBanner
+                    userName={currentUser.name}
+                    userRole={currentUser.role}
+                    departmentName={currentUser.department}
+                    totalFiles={stats?.totalFiles ?? 0}
+                    indexedFiles={stats?.aiIndexedFiles ?? 0}
+                    accuracy={stats?.ragAccuracy ?? null}
+                    latencyMs={stats?.averageLatencyMs ?? null}
+                    qdrantStatus={stats?.qdrantStatus ?? 'OPERATIONAL'}
+                    onUploadClick={() => setShowUploadModal(true)}
+                    onReindex={() => loadData(false)}
+                />
 
-            {loading ? (
-                <div className="grid grid-cols-4 gap-4 mt-4 animate-pulse">
-                    {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="h-24 bg-gray-200 rounded-xl"></div>
-                    ))}
-                </div>
-            ) : (
-                <div className="grid grid-cols-4 gap-4 mt-4">
-                    {statCards.map((stat) => (
-                        <StatCard key={stat.label} {...stat} />
-                    ))}
-                </div>
-            )}
+                {/* 2. KPI Metrics Grid */}
+                <RagKpiGrid
+                    totalFiles={stats?.totalFiles ?? 0}
+                    vectorIndexed={stats?.aiIndexedFiles ?? 0}
+                    aiQueriesToday={stats?.aiQueriesToday ?? 0}
+                    queriesGrowthPercent={stats?.queriesGrowthPercent ?? null}
+                    ragAccuracy={stats?.ragAccuracy ?? null}
+                    usedStorageGb={stats?.usedStorageGb ?? 0}
+                    totalStorageGb={stats?.storageQuotaGb ?? 100}
+                    totalFolders={stats?.totalFolders ?? 0}
+                    totalStorageText={stats?.totalStorage ?? '0 B'}
+                    userSatisfactionRate={stats?.userSatisfactionRate ?? null}
+                    totalUsers={stats?.totalUsers ?? 0}
+                    totalDepartments={stats?.totalDepartments ?? 0}
+                    totalAiQueries={stats?.totalAiQueries ?? 0}
+                    totalChunksIndexed={stats?.totalChunksIndexed ?? 0}
+                    monthlyTokensUsed={stats?.monthlyTokensUsed ?? 0}
+                />
 
-            <div className="grid grid-cols-2 gap-4 mt-4">
-                <UploadTrendChart />
-                <FileTypeDonut />
-            </div>
-
-            <div className="mt-4">
-                {loading ? (
-                    <div className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
-                        <div className="h-6 w-40 bg-gray-200 rounded mb-4"></div>
-                        <div className="space-y-3">
-                            <div className="h-10 bg-gray-100 rounded"></div>
-                            <div className="h-10 bg-gray-100 rounded"></div>
-                            <div className="h-10 bg-gray-100 rounded"></div>
-                        </div>
+                {/* 3. Performance Latency Chart & Format Distribution Donut */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="lg:col-span-2">
+                        <RagQueryLatencyChart dailyStats={stats?.dailyStats ?? []} />
                     </div>
-                ) : (
-                    <RecentActivityTable data={activities} />
-                )}
+                    <div className="lg:col-span-1">
+                        <RagFormatDonut
+                            totalFiles={stats?.totalFiles ?? 0}
+                            formatStats={stats?.formatStats ?? []}
+                        />
+                    </div>
+                </div>
+
+                {/* 4. Bottom Grid: Top Queried Docs & Real-Time Audit Feed */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="lg:col-span-2">
+                        <TopQueriedDocsTable
+                            totalFiles={stats?.totalFiles ?? 0}
+                            documents={stats?.topDocuments ?? []}
+                        />
+                    </div>
+                    <div className="lg:col-span-1">
+                        <LiveAuditFeed
+                            activities={stats?.recentActivities ?? []}
+                            onRefresh={() => loadData(true)}
+                            isRefreshing={isRefreshing}
+                        />
+                    </div>
+                </div>
             </div>
+
+            {/* Modal tải lên file từ nút Quick Action */}
+            {showUploadModal && (
+                <UploadFileModal
+                    parentFolderName="Kho tổng quan"
+                    onClose={() => setShowUploadModal(false)}
+                    onUpload={async () => {
+                        setShowUploadModal(false);
+                        await loadData(true);
+                    }}
+                />
+            )}
         </div>
     );
 }

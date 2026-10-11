@@ -1,4 +1,4 @@
-"""
+    """
 Script Benchmark Đánh giá Định lượng Hiệu năng Hệ thống RAG (Security-Aware RAG Evaluation)
 Sử dụng các tiêu chí chuẩn:
 1. Context Recall (Tỷ lệ tìm thấy ngữ cảnh cần thiết)

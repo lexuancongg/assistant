@@ -4,7 +4,7 @@ from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct,
-    Filter, FieldCondition, MatchValue,
+    Filter, FieldCondition, MatchValue, MatchAny,
 )
 
 COLLECTION_NAME = "documents"
@@ -20,21 +20,29 @@ class QdrantService:
         self.client = QdrantClient(
             url=qdrant_url,
             api_key=qdrant_api_key,
+            timeout=60,
+            check_compatibility=False
         )
         self._ensure_collection()
 
     def _ensure_collection(self):
-        existing = [c.name for c in self.client.get_collections().collections]
-        if COLLECTION_NAME not in existing:
-            self.client.create_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
-            )
+        try:
+            existing = [c.name for c in self.client.get_collections().collections]
+            if COLLECTION_NAME not in existing:
+                self.client.create_collection(
+                    collection_name=COLLECTION_NAME,
+                    vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Lưu ý khi kiểm tra collection Qdrant: %s", e)
 
-    def save(self, document_id: Any, chunks: list[str], vectors: list[list[float]]) -> list[str]:
-        if not chunks or not vectors:
-            return []
-
+    def upsert(
+            self,
+            chunks: list[str],
+            vectors: list[list[float]],
+            document_id: Any = None,
+    ) -> list[str]:
         if len(chunks) != len(vectors):
             raise ValueError(
                 f"Số lượng chunks ({len(chunks)}) không khớp số lượng vectors ({len(vectors)})"
@@ -61,17 +69,62 @@ class QdrantService:
 
         return [point.id for point in points]
 
+    def save(
+            self,
+            chunks: list[str] = None,
+            vectors: list[list[float]] = None,
+            document_id: Any = None,
+            **kwargs,
+    ) -> list[str]:
+        actual_chunks = chunks if chunks is not None else kwargs.get("chunks", [])
+        actual_vectors = vectors if vectors is not None else kwargs.get("vectors", [])
+        actual_doc_id = document_id if document_id is not None else kwargs.get("document_id")
+        return self.upsert(chunks=actual_chunks, vectors=actual_vectors, document_id=actual_doc_id)
+
     def search(
             self,
             query_vector: list[float],
             document_id: Any = None,
             top_k: int = 5,
+            allowed_document_ids: list[Any] = None,
+            department_id: Any = None,
+            company_id: Any = None,
     ) -> list[dict]:
-        query_filter = None
+        must_conditions = []
         if document_id is not None and str(document_id) not in ("0", "", "None"):
-            query_filter = Filter(
-                must=[FieldCondition(key="document_id", match=MatchValue(value=str(document_id)))]
-            )
+            doc_str = str(document_id)
+            doc_int = None
+            try:
+                doc_int = int(document_id)
+            except (ValueError, TypeError):
+                pass
+            should_conds = [FieldCondition(key="document_id", match=MatchValue(value=doc_str))]
+            if doc_int is not None:
+                should_conds.append(FieldCondition(key="document_id", match=MatchValue(value=doc_int)))
+            must_conditions.append(Filter(should=should_conds))
+        elif allowed_document_ids is not None:
+            # RBAC Payload Filtering: Chỉ tìm kiếm trong các tài liệu mà người dùng được phép truy cập
+            str_ids = [str(d) for d in allowed_document_ids if str(d) not in ("0", "", "None")]
+            int_ids = []
+            for d in allowed_document_ids:
+                try:
+                    int_ids.append(int(d))
+                except (ValueError, TypeError):
+                    pass
+
+            should_clauses = []
+            if str_ids:
+                should_clauses.append(FieldCondition(key="document_id", match=MatchAny(any=str_ids)))
+            if int_ids:
+                should_clauses.append(FieldCondition(key="document_id", match=MatchAny(any=int_ids)))
+
+            if should_clauses:
+                must_conditions.append(Filter(should=should_clauses))
+            elif len(allowed_document_ids) == 0:
+                # Nếu allowed_document_ids rỗng (không có quyền tài liệu nào), trả về rỗng ngay lập tức
+                return []
+
+        query_filter = Filter(must=must_conditions) if must_conditions else None
 
         results = self.client.query_points(
             collection_name=COLLECTION_NAME,
@@ -92,10 +145,22 @@ class QdrantService:
             for r in results.points
         ]
 
-    def delete_by_document(self, document_id: str):
+    def delete_by_document(self, document_id: Any):
+        doc_str = str(document_id)
+        should_conds = [FieldCondition(key="document_id", match=MatchValue(value=doc_str))]
+        try:
+            doc_int = int(document_id)
+            should_conds.append(FieldCondition(key="document_id", match=MatchValue(value=doc_int)))
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            from qdrant_client.models import FilterSelector
+            selector = FilterSelector(filter=Filter(should=should_conds))
+        except Exception:
+            selector = Filter(should=should_conds)
+
         self.client.delete(
             collection_name=COLLECTION_NAME,
-            points_selector=Filter(
-                must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
-            ),
+            points_selector=selector,
         )

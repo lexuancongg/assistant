@@ -7,11 +7,15 @@ import org.springframework.data.jpa.repository.Query;
 import java.util.List;
 import java.util.UUID;
 
-public interface FileItemRepository extends JpaRepository<FileItem, UUID> {
+public interface FileItemRepository extends JpaRepository<FileItem, Long> {
 
     List<FileItem> findByDeletedAtIsNull();
 
+    List<FileItem> findByDeletedAtIsNullOrderByCreatedAtDesc();
+
     List<FileItem> findByDeletedAtIsNotNull();
+
+    List<FileItem> findByFolderId(Long folderId);
 
     long countByAiIndexedTrue();
 
@@ -30,4 +34,8 @@ public interface FileItemRepository extends JpaRepository<FileItem, UUID> {
 
     /** Đếm file đã AI index */
     long countByCompanyIdAndDeletedAtIsNullAndAiIndexed(Long companyId, boolean aiIndexed);
+
+    /** Lấy toàn bộ danh sách nhãn phân loại (tags) duy nhất từ các file active */
+    @Query("SELECT DISTINCT t.tag FROM FileItem f JOIN f.tags t WHERE f.deletedAt IS NULL AND t.tag IS NOT NULL AND TRIM(t.tag) != '' ORDER BY t.tag ASC")
+    List<String> findDistinctTags();
 }

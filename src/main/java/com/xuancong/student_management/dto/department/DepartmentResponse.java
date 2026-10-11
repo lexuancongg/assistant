@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record DepartmentResponse(
-        UUID id,
+        Long id,
         String name,
         List<DepartmentMemberResponse> members
 ) {}

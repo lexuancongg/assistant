@@ -26,9 +26,9 @@ public class AiService {
 
     @Async
     @Transactional
-    public void processAsync(UUID fileId, String filePath) {
+    public void processAsync(Long fileId, String filePath) {
         try {
-            long docNumericId = fileId.getMostSignificantBits() & Long.MAX_VALUE;
+            long docNumericId = fileId != null ? fileId : 0L;
             if (filePath != null && !filePath.isBlank()) {
                 ExtractRequest extractRequest = ExtractRequest.builder()
                         .documentId(docNumericId)
@@ -59,5 +59,14 @@ public class AiService {
 
     public SearchResponse search(SearchRequest searchRequest) {
         return this.aiServiceClient.search(searchRequest);
+    }
+
+    public void deleteDocument(Long fileId) {
+        if (fileId == null) return;
+        try {
+            this.aiServiceClient.deleteDocument(fileId);
+        } catch (Exception e) {
+            log.warn("Failed to delete vectors for document {}: {}", fileId, e.getMessage());
+        }
     }
 }

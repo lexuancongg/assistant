@@ -2,8 +2,11 @@
 
 import React from "react";
 import { AppProvider } from "@/context/appContext";
+import { ThemeProvider } from "@/context/themeContext";
 import { Toaster } from "react-hot-toast";
 import { useWebSocketNotification } from "@/hooks/useWebSocketNotification";
+import GlobalApiLoading from "@/components/common/GlobalApiLoading";
+import ModernToast from "@/components/common/ModernToast";
 
 function WebSocketListener() {
     useWebSocketNotification();
@@ -12,31 +15,26 @@ function WebSocketListener() {
 
 export default function ClientProviders({ children }: { children: React.ReactNode }) {
     return (
-        <AppProvider>
-            <WebSocketListener />
-            {children}
-            <Toaster
-                position="top-right"
-                toastOptions={{
-                    style: {
-                        borderRadius: "10px",
-                        padding: "12px 14px",
-                        fontSize: "14px",
-                    },
-                    success: {
-                        style: {
-                            background: "#10b981",
-                            color: "#fff",
-                        },
-                    },
-                    error: {
-                        style: {
-                            background: "#ef4444",
-                            color: "#fff",
-                        },
-                    },
-                }}
-            />
-        </AppProvider>
+        <ThemeProvider>
+            <AppProvider>
+                <WebSocketListener />
+                <GlobalApiLoading />
+                {children}
+                <Toaster
+                    position="bottom-left"
+                    gutter={10}
+                    containerStyle={{
+                        bottom: 24,
+                        left: 24,
+                        zIndex: 99999,
+                    }}
+                    toastOptions={{
+                        duration: 4000,
+                    }}
+                >
+                    {(t) => <ModernToast toast={t} />}
+                </Toaster>
+            </AppProvider>
+        </ThemeProvider>
     );
 }

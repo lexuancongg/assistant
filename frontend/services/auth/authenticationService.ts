@@ -19,7 +19,13 @@ class AuthenticationService{
                 if (typeof window !== 'undefined'){
                     if(json.accessToken) window.localStorage.setItem('accessToken', json.accessToken);
                     if(json.refreshToken) window.localStorage.setItem('refreshToken', json.refreshToken);
-                    window.localStorage.setItem('authUsername', json.username ?? '');
+                    window.localStorage.setItem('authUsername', json.name || json.email || json.username || '');
+                    window.localStorage.setItem('user', JSON.stringify({
+                        id: json.userId || json.id,
+                        name: json.name || json.username || 'Admin',
+                        email: json.email || '',
+                        role: json.role ? json.role.replace('ROLE_', '') : 'ADMIN'
+                    }));
                 }
             }catch(e){
                 console.warn('Cannot access localStorage', e);
@@ -62,6 +68,7 @@ class AuthenticationService{
                 window.localStorage.removeItem('accessToken');
                 window.localStorage.removeItem('refreshToken');
                 window.localStorage.removeItem('authUsername');
+                window.localStorage.removeItem('user');
             }
         }catch(e){
             console.warn('Cannot clear localStorage', e);

@@ -7,9 +7,9 @@ import toast from 'react-hot-toast';
 
 interface RequestAccessModalProps {
     isOpen: boolean;
-    folderId?: number;
+    folderId?: number | string;
     folderName?: string;
-    fileId?: string;
+    fileId?: number | string;
     fileName?: string;
     onClose: () => void;
 }
@@ -86,7 +86,7 @@ export default function RequestAccessModal({
                         <div className="flex items-center gap-2 mt-1">
                             {folderId ? (
                                 <>
-                                    <Folder className="w-4 h-4 text-blue-500 shrink-0" />
+                                    <Folder className="w-4 h-4 text-blue-600 fill-blue-500 shrink-0" strokeWidth={1.5} />
                                     <span className="text-xs font-semibold text-gray-800 truncate">
                                         {folderName || `Thư mục #${folderId}`}
                                     </span>

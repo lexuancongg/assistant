@@ -11,8 +11,8 @@ import LoadingOverlay from '@/components/common/LoadingOverlay'
 
 export default function LoginPage() {
 
-    const [username,setUsername] = useState("")
-    const [password,setPassword] = useState("")
+    const [username, setUsername] = useState("admin@rikai.technology")
+    const [password, setPassword] = useState("admin123")
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
     const router = useRouter()
@@ -114,6 +114,26 @@ export default function LoginPage() {
                     </button>
 
                 </form>
+
+                <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                    <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-semibold text-gray-700">Tài khoản dùng thử:</span>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setUsername('admin@rikai.technology');
+                                setPassword('admin123');
+                            }}
+                            className="text-blue-600 hover:text-blue-700 font-medium underline cursor-pointer"
+                        >
+                            Điền tài khoản Admin
+                        </button>
+                    </div>
+                    <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-200/80 space-y-1 text-[11px]">
+                        <p><strong className="text-gray-700">Email:</strong> admin@rikai.technology</p>
+                        <p><strong className="text-gray-700">Mật khẩu:</strong> admin123</p>
+                    </div>
+                </div>
 
             </div>
 

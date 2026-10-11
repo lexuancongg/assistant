@@ -22,8 +22,7 @@ export default function Sidebar() {
     const router = useRouter();
 
     const links = [
-        { href: '/ai', label: 'Tổng quan AI', icon: LayoutDashboard },
-        { href: '/assistant', label: 'Chat với AI', icon: MessageSquare },
+        { href: '/ai', label: 'Hỏi Gemini', icon: Sparkles },
         { href: '/files', label: 'Quản lý file', icon: Folder },
         { href: '/ai/my-documents', label: 'Tài liệu của tôi', icon: Database },
         { href: '/departments', label: 'Phòng ban', icon: Building2 },

@@ -1,9 +1,9 @@
 'use client';
-import { Users, UserPlus, Trash2, ShieldCheck, Mail } from 'lucide-react';
+import { Users, UserPlus, Trash2, ShieldCheck, Mail, Pencil } from 'lucide-react';
 import type { Department, DepartmentRole } from '@/lib/types';
 
 interface MemberItem {
-    userId: string;
+    userId: string | number;
     name: string;
     email: string;
     role: DepartmentRole;
@@ -16,11 +16,13 @@ export default function DepartmentMembersPanel({
     onOpenAddMember,
     onOpenRemoveMember,
     onChangeRole,
+    onRename,
 }: {
     department: Department;
     onOpenAddMember: () => void;
     onOpenRemoveMember: (member: MemberItem) => void;
-    onChangeRole: (userId: string, role: DepartmentRole) => void;
+    onChangeRole: (userId: string | number, role: DepartmentRole) => void;
+    onRename?: (dept: Department) => void;
 }) {
     return (
         <div className="flex-1 bg-white rounded-2xl border border-gray-200 p-6 min-w-0 shadow-sm flex flex-col">
@@ -30,7 +32,18 @@ export default function DepartmentMembersPanel({
                         <Users className="w-5 h-5" strokeWidth={2} />
                     </div>
                     <div>
-                        <h2 className="text-base font-bold text-gray-900">{department.name}</h2>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-base font-bold text-gray-900">{department.name}</h2>
+                            {onRename && (
+                                <button
+                                    onClick={() => onRename(department)}
+                                    className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
+                                    title="Sửa tên phòng ban"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
                         <p className="text-xs text-gray-400 mt-0.5">
                             {department.members.length} thành viên đang hoạt động
                         </p>

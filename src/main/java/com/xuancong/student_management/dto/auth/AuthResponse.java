@@ -3,7 +3,7 @@ package com.xuancong.student_management.dto.auth;
 import java.util.UUID;
 
 public record AuthResponse(
-        UUID id,
+        Long id,
         String name,
         String email,
         String accessToken,

@@ -8,9 +8,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface ChatSessionRepository extends JpaRepository<ChatSession, UUID> {
-    List<ChatSession> findByUser_Id(UUID userId);
-    List<ChatSession> findByUser_IdOrderByCreatedAtDesc(UUID userId);
+public interface ChatSessionRepository extends JpaRepository<ChatSession, Long> {
+    List<ChatSession> findByUser_Id(Long userId);
+    List<ChatSession> findByUser_IdOrderByCreatedAtDesc(Long userId);
     List<ChatSession> findAllByOrderByCreatedAtDesc();
 
     @Query("select count(distinct cs.user.id) from ChatSession cs")

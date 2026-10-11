@@ -4,6 +4,8 @@ import com.xuancong.student_management.dto.auth.*;
 import com.xuancong.student_management.entity.User;
 import com.xuancong.student_management.entity.enums.UserRole;
 import com.xuancong.student_management.entity.enums.UserStatus;
+import com.xuancong.student_management.entity.Company;
+import com.xuancong.student_management.repository.CompanyRepository;
 import com.xuancong.student_management.repository.UserRepository;
 import com.xuancong.student_management.security.CustomUserDetails;
 import com.xuancong.student_management.security.JwtService;
@@ -29,6 +31,7 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final PasswordEncoder passwordEncoder;
     private final UserRepository userRepository;
+    private final CompanyRepository companyRepository;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
 
@@ -48,17 +51,22 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
 
-        // Lấy companyId = 1L mặc định cho MVP (company đầu tiên trong hệ thống)
-        var companyRef = new com.xuancong.student_management.entity.Company();
-        companyRef.setId(1L);
+        // Đảm bảo có Company (nếu DB hoàn toàn trống thì tự tạo Company đầu tiên)
+        Company company = companyRepository.findAll().stream().findFirst().orElseGet(() -> {
+            Company c = new Company();
+            c.setName("Enterprise AI Assistant");
+            return companyRepository.save(c);
+        });
 
+        long totalUsers = userRepository.count();
         User user = new User();
         user.setName(request.name().trim());
         user.setEmail(request.email().trim().toLowerCase());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setRole(UserRole.USER);
+        // Người dùng đầu tiên đăng ký trên DB trống sẽ nhận quyền ADMIN
+        user.setRole(totalUsers == 0 ? UserRole.ADMIN : UserRole.USER);
         user.setStatus(UserStatus.ACTIVE);
-        user.setCompany(companyRef);
+        user.setCompany(company);
 
         user = userRepository.save(user);
 
@@ -150,9 +158,18 @@ public class AuthController {
             return ResponseEntity.ok(new AuthenticationInfo(null, false));
         }
 
-        User user = ((CustomUserDetails) authentication.getPrincipal()).getUser();
+        User principalUser = ((CustomUserDetails) authentication.getPrincipal()).getUser();
+        User user = (principalUser != null && principalUser.getId() != null)
+                ? userRepository.findById(principalUser.getId()).orElse(principalUser)
+                : principalUser;
+
+        String deptName = (user != null && user.getDepartment() != null) ? user.getDepartment().getName() : "";
+        String roleName = (user != null && user.getRole() != null) ? user.getRole().name() : "";
+        String userName = user != null ? user.getName() : "";
+        String userEmail = user != null ? user.getEmail() : "";
+
         return ResponseEntity.ok(new AuthenticationInfo(
-                new UserAuthenticationInfo(user.getName(), user.getEmail()),
+                new UserAuthenticationInfo(userName, userEmail, roleName, deptName),
                 true));
     }
 }

@@ -1,12 +1,12 @@
  export type DepartmentStatus = 'ACTIVE' | 'INACTIVE';
 
 export interface Department {
-  id: number;
+  id: number | string;
   code: string;
   name: string;
   branch: {
     name:string;
-    id:number;
+    id: number | string;
   };
   manager: {
     name: string;
@@ -22,8 +22,8 @@ export interface Department {
  export interface DepartmentCreateRequest {
    code: string;
    name: string;
-   branchId: number;
+   branchId: number | string;
    status: DepartmentStatus;
    description?: string;
-   managerId?: number;
+   managerId?: number | string;
  }

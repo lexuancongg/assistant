@@ -74,7 +74,7 @@ public class DocumentService {
         aiService.processAsync(fileItem.getId(), filePathS3);
 
         return DocumentPreviewResponse.builder()
-                .id(fileItem.getId().getMostSignificantBits() & Long.MAX_VALUE)
+                .id(fileItem.getId())
                 .fileName(fileItem.getName())
                 .documentType(DocumentType.OTHER)
                 .status(DocumentStatus.PROCESSING)

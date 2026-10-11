@@ -11,7 +11,7 @@ export default {
   theme: {
   	extend: {
 		fontFamily: {
-			sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+			sans: ['"Google Sans"', 'Roboto', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Arial', 'sans-serif'],
 		},
 		fontSize: {
 			xs: ['0.75rem', { lineHeight: '1rem' }],

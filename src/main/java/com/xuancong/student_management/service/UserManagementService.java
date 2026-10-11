@@ -52,7 +52,7 @@ public class UserManagementService {
         return toResponse(userRepository.save(user));
     }
 
-    public UserResponse updateStatus(UUID id, String status) {
+    public UserResponse updateStatus(Long id, String status) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         user.setStatus(UserStatus.valueOf(status.toUpperCase()));

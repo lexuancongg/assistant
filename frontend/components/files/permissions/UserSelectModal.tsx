@@ -7,9 +7,9 @@ import { UserDto } from '@/services/user/userService';
 interface UserSelectModalProps {
     isOpen: boolean;
     users: UserDto[];
-    selectedUserIds: string[];
+    selectedUserIds: (string | number)[];
     onClose: () => void;
-    onConfirm: (selectedIds: string[]) => void;
+    onConfirm: (selectedIds: (string | number)[]) => void;
 }
 
 export default function UserSelectModal({
@@ -20,7 +20,7 @@ export default function UserSelectModal({
     onConfirm,
 }: UserSelectModalProps) {
     const [search, setSearch] = useState('');
-    const [tempSelected, setTempSelected] = useState<string[]>(selectedUserIds);
+    const [tempSelected, setTempSelected] = useState<(string | number)[]>(selectedUserIds);
 
     const filtered = useMemo(() => {
         if (!search.trim()) return users;
@@ -34,9 +34,11 @@ export default function UserSelectModal({
 
     if (!isOpen) return null;
 
-    const toggleSelect = (id: string) => {
+    const toggleSelect = (id: string | number) => {
         setTempSelected((prev) =>
-            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+            prev.map(String).includes(String(id))
+                ? prev.filter((item) => String(item) !== String(id))
+                : [...prev, id]
         );
     };
 
@@ -105,7 +107,7 @@ export default function UserSelectModal({
                 <div className="flex-1 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
                     {filtered.length > 0 ? (
                         filtered.map((user) => {
-                            const isChecked = tempSelected.includes(user.id);
+                            const isChecked = tempSelected.map(String).includes(String(user.id));
                             const initial = user.name ? user.name.charAt(0).toUpperCase() : 'U';
                             return (
                                 <div

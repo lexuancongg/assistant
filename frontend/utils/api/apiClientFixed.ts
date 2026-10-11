@@ -100,7 +100,30 @@ async function tryRefreshToken(): Promise<boolean> {
     return refreshInProgress;
 }
 
-const callApi = async (method: string, endPoint: string, data: any = null, contentType: string | null = null, _retry: boolean = false): Promise<Response> => {
+let activeRequestsCount = 0;
+
+function notifyLoadingChange() {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('api_loading_state_change', {
+            detail: {
+                activeCount: activeRequestsCount,
+                isLoading: activeRequestsCount > 0
+            }
+        }));
+    }
+}
+
+// Production In-flight Request Deduplication: Gộp các request GET trùng lặp đang đồng thời diễn ra
+const inFlightGetRequests = new Map<string, Promise<Response>>();
+
+const callApi = async (
+    method: string, 
+    endPoint: string, 
+    data: any = null, 
+    contentType: string | null = null, 
+    _retry: boolean = false,
+    quiet: boolean = false
+): Promise<Response> => {
     const contentTypeDefault: string = 'application/json; charset=UTF-8';
 
     const headers: { [key: string]: string } = {
@@ -113,6 +136,16 @@ const callApi = async (method: string, endPoint: string, data: any = null, conte
         headers['Authorization'] = `Bearer ${token}`;
     }
 
+    const isGet = method.toUpperCase() === 'GET';
+    const cacheKey = `${endPoint}|${token || ''}`;
+
+    // Nếu có request GET cùng endpoint đang in-flight, tái sử dụng Promise thay vì gửi thêm network request
+    if (isGet && !_retry && inFlightGetRequests.has(cacheKey)) {
+        const sharedPromise = inFlightGetRequests.get(cacheKey)!;
+        const sharedResp = await sharedPromise;
+        return sharedResp.clone();
+    }
+
     const requestOptions: RequestOptions = {
         method: method.toUpperCase(),
         headers: headers,
@@ -123,15 +156,59 @@ const callApi = async (method: string, endPoint: string, data: any = null, conte
     if (data) {
         if (data instanceof FormData) {
             delete requestOptions.headers['Content-type'];
+            requestOptions.body = data;
+        } else if (typeof data === 'string') {
+            requestOptions.body = data;
+        } else {
+            requestOptions.body = JSON.stringify(data);
         }
-        requestOptions.body = data;
     }
+
+    // Do not show full-screen overlay for background polling, rename, star, or silent requests
+    const isQuiet = Boolean(
+        quiet ||
+        endPoint.includes('/rename') ||
+        endPoint.includes('/star') ||
+        endPoint.includes('silent=true') ||
+        endPoint.includes('/access-requests/pending') || 
+        endPoint.includes('/access-requests/count') ||
+        endPoint.includes('/auth/me') ||
+        endPoint.includes('/chat-sessions') ||
+        endPoint.includes('/chat')
+    );
+
+    if (!isQuiet && !_retry) {
+        activeRequestsCount++;
+        notifyLoadingChange();
+    }
+
+    const executeNetworkFetch = async (): Promise<Response> => {
+        try {
+            return await fetch(endPoint, requestOptions);
+        } finally {
+            if (isGet) {
+                inFlightGetRequests.delete(cacheKey);
+            }
+        }
+    };
 
     let response: Response;
     try {
-        response = await fetch(endPoint, requestOptions);
+        if (isGet && !_retry) {
+            const pendingPromise = executeNetworkFetch();
+            inFlightGetRequests.set(cacheKey, pendingPromise);
+            const rawResp = await pendingPromise;
+            response = rawResp.clone();
+        } else {
+            response = await fetch(endPoint, requestOptions);
+        }
     } catch (err) {
         throw err;
+    } finally {
+        if (!isQuiet && !_retry) {
+            activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+            notifyLoadingChange();
+        }
     }
 
     // If 401 Unauthorized, attempt refresh once or redirect to login
@@ -139,7 +216,7 @@ const callApi = async (method: string, endPoint: string, data: any = null, conte
         if (!_retry) {
             const refreshed = await tryRefreshToken();
             if (refreshed) {
-                return callApi(method, endPoint, data, contentType, true);
+                return callApi(method, endPoint, data, contentType, true, quiet);
             }
         }
         redirectToLogin();
@@ -149,11 +226,11 @@ const callApi = async (method: string, endPoint: string, data: any = null, conte
 };
 
 const apiClient = {
-    get: (endPoint: string) => callApi('GET', endPoint),
-    post: (endPoint: string, data: any = null, contentType: string | null = null) => callApi('POST', endPoint, data, contentType),
-    put: (endPoint: string, data: any = null, contentType: string | null = null) => callApi('PUT', endPoint, data, contentType),
-    patch: (endPoint: string, data: any = null, contentType: string | null = null) => callApi('PATCH', endPoint, data, contentType),
-    delete: (endPoint: string) => callApi('DELETE', endPoint)
+    get: (endPoint: string, quiet: boolean = false) => callApi('GET', endPoint, null, null, false, quiet),
+    post: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = false) => callApi('POST', endPoint, data, contentType, false, quiet),
+    put: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = false) => callApi('PUT', endPoint, data, contentType, false, quiet),
+    patch: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = false) => callApi('PATCH', endPoint, data, contentType, false, quiet),
+    delete: (endPoint: string, data: any = null, quiet: boolean = false) => callApi('DELETE', endPoint, data, null, false, quiet)
 };
 
 export default apiClient;

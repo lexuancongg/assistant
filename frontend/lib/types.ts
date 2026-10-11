@@ -3,7 +3,7 @@
 export type FileType = 'pdf' | 'xlsx' | 'docx' | 'pptx' | 'txt' | 'image';
 
 export interface FolderNode {
-    id: string;
+    id: number | string;
     name: string;
     children: FolderNode[];
 }
@@ -12,7 +12,7 @@ export interface FolderNode {
 export type DepartmentRole = 'Trưởng phòng' | 'Thành viên';
 
 export type DepartmentMember = {
-    userId: string;
+    userId: number | string;
     name: string;
     email: string;
     role: DepartmentRole;
@@ -21,13 +21,13 @@ export type DepartmentMember = {
 };
 
 export type Department = {
-    id: string;
+    id: number | string;
     name: string;
     members: DepartmentMember[];
 };
 
 export interface FileItem {
-    id: string;
+    id: number | string;
     name: string;
     type: FileType;
     owner: string;
@@ -43,7 +43,7 @@ export type UserRole = 'Admin' | 'Manager' | 'User';
 export type UserStatus = 'active' | 'locked';
 
 export interface UserItem {
-    id: string;
+    id: number | string;
     name: string;
     email: string;
     role: UserRole;
@@ -55,7 +55,7 @@ export interface UserItem {
 export type PermissionLevel = 'Viewer' | 'Editor';
 
 export interface PermissionEntry {
-    id: string;
+    id: number | string;
     subjectType: 'group' | 'user';
     name: string;
     subtitle: string;
@@ -65,7 +65,7 @@ export interface PermissionEntry {
 }
 
 export interface ChatMessage {
-    id: string;
+    id: number | string;
     role: 'user' | 'assistant';
     content: string;
     summaryPoints?: string[];
@@ -74,12 +74,12 @@ export interface ChatMessage {
 }
 
 export interface ChatSession {
-    id: string;
+    id: number | string;
     title: string;
 }
 
 export interface UploadingFile {
-    id: string;
+    id: number | string;
     name: string;
     size: string;
     progress: number;
@@ -87,7 +87,7 @@ export interface UploadingFile {
 }
 
 export interface TrashItem {
-    id: string;
+    id: number | string;
     name: string;
     deletedBy: string;
     deletedAt: string;
@@ -95,10 +95,10 @@ export interface TrashItem {
 }
 
 export interface ActivityLogItem {
-    id: string;
+    id: number | string;
     actorName: string;
     action: string;
     targetName: string;
     timestamp: string;
-    type: 'upload' | 'share' | 'download' | 'delete' | 'update';
+    type: 'upload' | 'share' | 'download' | 'delete' | 'update' | 'ai_query';
 }

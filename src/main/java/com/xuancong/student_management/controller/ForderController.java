@@ -3,6 +3,7 @@ package com.xuancong.student_management.controller;
 import com.xuancong.student_management.dto.forders.FolderCreateRequest;
 import com.xuancong.student_management.dto.forders.FolderPermissionResponse;
 import com.xuancong.student_management.dto.forders.FolderPermissionUpdateRequest;
+import com.xuancong.student_management.dto.forders.FolderRenameRequest;
 import com.xuancong.student_management.dto.forders.FolderResponse;
 import com.xuancong.student_management.entity.Folder;
 import com.xuancong.student_management.entity.User;
@@ -31,11 +32,34 @@ public class ForderController {
         return ResponseEntity.ok(folderService.getTree());
     }
 
+    @GetMapping("/{folderId}")
+    public ResponseEntity<FolderResponse> getFolderById(@PathVariable Long folderId) {
+        Folder folder = folderService.getById(folderId);
+        return ResponseEntity.ok(FolderResponse.from(folder));
+    }
+
     @PostMapping
     public ResponseEntity<FolderResponse> create(@RequestBody FolderCreateRequest request) {
         User currentUser = getCurrentUser();
         Folder folder = folderService.create(request, currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(FolderResponse.from(folder));
+    }
+
+    @PutMapping("/{folderId}/rename")
+    public ResponseEntity<FolderResponse> rename(
+            @PathVariable Long folderId,
+            @RequestBody FolderRenameRequest request
+    ) {
+        User currentUser = getCurrentUser();
+        Folder folder = folderService.rename(folderId, request.name(), currentUser);
+        return ResponseEntity.ok(FolderResponse.from(folder));
+    }
+
+    @DeleteMapping("/{folderId}")
+    public ResponseEntity<Void> delete(@PathVariable Long folderId) {
+        User currentUser = getCurrentUser();
+        folderService.delete(folderId, currentUser);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{folderId}/permissions")

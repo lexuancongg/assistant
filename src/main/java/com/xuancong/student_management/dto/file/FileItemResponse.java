@@ -1,9 +1,10 @@
 package com.xuancong.student_management.dto.file;
 
+import java.util.List;
 import java.util.UUID;
 
 public record FileItemResponse(
-        UUID id,
+        Long id,
         String name,
         String fileType,
         String owner,           // tên phòng ban chủ sở hữu
@@ -11,5 +12,11 @@ public record FileItemResponse(
         String uploadedByEmail,
         String updatedAt,       // formatted string
         String size,            // formatted string, e.g. "2.4 MB"
-        Long folderId
+        Long folderId,
+        String folderName,
+        Boolean aiIndexed,
+        String storagePath,
+        String visibility,
+        List<String> tags,
+        String thumbnailPath
 ) {}

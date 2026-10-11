@@ -6,16 +6,16 @@ import SockJS from 'sockjs-client';
 import toast from 'react-hot-toast';
 
 export interface WsNotification {
-    id: string;
+    id: number | string;
     title: string;
     message: string;
     type: string;
-    fileId?: string;
+    fileId?: number | string;
     fileName?: string;
     fileType?: string;
-    folderId?: number;
+    folderId?: number | string;
     folderName?: string;
-    uploaderId?: string;
+    uploaderId?: number | string;
     uploaderName?: string;
     uploaderAvatar?: string;
     timestamp?: string;
@@ -121,47 +121,47 @@ export function useWebSocketNotification() {
                 (t) => (
                     <div
                         className={`${
-                            t.visible ? 'animate-enter' : 'animate-leave'
-                        } max-w-md w-full bg-white shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black/5 p-4 border border-blue-100`}
+                            t.visible ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-2 opacity-0 scale-95 pointer-events-none'
+                        } max-w-md w-full bg-white/95 dark:bg-[#18181b]/95 backdrop-blur-xl shadow-[0_12px_36px_-6px_rgba(0,0,0,0.12),0_4px_12px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)] rounded-2xl pointer-events-auto flex p-4 border border-blue-200/80 dark:border-blue-900/60 border-l-4 border-l-blue-500 transition-all duration-300 ease-out`}
                     >
                         <div className="flex-1 w-0">
                             <div className="flex items-start gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">
+                                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 border border-blue-500/20 font-bold text-sm flex items-center justify-center shrink-0">
                                     {notif.uploaderAvatar || 'U'}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5">
-                                        <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+                                        <p className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
                                             {notif.title || 'Thông báo mới'}
                                         </p>
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
                                     </div>
-                                    <p className="text-xs font-semibold text-gray-900 mt-0.5 truncate">
+                                    <p className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mt-0.5 truncate">
                                         {notif.fileName || 'Tài liệu mới'}
                                     </p>
-                                    <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">
+                                    <p className="text-[11.5px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-2">
                                         {notif.message}
                                     </p>
                                 </div>
                             </div>
                         </div>
-                        <div className="flex flex-col justify-between pl-3 border-l border-gray-100 ml-2">
+                        <div className="flex flex-col justify-between pl-3 border-l border-neutral-100 dark:border-neutral-800 ml-3 shrink-0">
                             <button
                                 onClick={() => {
                                     toast.dismiss(t.id);
                                     if (notif.fileId) {
-                                        window.location.href = `/files/${notif.fileId}`;
+                                        window.location.href = `/files`;
                                     } else {
                                         window.location.href = `/files`;
                                     }
                                 }}
-                                className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition"
                             >
                                 Xem ngay
                             </button>
                             <button
                                 onClick={() => toast.dismiss(t.id)}
-                                className="text-[11px] text-gray-400 hover:text-gray-600 transition"
+                                className="text-[11px] text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 transition text-right"
                             >
                                 Đóng
                             </button>

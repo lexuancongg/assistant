@@ -10,19 +10,19 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class NotificationMessage {
-    private String id;
+    private Long id;
     private String title;
     private String message;
     private String type; // FILE_UPLOAD, PERMISSION_GRANTED, ACCESS_REQUEST
-    private String fileId;
+    private Long fileId;
     private String fileName;
     private String fileType;
     private Long folderId;
     private String folderName;
-    private String uploaderId;
+    private Long uploaderId;
     private String uploaderName;
     private String uploaderAvatar;
     private String targetType; // USER, DEPARTMENT, COMPANY
-    private String targetId;
+    private Long targetId;
     private String timestamp;
 }

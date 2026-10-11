@@ -9,8 +9,16 @@ import java.util.List;
 import java.util.UUID;
 
 @Repository
-public interface AccessRequestRepository extends JpaRepository<AccessRequest, UUID> {
+public interface AccessRequestRepository extends JpaRepository<AccessRequest, Long> {
     List<AccessRequest> findByStatusOrderByCreatedAtDesc(AccessRequestStatus status);
-    List<AccessRequest> findByRequesterIdOrderByCreatedAtDesc(UUID requesterId);
+    List<AccessRequest> findByRequesterIdOrderByCreatedAtDesc(Long requesterId);
     long countByStatus(AccessRequestStatus status);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query("DELETE FROM AccessRequest a WHERE a.fileId = :fileId")
+    void deleteByFileId(@org.springframework.data.repository.query.Param("fileId") Long fileId);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query("DELETE FROM AccessRequest a WHERE a.fileId IS NOT NULL AND a.fileId NOT IN (SELECT f.id FROM FileItem f)")
+    void cleanOrphanedFileRequests();
 }

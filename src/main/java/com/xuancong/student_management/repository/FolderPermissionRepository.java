@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Repository
-public interface FolderPermissionRepository extends JpaRepository<FolderPermission, UUID> {
+public interface FolderPermissionRepository extends JpaRepository<FolderPermission, Long> {
     List<FolderPermission> findByFolderId(Long folderId);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)

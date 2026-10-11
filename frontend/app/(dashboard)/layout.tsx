@@ -4,10 +4,11 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/layout/Sidebar';
 import Topbar from '@/components/layout/Topbar';
 import { BreadcrumbProvider, useBreadcrumb } from '@/lib/breadcrumb-context';
+import { SidebarProvider, useSidebar } from '@/lib/sidebar-context';
 import LoadingOverlay from '@/components/common/LoadingOverlay';
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
-    const [isOpen, setIsOpen] = useState(true);
+    const { isOpen, setIsOpen } = useSidebar();
     const { breadcrumb } = useBreadcrumb();
     const router = useRouter();
     const [authChecked, setAuthChecked] = useState(false);
@@ -22,21 +23,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     }, [router]);
 
     if (!authChecked) {
-        return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <LoadingOverlay isLoading={true} text="Đang kiểm tra đăng nhập..." />
-            </div>
-        );
+        return <div className="min-h-screen bg-gray-50 dark:bg-slate-950" />;
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="h-screen w-screen flex overflow-hidden bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100">
             <Sidebar isOpen={isOpen} setIsOpen={setIsOpen} />
             <div
-                className={`transition-all duration-300 ease-in-out ${isOpen ? 'pl-56' : 'pl-16'}`}
+                className={`flex-1 flex flex-col min-w-0 h-screen transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'pl-64' : 'pl-16'}`}
             >
                 <Topbar breadcrumb={breadcrumb} />
-                <main>{children}</main>
+                <main className="flex-1 flex flex-col min-w-0 min-h-0 h-[calc(100vh-52px)] overflow-hidden">{children}</main>
             </div>
         </div>
     );
@@ -45,7 +42,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     return (
         <BreadcrumbProvider>
-            <DashboardShell>{children}</DashboardShell>
+            <SidebarProvider>
+                <DashboardShell>{children}</DashboardShell>
+            </SidebarProvider>
         </BreadcrumbProvider>
     );
 }

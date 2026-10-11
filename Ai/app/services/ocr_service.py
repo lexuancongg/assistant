@@ -1,4 +1,4 @@
-import easyocr
+import logging
 import fitz
 import requests
 from PIL import Image
@@ -7,14 +7,36 @@ from urllib.parse import urlparse
 import os
 from io import BytesIO
 
+logger = logging.getLogger(__name__)
+
+try:
+    import easyocr
+    _EASYOCR_AVAILABLE = True
+except Exception as e:
+    logger.warning("easyocr không thể khởi tạo (NumPy compatibility): %s", e)
+    easyocr = None
+    _EASYOCR_AVAILABLE = False
+
+
 class OCRService:
 
     def __init__(self):
-        self.reader = easyocr.Reader(['en', 'vi'])
+        self.reader = None
+        if _EASYOCR_AVAILABLE and easyocr is not None:
+            try:
+                self.reader = easyocr.Reader(['en', 'vi'])
+            except Exception as e:
+                logger.warning("Không thể tạo EasyOCR Reader: %s", e)
 
     def extract_text_from_image(self, image):
-        results = self.reader.readtext(image)
-        return " ".join([text for (_, text, _) in results])
+        if not self.reader:
+            return ""
+        try:
+            results = self.reader.readtext(image)
+            return " ".join([text for (_, text, _) in results])
+        except Exception as e:
+            logger.warning("EasyOCR readtext lỗi: %s", e)
+            return ""
 
     def extract_text_from_bytes(self, image_bytes: bytes) -> str:
         try:

@@ -26,8 +26,8 @@ import java.util.UUID;
 public class FilePermission {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "file_id", nullable = false)
@@ -38,7 +38,7 @@ public class FilePermission {
     private PermissionSubjectType subjectType;
 
     @Column(name = "subject_id", nullable = false)
-    private UUID subjectId;
+    private Long subjectId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

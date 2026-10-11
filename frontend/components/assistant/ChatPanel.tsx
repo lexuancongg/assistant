@@ -1,14 +1,145 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Send, FileText, Copy, ThumbsUp, Sparkles, Bot, User, Check, RefreshCw, Download, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
-import chatService, { ChatMessageDto } from '@/services/chat/chatService';
+import {
+    Send,
+    FileText,
+    Copy,
+    ThumbsUp,
+    ThumbsDown,
+    Sparkles,
+    Bot,
+    User,
+    Check,
+    RefreshCw,
+    Mic,
+    MicOff,
+    Volume2,
+    VolumeX,
+    Workflow,
+    ShieldCheck,
+    ChevronDown,
+    ChevronUp,
+    CheckCircle2,
+    Layers,
+    Cpu,
+    Presentation,
+    X
+} from 'lucide-react';
+import chatService, { ChatMessageDto, AgentTraceStepDto, FeedbackRating, FeedbackReason } from '@/services/chat/chatService';
+import presentationService from '@/services/presentation/presentationService';
+import { exportToPowerPoint } from '@/utils/pptxExport';
 import toast from 'react-hot-toast';
 
 interface ChatMessageItem {
-    id: string;
+    id: string | number;
     role: 'user' | 'assistant';
     content: string;
+    messageId?: string | number;
     sourceFile?: string;
+    reasoningTrace?: AgentTraceStepDto[];
+    groundednessScore?: number;
+    intent?: string;
+    mode?: string;
+}
+
+function AgentReasoningTraceView({
+    trace,
+    groundednessScore,
+    intent,
+    mode
+}: {
+    trace?: AgentTraceStepDto[];
+    groundednessScore?: number;
+    intent?: string;
+    mode?: string;
+}) {
+    const [expanded, setExpanded] = useState(false);
+
+    if (!trace || trace.length === 0) {
+        if (groundednessScore !== undefined) {
+            return (
+                <div className="mt-2.5 flex items-center gap-2 text-xs">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium text-[11px]">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        Groundedness: {Math.round(groundednessScore * 100)}% (Xác thực dữ liệu gốc)
+                    </span>
+                </div>
+            );
+        }
+        return null;
+    }
+
+    const stepIcons: Record<string, string> = {
+        'Router': '🧭',
+        'Security Retrieval': '🛡️',
+        'Hybrid Rerank': '⚡',
+        'Fact-Checking Guardrail': '✅',
+    };
+
+    return (
+        <div className="mt-3 rounded-xl border border-indigo-100 bg-linear-to-b from-indigo-50/60 to-white p-2.5 text-xs">
+            <div
+                className="flex items-center justify-between cursor-pointer select-none"
+                onClick={() => setExpanded(!expanded)}
+            >
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-600 text-white font-semibold text-[10px] shadow-xs">
+                        <Workflow className="w-3 h-3" />
+                        Multi-Agent Workflow
+                    </span>
+                    {intent && (
+                        <span className="px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-indigo-700 font-medium text-[10px]">
+                            Ý định: {intent}
+                        </span>
+                    )}
+                    {groundednessScore !== undefined && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100/70 border border-emerald-200 text-emerald-800 font-semibold text-[10px]">
+                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                            Độ tin cậy: {Math.round(groundednessScore * 100)}%
+                        </span>
+                    )}
+                </div>
+                <button
+                    type="button"
+                    className="text-indigo-600 hover:text-indigo-800 p-1 flex items-center gap-1 text-[11px] font-medium"
+                >
+                    <span>{expanded ? 'Thu gọn trace' : 'Xem luồng Agent'}</span>
+                    {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+            </div>
+
+            {expanded && (
+                <div className="mt-2.5 pt-2 border-t border-indigo-100 space-y-1.5">
+                    {trace.map((step, idx) => (
+                        <div
+                            key={idx}
+                            className="p-2 rounded-lg bg-white border border-indigo-50 shadow-2xs flex items-start gap-2.5 text-[11px]"
+                        >
+                            <span className="text-sm shrink-0 mt-0.5">
+                                {stepIcons[step.step] || '🤖'}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold text-gray-900">
+                                        Agent {idx + 1}: {step.step}
+                                    </span>
+                                    {step.durationMs !== undefined && (
+                                        <span className="text-[10px] text-gray-400 font-mono">
+                                            {step.durationMs}ms
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-gray-600 mt-0.5 font-medium">{step.action}</p>
+                                <p className="text-gray-500 text-[10px] mt-0.5 break-words font-mono bg-slate-50 p-1.5 rounded">
+                                    {step.details}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 }
 
 function parseInlineFormatting(text: string) {
@@ -129,49 +260,33 @@ function FormattedContent({ content }: { content: string }) {
     return <div className="space-y-1 text-sm">{elements}</div>;
 }
 
-const PERSONA_PROMPTS: Record<string, string[]> = {
-    'Trợ lý tổng hợp doanh nghiệp': [
-        '📁 Đang có những file nào trong hệ thống?',
-        '📊 Tóm tắt các tài liệu tải lên gần đây',
-        '🔍 Tra cứu quy trình đề xuất & phê duyệt',
-    ],
-    'Trợ lý pháp lý': [
-        '⚖️ Rà soát điều khoản rủi ro trong hợp đồng',
-        '🛡️ Quy định bảo mật thông tin và bồi thường',
-        '⏱️ Kiểm tra thời hạn hiệu lực hợp đồng',
-    ],
-    'Trợ lý kỹ thuật': [
-        '⚙️ Tổng hợp tài liệu kiến trúc kỹ thuật',
-        '🔒 Tiêu chuẩn bảo mật và phân quyền API',
-        '📝 Hướng dẫn triển khai và vận hành hệ thống',
-    ],
-    'Trợ lý sales': [
-        '💼 Chính sách chiết khấu và báo giá',
-        '🤝 Quy trình ký kết hợp đồng khách hàng',
-        '📈 Quyền lợi và nghĩa vụ của đối tác',
-    ],
-    'Trợ lý hỗ trợ khách hàng': [
-        '📋 Hướng dẫn xử lý khiếu nại khách hàng',
-        '⏰ Thời gian phản hồi cam kết (SLA)',
-        '📞 Danh bạ liên hệ các bộ phận chuyên trách',
-    ],
-};
+const QUICK_PROMPTS: string[] = [
+    '📁 Đang có những file nào trong hệ thống?',
+    '📊 Tóm tắt các tài liệu tải lên gần đây',
+    '🔍 Tra cứu quy trình đề xuất & phê duyệt',
+    '⚖️ Rà soát điều khoản rủi ro trong hợp đồng',
+    '🔒 Tiêu chuẩn bảo mật và phân quyền API',
+];
 
 interface ChatPanelProps {
-    sessionId: string | null;
-    personas?: string[];
-    onSessionCreated?: (newSessionId: string) => void;
+    sessionId: string | number | null;
+    onSessionCreated?: (newSessionId: string | number) => void;
 }
 
-export default function ChatPanel({ sessionId, personas = [], onSessionCreated }: ChatPanelProps) {
+export default function ChatPanel({ sessionId, onSessionCreated }: ChatPanelProps) {
     const [input, setInput] = useState('');
-    const [selectedPersona, setSelectedPersona] = useState<string>('Trợ lý tổng hợp doanh nghiệp');
+    const [executionMode, setExecutionMode] = useState<'AGENTIC_WORKFLOW' | 'STANDARD_RAG'>('AGENTIC_WORKFLOW');
+    const [modelProvider, setModelProvider] = useState<'gemini' | 'deepseek'>('gemini');
     const [messages, setMessages] = useState<ChatMessageItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [loadingHistory, setLoadingHistory] = useState(false);
-    const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [copiedId, setCopiedId] = useState<string | number | null>(null);
     const [isListening, setIsListening] = useState(false);
-    const [speakingId, setSpeakingId] = useState<string | null>(null);
+    const [speakingId, setSpeakingId] = useState<string | number | null>(null);
+    const [feedbackMap, setFeedbackMap] = useState<Record<string | number, FeedbackRating>>({});
+    const [showFeedbackForm, setShowFeedbackForm] = useState<string | number | null>(null);
+    const [dislikeReason, setDislikeReason] = useState<FeedbackReason>('INACCURATE');
+    const [dislikeComment, setDislikeComment] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const recognitionRef = useRef<any>(null);
 
@@ -235,7 +350,7 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
         }
     };
 
-    const handleSpeak = (text: string, msgId: string) => {
+    const handleSpeak = (text: string, msgId: string | number) => {
         if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
             toast.error('Trình duyệt không hỗ trợ phát âm thanh.');
             return;
@@ -271,7 +386,7 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
                 {
                     id: 'init-welcome',
                     role: 'assistant',
-                    content: 'Xin chào! Tôi là Trợ lý AI của bạn. Hãy chọn vai trò và đặt câu hỏi để tôi có thể hỗ trợ bạn tra cứu tài liệu doanh nghiệp tốt nhất.'
+                    content: 'Xin chào! Tôi là Trợ lý AI của bạn. Hãy đặt câu hỏi để tôi có thể hỗ trợ bạn tra cứu tài liệu doanh nghiệp tốt nhất.'
                 }
             ]);
             return;
@@ -281,12 +396,25 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
         chatService.getChatSession(sessionId)
             .then(data => {
                 if (data && data.messages && data.messages.length > 0) {
-                    const mapped: ChatMessageItem[] = data.messages.map((m, idx) => ({
-                        id: `msg-${idx}-${Date.now()}`,
-                        role: m.role.toLowerCase() === 'assistant' ? 'assistant' : 'user',
-                        content: m.content
-                    }));
+                    const initialFeedback: Record<string | number, FeedbackRating> = {};
+                    const mapped: ChatMessageItem[] = data.messages.map((m, idx) => {
+                        const mId = m.messageId || m.id;
+                        const itemKey = mId ? `msg-${mId}` : `msg-${idx}-${Date.now()}`;
+                        if (m.feedbackRating) {
+                            if (mId) initialFeedback[mId] = m.feedbackRating as FeedbackRating;
+                            initialFeedback[itemKey] = m.feedbackRating as FeedbackRating;
+                        }
+                        return {
+                            id: itemKey,
+                            role: m.role.toLowerCase() === 'assistant' ? 'assistant' : 'user',
+                            content: m.content,
+                            messageId: mId
+                        };
+                    });
                     setMessages(mapped);
+                    if (Object.keys(initialFeedback).length > 0) {
+                        setFeedbackMap(prev => ({ ...prev, ...initialFeedback }));
+                    }
                 } else {
                     setMessages([
                         {
@@ -316,11 +444,60 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
         scrollToBottom();
     }, [messages, loading]);
 
-    const handleCopy = (text: string, id: string) => {
+    const handleCopy = (text: string, id: string | number) => {
         navigator.clipboard.writeText(text);
         setCopiedId(id);
         toast.success('Đã sao chép vào clipboard!');
         setTimeout(() => setCopiedId(null), 2000);
+    };
+
+    const handleFeedback = async (msg: ChatMessageItem, rating: FeedbackRating) => {
+        const targetId = msg.messageId ?? (typeof msg.id === 'number' ? msg.id : null);
+        if (!targetId) {
+            toast.error('Không tìm thấy ID tin nhắn để đánh giá.');
+            return;
+        }
+        if (feedbackMap[msg.id] || feedbackMap[targetId]) return; // đã vote rồi
+
+        if (rating === 'LIKE') {
+            try {
+                await chatService.submitFeedback(targetId, { rating: 'LIKE' });
+                setFeedbackMap(prev => ({
+                    ...prev,
+                    [msg.id]: 'LIKE' as const,
+                    [targetId]: 'LIKE' as const
+                }));
+                toast.success('Cảm ơn phản hồi tích cực của bạn! 👍', { duration: 2500 });
+            } catch {
+                toast.error('Không thể gửi đánh giá. Vui lòng thử lại.');
+            }
+        } else {
+            // Mở form chọn lý do
+            setShowFeedbackForm(msg.id);
+            setDislikeReason('INACCURATE');
+            setDislikeComment('');
+        }
+    };
+
+    const handleSubmitDislike = async (msg: ChatMessageItem) => {
+        const targetId = msg.messageId ?? (typeof msg.id === 'number' ? msg.id : null);
+        if (!targetId) return;
+        try {
+            await chatService.submitFeedback(targetId, {
+                rating: 'DISLIKE',
+                reason: dislikeReason,
+                comment: dislikeComment || undefined,
+            });
+            setFeedbackMap(prev => ({
+                ...prev,
+                [msg.id]: 'DISLIKE' as const,
+                [targetId]: 'DISLIKE' as const
+            }));
+            setShowFeedbackForm(null);
+            toast.success('Cảm ơn! Phản hồi của bạn giúp AI cải thiện hơn.', { duration: 2500 });
+        } catch {
+            toast.error('Không thể gửi đánh giá. Vui lòng thử lại.');
+        }
     };
 
     const handleSend = async () => {
@@ -340,14 +517,21 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
             const answer = await chatService.ask({
                 sessionId: sessionId || undefined,
                 question: userPrompt,
-                persona: selectedPersona
+                mode: executionMode,
+                modelProvider: modelProvider
             });
 
+            const rawMsgId = answer.messageId;
             const assistantMsg: ChatMessageItem = {
-                id: 'a-' + Date.now(),
+                id: rawMsgId ? `msg-${rawMsgId}` : 'a-' + Date.now(),
                 role: 'assistant',
+                messageId: rawMsgId,
                 content: answer.answer || 'Không tìm thấy thông tin phù hợp trong tài liệu doanh nghiệp.',
-                sourceFile: answer.sources && answer.sources.length > 0 ? 'Tài liệu trích dẫn' : undefined
+                sourceFile: answer.sources && answer.sources.length > 0 ? 'Tài liệu trích dẫn' : undefined,
+                reasoningTrace: answer.reasoningTrace,
+                groundednessScore: answer.groundednessScore,
+                intent: answer.intent,
+                mode: answer.mode
             };
             setMessages(prev => [...prev, assistantMsg]);
 
@@ -374,35 +558,49 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
         setInput(cleanPrompt);
     };
 
-    const handleExportChat = () => {
+    const [isGeneratingPptx, setIsGeneratingPptx] = useState<string | number | null>(null);
+
+    const handleExportSlidePptx = async (content: string, customTopic?: string) => {
+        const idKey = customTopic || content.slice(0, 30);
+        setIsGeneratingPptx(idKey);
+        const tId = toast.loading('Đang khởi tạo Slide PowerPoint bằng Gemini AI (TypeSafe)...');
+        try {
+            const firstLine = content.split('\n')[0].replace(/^[#*\-•\s]+/, '').trim();
+            const topic = customTopic || (firstLine.length > 10 ? firstLine.slice(0, 90) : 'Báo Cáo Phân Tích Dữ Liệu Doanh Nghiệp');
+
+            const presentationData = await presentationService.generateSlides({
+                topic,
+                context: content,
+                slideCount: 5,
+                targetAudience: 'Ban Giám Đốc & Khách Hàng Doanh Nghiệp',
+            });
+
+            const fileName = await exportToPowerPoint(presentationData);
+            toast.success(`Đã xuất và tải xuống "${fileName}" thành công!`, { id: tId });
+        } catch (err: any) {
+            console.error('Export PPTX error:', err);
+            toast.error('Lỗi khi xuất slide: ' + (err?.message || err), { id: tId });
+        } finally {
+            setIsGeneratingPptx(null);
+        }
+    };
+
+    const handleExportFullChatPptx = async () => {
         if (messages.length <= 1) {
-            toast.error('Chưa có nội dung hội thoại để xuất');
+            toast.error('Chưa có nội dung hội thoại để tạo slide');
             return;
         }
 
-        const lines = [
-            `# BÁO CÁO HỘI THOẠI TRỢ LÝ AI DOANH NGHIỆP`,
-            `*Vai trò trợ lý:* ${selectedPersona}`,
-            `*Thời gian xuất:* ${new Date().toLocaleString('vi-VN')}`,
-            `\n---\n`,
-        ];
+        const assistantMessages = messages.filter(m => m.role === 'assistant').map(m => m.content).join('\n\n---\n\n');
+        const userQuestions = messages.filter(m => m.role === 'user').map(m => m.content).join('; ');
 
-        messages.forEach((msg) => {
-            const roleName = msg.role === 'user' ? '👤 Người dùng' : '🤖 Trợ lý AI';
-            lines.push(`### ${roleName}:\n${msg.content}\n`);
-        });
-
-        const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `AI_Chat_Export_${Date.now()}.md`;
-        a.click();
-        URL.revokeObjectURL(url);
-        toast.success('Đã xuất báo cáo hội thoại thành công!');
+        await handleExportSlidePptx(
+            assistantMessages || messages.map(m => `${m.role}: ${m.content}`).join('\n'),
+            `Báo Cáo Thuyết Trình: ${userQuestions.slice(0, 70) || 'Hội Thoại Doanh Nghiệp'}`
+        );
     };
 
-    const quickPrompts = PERSONA_PROMPTS[selectedPersona] || PERSONA_PROMPTS['Trợ lý tổng hợp doanh nghiệp'];
+    const quickPrompts = QUICK_PROMPTS;
 
     return (
         <div className="flex-1 bg-white rounded-2xl border border-gray-200 flex flex-col min-w-0 shadow-sm overflow-hidden">
@@ -424,38 +622,63 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    {/* Export Chat Button */}
-                    <button
-                        onClick={handleExportChat}
-                        title="Xuất nội dung hội thoại"
-                        className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition shadow-xs"
-                    >
-                        <Download className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Xuất hội thoại</span>
-                    </button>
-
-                    {/* Persona selector */}
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-gray-500 hidden sm:inline">Vai trò:</span>
-                        <select
-                            value={selectedPersona}
-                            onChange={(e) => setSelectedPersona(e.target.value)}
-                            className="text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-gray-700 outline-none focus:ring-2 focus:ring-blue-100 transition"
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {/* Mode Selector Toggle */}
+                    <div className="flex items-center bg-gray-100 p-0.5 rounded-xl border border-gray-200">
+                        <button
+                            type="button"
+                            onClick={() => setExecutionMode('AGENTIC_WORKFLOW')}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
+                                executionMode === 'AGENTIC_WORKFLOW'
+                                    ? 'bg-white text-indigo-600 shadow-xs'
+                                    : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                            title="Kích hoạt luồng Multi-Agent: Router -> RBAC Retrieval -> Hybrid Rerank -> Fact-Checker"
                         >
-                            {personas.length > 0 ? (
-                                personas.map(p => <option key={p} value={p}>{p}</option>)
-                            ) : (
-                                <>
-                                    <option value="Trợ lý tổng hợp doanh nghiệp">Trợ lý tổng hợp doanh nghiệp</option>
-                                    <option value="Trợ lý pháp lý">Trợ lý pháp lý</option>
-                                    <option value="Trợ lý kỹ thuật">Trợ lý kỹ thuật</option>
-                                    <option value="Trợ lý sales">Trợ lý sales</option>
-                                    <option value="Trợ lý hỗ trợ khách hàng">Trợ lý hỗ trợ khách hàng</option>
-                                </>
-                            )}
-                        </select>
+                            <Workflow className="w-3.5 h-3.5 text-indigo-500" />
+                            <span className="hidden sm:inline">Multi-Agent</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setExecutionMode('STANDARD_RAG')}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
+                                executionMode === 'STANDARD_RAG'
+                                    ? 'bg-white text-blue-600 shadow-xs'
+                                    : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                            title="Truy xuất RAG Tiêu chuẩn tốc độ cao"
+                        >
+                            <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                            <span className="hidden sm:inline">RAG Thường</span>
+                        </button>
                     </div>
+
+                    {/* Model Provider Selector */}
+                    <select
+                        value={modelProvider}
+                        onChange={(e) => setModelProvider(e.target.value as any)}
+                        className="text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 text-gray-700 outline-none focus:ring-2 focus:ring-indigo-100 transition cursor-pointer"
+                        title="Chọn mô hình AI (LLM Engine)"
+                    >
+                        <option value="gemini">⚡ Gemini Flash</option>
+                        <option value="deepseek">🐳 DeepSeek V3</option>
+                    </select>
+
+                    {/* Export Presentation PPTX Button */}
+                    <button
+                        type="button"
+                        onClick={handleExportFullChatPptx}
+                        disabled={!!isGeneratingPptx}
+                        title="Tạo file thuyết trình PowerPoint từ cuộc hội thoại này bằng Gemini AI"
+                        className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-blue-200 bg-blue-50/80 text-blue-700 hover:bg-blue-100 transition shadow-xs cursor-pointer"
+                    >
+                        {isGeneratingPptx ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                        ) : (
+                            <Presentation className="w-3.5 h-3.5 text-blue-600" />
+                        )}
+                        <span className="hidden sm:inline">Xuất Slide PPTX</span>
+                    </button>
                 </div>
             </div>
 
@@ -484,6 +707,12 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
                                 </div>
                                 <div className="bg-white border border-gray-200/80 rounded-2xl rounded-tl-xs px-4 py-3.5 max-w-[85%] text-sm shadow-xs">
                                     <FormattedContent content={msg.content} />
+                                    <AgentReasoningTraceView
+                                        trace={msg.reasoningTrace}
+                                        groundednessScore={msg.groundednessScore}
+                                        intent={msg.intent}
+                                        mode={msg.mode}
+                                    />
                                     <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
                                         <div className="flex items-center gap-1.5 text-blue-600">
                                             {msg.sourceFile && (
@@ -520,8 +749,103 @@ export default function ChatPanel({ sessionId, personas = [], onSessionCreated }
                                                     <Copy className="w-3.5 h-3.5" />
                                                 )}
                                             </button>
+                                            {/* 📊 Xuất Slide PowerPoint Button */}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleExportSlidePptx(msg.content)}
+                                                disabled={isGeneratingPptx === (msg.content.slice(0, 30))}
+                                                className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 bg-blue-50/80 hover:bg-blue-100/90 px-2 py-0.5 rounded-md transition shadow-2xs cursor-pointer"
+                                                title="Xuất nội dung phân tích này thành Slide PowerPoint (.pptx)"
+                                            >
+                                                {isGeneratingPptx === (msg.content.slice(0, 30)) ? (
+                                                    <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
+                                                ) : (
+                                                    <Presentation className="w-3 h-3 text-blue-600" />
+                                                )}
+                                                <span>Xuất Slide PPTX</span>
+                                            </button>
+                                            {/* Divider */}
+                                            <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
+                                            {/* 👍 Like button */}
+                                            <button
+                                                onClick={() => handleFeedback(msg, 'LIKE')}
+                                                disabled={!!feedbackMap[msg.id] || (!!msg.messageId && !!feedbackMap[msg.messageId])}
+                                                className={`flex items-center gap-1 p-1 rounded-lg transition ${
+                                                    (feedbackMap[msg.id] === 'LIKE' || (msg.messageId && feedbackMap[msg.messageId] === 'LIKE'))
+                                                        ? 'text-emerald-600 bg-emerald-50 cursor-default'
+                                                        : (feedbackMap[msg.id] || (msg.messageId && feedbackMap[msg.messageId]))
+                                                        ? 'text-gray-300 cursor-not-allowed'
+                                                        : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'
+                                                }`}
+                                                title={(feedbackMap[msg.id] === 'LIKE' || (msg.messageId && feedbackMap[msg.messageId] === 'LIKE')) ? 'Bạn đã thích câu trả lời này' : 'Câu trả lời hữu ích'}
+                                            >
+                                                <ThumbsUp className="w-3.5 h-3.5" />
+                                            </button>
+                                            {/* 👎 Dislike button */}
+                                            <button
+                                                onClick={() => handleFeedback(msg, 'DISLIKE')}
+                                                disabled={!!feedbackMap[msg.id] || (!!msg.messageId && !!feedbackMap[msg.messageId])}
+                                                className={`flex items-center gap-1 p-1 rounded-lg transition ${
+                                                    (feedbackMap[msg.id] === 'DISLIKE' || (msg.messageId && feedbackMap[msg.messageId] === 'DISLIKE'))
+                                                        ? 'text-red-500 bg-red-50 cursor-default'
+                                                        : (feedbackMap[msg.id] || (msg.messageId && feedbackMap[msg.messageId]))
+                                                        ? 'text-gray-300 cursor-not-allowed'
+                                                        : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                                                }`}
+                                                title={(feedbackMap[msg.id] === 'DISLIKE' || (msg.messageId && feedbackMap[msg.messageId] === 'DISLIKE')) ? 'Bạn đã báo cáo câu trả lời này' : 'Câu trả lời chưa chính xác'}
+                                            >
+                                                <ThumbsDown className="w-3.5 h-3.5" />
+                                            </button>
                                         </div>
                                     </div>
+                                    {/* Mini dislike form — hiện khi nhấn 👎 */}
+                                    {showFeedbackForm === msg.id && (
+                                        <div className="mt-2.5 p-3 rounded-xl border border-red-100 bg-red-50/60 text-xs space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-semibold text-red-700 flex items-center gap-1">
+                                                    <ThumbsDown className="w-3 h-3" /> Bạn thấy vấn đề gì?
+                                                </span>
+                                                <button
+                                                    onClick={() => setShowFeedbackForm(null)}
+                                                    className="text-gray-400 hover:text-gray-600 p-0.5 rounded"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                            <select
+                                                value={dislikeReason}
+                                                onChange={e => setDislikeReason(e.target.value as FeedbackReason)}
+                                                className="w-full text-xs border border-red-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 focus:ring-red-200 text-gray-700"
+                                            >
+                                                <option value="INACCURATE">⚠️ Thông tin không chính xác</option>
+                                                <option value="HALLUCINATION">🚨 Bịa đặt / Hallucination</option>
+                                                <option value="INCOMPLETE">📋 Câu trả lời chưa đầy đủ</option>
+                                                <option value="WRONG_CITATION">📎 Sai nguồn trích dẫn</option>
+                                                <option value="OTHER">💬 Lý do khác</option>
+                                            </select>
+                                            <textarea
+                                                value={dislikeComment}
+                                                onChange={e => setDislikeComment(e.target.value)}
+                                                placeholder="Mô tả thêm (tuỳ chọn)..."
+                                                rows={2}
+                                                className="w-full text-xs border border-red-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:ring-2 focus:ring-red-200 text-gray-700 resize-none placeholder:text-gray-400"
+                                            />
+                                            <div className="flex gap-2 justify-end">
+                                                <button
+                                                    onClick={() => setShowFeedbackForm(null)}
+                                                    className="px-2.5 py-1 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition text-xs font-medium"
+                                                >
+                                                    Huỷ
+                                                </button>
+                                                <button
+                                                    onClick={() => handleSubmitDislike(msg)}
+                                                    className="px-3 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition"
+                                                >
+                                                    Gửi phản hồi
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )

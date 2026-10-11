@@ -1,0 +1,42 @@
+================================================================================
+HỒ SƠ YÊU CẦU GIẢI PHÁP KỸ THUẬT (RFP)
+DỰ ÁN: HỆ THỐNG QUẢN TRỊ VẬN TẢI & LOGISTICS THÔNG MINH (SMART TMS ENTERPRISE)
+KHÁCH HÀNG: CÔNG TY CỔ PHẦN CẢNG & VẬN TẢI TÂN CẢNG LOGISTICS
+NGÀY PHÁT HÀNH: 25/03/2026 - PHIÊN BẢN: 2.1
+================================================================================
+
+1. BỐI CẢNH VÀ HIỆN TRẠNG DOANH NGHIỆP:
+- Tân Cảng Logistics hiện đang vận hành đội xe hơn 350 xe đầu kéo container và quản lý 4 trung tâm phân phối (Hub) tại Hải Phòng, Đà Nẵng, TP.HCM và Cần Thơ.
+- Hiện trạng quản lý: Đang sử dụng các phần mềm rời rạc và file Excel để điều phối đơn hàng, ghi nhận chi phí cầu đường, nhiên liệu và định tuyến lộ trình thủ công.
+- Vấn đề tồn đọng (Pain points):
+  + Chi phí nhiên liệu thất thoát ước tính 12-15% mỗi năm do lộ trình chưa tối ưu.
+  + Thời gian quay vòng xe và thời gian chờ tại cảng trung bình 4.5 giờ/chuyến (quá cao so với tiêu chuẩn ngành là 2.0 giờ).
+  + Tỷ lệ đơn hàng giao trễ giờ hẹn (SLA Violation) lên tới 18%.
+  + Thiếu khả năng giám sát trực quan thời gian thực (Real-time Fleet Visibility) cho các khách hàng VIP.
+
+2. MỤC TIÊU VÀ CHỈ SỐ KPI KỲ VỌNG SAU KHI TRIỂN KHAI HỆ THỐNG:
+- Tối ưu hóa lộ trình xe (Dynamic Route Optimization) giúp giảm ít nhất 18% chi phí nhiên liệu.
+- Giảm thời gian chờ xe tại cầu cảng từ 4.5 giờ xuống dưới 1.8 giờ.
+- Nâng tỷ lệ giao hàng đúng hẹn (On-Time In-Full Delivery) đạt từ 97.5% trở lên.
+- Cắt giảm 60% thời gian xử lý thủ tục giấy tờ đối soát công nợ bằng giải pháp e-POD (Biên bản giao hàng điện tử).
+
+3. YÊU CẦU KIẾN TRÚC KỸ THUẬT VÀ TÍNH NĂNG (TECHNICAL REQUIREMENTS):
+- Kiến trúc đề xuất: Microservices Architecture trên nền tảng Spring Boot 3.x, React/Next.js cho Web Portal, Flutter cho Mobile App tài xế.
+- Tích hợp IoT & GPS Telematics: Tiếp nhận tín hiệu định vị từ thiết bị giám sát hành trình hộp chuẩn QCVN 31 của Bộ GTVT với tần suất 10 giây/lần.
+- Tối ưu hóa điều độ AI (AI Dispatching Engine): Tự động gom đơn, phân bổ xe và tính toán tuyến đường ngắn nhất tránh khung giờ cấm tải của từng đô thị.
+- An toàn bảo mật: Chuẩn OAuth2/OIDC, phân quyền RBAC đa cấp độ, mã hóa AES-256 dữ liệu định vị và chi phí tài chính.
+
+4. KẾ HOẠCH LỘ TRÌNH TRIỂN KHAI (TIMELINE 4 THÁNG):
+- Tháng 1 (Khảo sát & Thiết kế Kiến trúc): Hoàn thiện SRS, cấu hình hạ tầng Cloud Kubernetes, tích hợp API thiết bị định vị GPS.
+- Tháng 2 (Phát triển Cốt lõi TMS Core): Module Quản lý đơn hàng vận tải (OMS), Module Quản lý đội xe & Tài xế, Ứng dụng e-POD Driver App.
+- Tháng 3 (Tích hợp AI Dispatcher & Báo cáo BI): Triển khai thuật toán định tuyến tự động, Dashboard phân tích chi phí và hiệu suất xe.
+- Tháng 4 (UAT & Go-Live toàn diện): Chạy thử nghiệm Pilot trên 50 xe tại khu vực TP.HCM, đào tạo 120 nhân sự điều hành và tài xế, bàn giao nghiệm thu.
+
+5. DỰ TOÁN NGÂN SÁCH ĐỀ XUẤT:
+- Tổng ngân sách dự kiến: 1.850.000.000 VNĐ (Một tỷ tám trăm năm mươi triệu đồng).
+- Phân bổ chi phí:
+  + Bản quyền giải pháp & Phát triển phần mềm lõi: 1.100.000.000 VNĐ (59.5%)
+  + Tích hợp phần cứng GPS & AI Engine: 350.000.000 VNĐ (18.9%)
+  + Hạ tầng Cloud, DevOps & Kiểm thử bảo mật: 220.000.000 VNĐ (11.9%)
+  + Đào tạo, chuyển giao công nghệ & Bảo hành 12 tháng: 180.000.000 VNĐ (9.7%)
+================================================================================

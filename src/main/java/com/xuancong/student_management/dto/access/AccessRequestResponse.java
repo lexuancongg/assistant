@@ -7,12 +7,12 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 public record AccessRequestResponse(
-        UUID id,
+        Long id,
         Long folderId,
         String folderName,
-        String fileId,
+        Long fileId,
         String fileName,
-        UUID requesterId,
+        Long requesterId,
         String requesterName,
         String requesterEmail,
         String requesterAvatar,

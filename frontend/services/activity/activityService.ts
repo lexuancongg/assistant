@@ -1,12 +1,16 @@
 import apiClient from "@/utils/api/apiClientFixed";
 
 export interface ActivityLogDto {
-    id: number;
+    id: number | string;
     actorName: string;
     action: string;
     targetName: string;
     timestamp: string;
     type: 'upload' | 'share' | 'download' | 'delete' | 'update' | string;
+    fileId?: number | string | null;
+    fileType?: string | null;
+    ownerName?: string | null;
+    location?: string | null;
 }
 
 class ActivityService {

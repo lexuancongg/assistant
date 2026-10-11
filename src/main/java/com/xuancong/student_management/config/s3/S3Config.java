@@ -8,6 +8,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 @Configuration
 public class S3Config {
@@ -35,6 +36,21 @@ public class S3Config {
 
         // Otherwise fall back to the SDK default provider chain (ENV, profile, EC2/ECS role, etc.)
         return S3Client.builder()
+                .region(Region.of(region))
+                .build();
+    }
+
+    @Bean
+    public S3Presigner s3Presigner() {
+        if (accessKey != null && !accessKey.isBlank() && secretKey != null && !secretKey.isBlank()) {
+            AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
+            return S3Presigner.builder()
+                    .region(Region.of(region))
+                    .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                    .build();
+        }
+
+        return S3Presigner.builder()
                 .region(Region.of(region))
                 .build();
     }

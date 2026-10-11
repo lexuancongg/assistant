@@ -8,11 +8,12 @@ import java.util.UUID;
 
 public record FolderPermissionUpdateRequest(
     String accessScope,
+    Long ownerId,
     List<FolderPermissionItemRequest> permissions
 ) {
     public record FolderPermissionItemRequest(
         PermissionSubjectType subjectType,
-        UUID subjectId,
+        Long subjectId,
         PermissionLevel level
     ) {}
 }

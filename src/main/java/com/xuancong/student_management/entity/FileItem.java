@@ -18,8 +18,8 @@ import java.util.UUID;
 public class FileItem {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "company_id", nullable = false)
@@ -49,13 +49,19 @@ public class FileItem {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private FileVisibility visibility = FileVisibility.RESTRICTED;
+    private FileVisibility visibility = FileVisibility.INHERIT;
 
     @Column(name = "current_version_id")
-    private UUID currentVersionId;
+    private Long currentVersionId;
 
     @Column(name = "is_ai_indexed", nullable = false)
     private boolean aiIndexed = false;
+
+    @Column(name = "storage_path", columnDefinition = "TEXT")
+    private String storagePath;
+
+    @Column(name = "thumbnail_path", columnDefinition = "TEXT")
+    private String thumbnailPath;
 
     // Soft delete — dùng cho thùng rác, khác null nghĩa là đã xóa
     @Column(name = "deleted_at")
@@ -75,6 +81,9 @@ public class FileItem {
 
     @OneToMany(mappedBy = "file", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<FileTag> tags = new ArrayList<>();
+
+    @OneToMany(mappedBy = "file", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<DocumentChunk> chunks = new ArrayList<>();
 
     @PreUpdate
     public void onUpdate() {

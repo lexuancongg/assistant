@@ -21,9 +21,9 @@ public class ChatController {
 
     @GetMapping("/document/{id}")
     public ResponseEntity<ChatSessionResponse> getChatSession(@PathVariable String id) {
-        UUID sessionId;
+        Long sessionId;
         try {
-            sessionId = UUID.fromString(id);
+            sessionId = Long.parseLong(id);
         } catch (Exception e) {
             return ResponseEntity.ok(ChatSessionResponse.builder().session(null).messages(List.of()).build());
         }
@@ -34,9 +34,9 @@ public class ChatController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ChatSessionResponse> getChatSessionById(@PathVariable String id) {
-        UUID sessionId;
+        Long sessionId;
         try {
-            sessionId = UUID.fromString(id);
+            sessionId = Long.parseLong(id);
         } catch (Exception e) {
             return ResponseEntity.ok(ChatSessionResponse.builder().session(null).messages(List.of()).build());
         }
@@ -52,11 +52,6 @@ public class ChatController {
         return ResponseEntity.ok(this.chatService.listUserSessions(favorite));
     }
 
-    @GetMapping("/personas")
-    public ResponseEntity<List<String>> getPersonas() {
-        return ResponseEntity.ok(this.chatService.getAssistantPersonas());
-    }
-
     @PostMapping("/{id}/favorite")
     public ResponseEntity<Void> setFavorite(
             @PathVariable Long id,
@@ -69,9 +64,9 @@ public class ChatController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteSession(@PathVariable String id) {
         try {
-            UUID sessionId = UUID.fromString(id);
+            Long sessionId = Long.parseLong(id);
             this.chatService.deleteSession(sessionId);
-        } catch (IllegalArgumentException e) {
+        } catch (NumberFormatException e) {
             return ResponseEntity.badRequest().build();
         }
         return ResponseEntity.noContent().build();

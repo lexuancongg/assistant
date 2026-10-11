@@ -8,9 +8,11 @@ import java.util.List;
 public record RagRequest(
         Long documentId,
         String question,
-        String persona,
         List<ChatHistoryMessage> history,
-        List<String> availableFiles
+        List<String> availableFiles,
+        String mode,
+        String modelProvider,
+        List<String> allowedDocumentIds
 ) {
     public record ChatHistoryMessage(
             String role,

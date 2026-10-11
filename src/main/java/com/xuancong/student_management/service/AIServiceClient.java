@@ -111,4 +111,49 @@ public class AIServiceClient {
             throw new RuntimeException("Call AI ML forecast service failed: " + e.getMessage(), e);
         }
     }
+
+    public void deleteDocument(Long documentId) {
+        if (documentId == null) return;
+        boolean deletedViaAiService = false;
+        try {
+            restClient.delete()
+                    .uri(aiServiceUrl + "/api/v1/documents/" + documentId)
+                    .retrieve()
+                    .toBodilessEntity();
+            deletedViaAiService = true;
+            log.info("AI service successfully deleted Qdrant vectors for document {}", documentId);
+        } catch (Exception e) {
+            log.warn("Calling AI service to delete document {} failed: {}", documentId, e.getMessage());
+        }
+
+        // Direct Qdrant REST delete fallback or reinforcement
+        deleteDirectlyFromQdrant(documentId);
+    }
+
+    private void deleteDirectlyFromQdrant(Long documentId) {
+        try {
+            String qdrantUrl = "http://localhost:6333/collections/documents/points/delete";
+            String payload = String.format(
+                    "{\"filter\":{\"should\":[{\"key\":\"document_id\",\"match\":{\"value\":\"%d\"}},{\"key\":\"document_id\",\"match\":{\"value\":%d}}]}}",
+                    documentId, documentId
+            );
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofMillis(1000))
+                    .build();
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(qdrantUrl))
+                    .header("Content-Type", "application/json")
+                    .timeout(java.time.Duration.ofMillis(2000))
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+            java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                log.info("Directly deleted Qdrant vectors for document {}: {}", documentId, response.body());
+            } else {
+                log.warn("Direct Qdrant delete returned status {}: {}", response.statusCode(), response.body());
+            }
+        } catch (Exception e) {
+            log.warn("Direct Qdrant point delete failed for document {}: {}", documentId, e.getMessage());
+        }
+    }
 }

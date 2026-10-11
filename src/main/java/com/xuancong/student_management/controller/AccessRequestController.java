@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.xuancong.student_management.security.CustomUserDetails;
+
 @RestController
 @RequestMapping("/api/v1/access-requests")
 @RequiredArgsConstructor
@@ -23,9 +25,15 @@ public class AccessRequestController {
     @PostMapping
     public ResponseEntity<AccessRequestResponse> createRequest(
             @RequestBody AccessRequestCreateRequest req,
-            @AuthenticationPrincipal User currentUser
+            @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
+        User currentUser = userDetails != null ? userDetails.getUser() : null;
         return ResponseEntity.ok(accessRequestService.createRequest(req, currentUser));
+    }
+
+    @GetMapping
+    public ResponseEntity<List<AccessRequestResponse>> getAllRequests() {
+        return ResponseEntity.ok(accessRequestService.getAllRequests());
     }
 
     @GetMapping("/pending")
@@ -35,8 +43,9 @@ public class AccessRequestController {
 
     @GetMapping("/my")
     public ResponseEntity<List<AccessRequestResponse>> getMyRequests(
-            @AuthenticationPrincipal User currentUser
+            @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
+        User currentUser = userDetails != null ? userDetails.getUser() : null;
         return ResponseEntity.ok(accessRequestService.getMyRequests(currentUser));
     }
 
@@ -47,17 +56,19 @@ public class AccessRequestController {
 
     @PutMapping("/{id}/approve")
     public ResponseEntity<AccessRequestResponse> approveRequest(
-            @PathVariable UUID id,
-            @AuthenticationPrincipal User currentUser
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
+        User currentUser = userDetails != null ? userDetails.getUser() : null;
         return ResponseEntity.ok(accessRequestService.approveRequest(id, currentUser));
     }
 
     @PutMapping("/{id}/reject")
     public ResponseEntity<AccessRequestResponse> rejectRequest(
-            @PathVariable UUID id,
-            @AuthenticationPrincipal User currentUser
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
+        User currentUser = userDetails != null ? userDetails.getUser() : null;
         return ResponseEntity.ok(accessRequestService.rejectRequest(id, currentUser));
     }
 }

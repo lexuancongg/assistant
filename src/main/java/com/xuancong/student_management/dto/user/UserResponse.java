@@ -3,7 +3,7 @@ package com.xuancong.student_management.dto.user;
 import java.util.UUID;
 
 public record UserResponse(
-        UUID id,
+        Long id,
         String name,
         String email,
         String role,

@@ -18,8 +18,8 @@ import java.util.UUID;
 public class ChatMessage {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "session_id", nullable = false)
@@ -35,6 +35,10 @@ public class ChatMessage {
     // true nếu câu hỏi/câu trả lời bị giới hạn do quyền truy cập (dùng cho audit + demo bảo mật)
     @Column(name = "was_blocked_by_permission", nullable = false)
     private boolean wasBlockedByPermission = false;
+
+    // Thời gian xử lý truy vấn AI / RAG tính bằng mili-giây (latency thực tế)
+    @Column(name = "latency_ms")
+    private Integer latencyMs;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

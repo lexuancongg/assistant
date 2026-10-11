@@ -123,8 +123,12 @@ const callApi = async (method: string, endPoint: string, data: any = null, conte
     if (data) {
         if (data instanceof FormData) {
             delete requestOptions.headers['Content-type'];
+            requestOptions.body = data;
+        } else if (typeof data === 'string') {
+            requestOptions.body = data;
+        } else {
+            requestOptions.body = JSON.stringify(data);
         }
-        requestOptions.body = data;
     }
 
     let response: Response;
@@ -153,7 +157,7 @@ const apiClient = {
     post: (endPoint: string, data: any = null, contentType: string | null = null) => callApi('POST', endPoint, data, contentType),
     put: (endPoint: string, data: any = null, contentType: string | null = null) => callApi('PUT', endPoint, data, contentType),
     patch: (endPoint: string, data: any = null, contentType: string | null = null) => callApi('PATCH', endPoint, data, contentType),
-    delete: (endPoint: string) => callApi('DELETE', endPoint)
+    delete: (endPoint: string, data: any = null) => callApi('DELETE', endPoint, data)
 };
 
 export default apiClient;

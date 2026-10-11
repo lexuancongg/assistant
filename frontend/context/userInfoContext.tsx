@@ -1,6 +1,6 @@
 "use client"
 import authenticationService from "@/services/auth/authenticationService";
-import React, { Context, ReactElement, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { Context, ReactElement, useCallback, useContext, useEffect, useMemo, useState, useRef } from "react";
 import {error} from "console";
 
 export const UserInfoContext: Context<UserInfo> = React.createContext({
@@ -13,10 +13,13 @@ export const UserInfoContext: Context<UserInfo> = React.createContext({
 export function UserInfoProvider({ children }: React.PropsWithChildren): ReactElement {
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
+    const initialCheckDoneRef = useRef(false);
 
     useEffect(() => {
+        if (initialCheckDoneRef.current) return;
+        initialCheckDoneRef.current = true;
         fetchUserInfo();
-    }, [])
+    }, []);
 
     const fetchUserInfo: () => void = useCallback(() => {
         authenticationService.checkAuthenticated()

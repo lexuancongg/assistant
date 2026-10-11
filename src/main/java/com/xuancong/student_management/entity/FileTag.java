@@ -30,8 +30,9 @@ public class FileTag {
     @Setter
     @NoArgsConstructor
     public static class FileTagId implements Serializable {
-        private UUID file;
+        private Long file;
         private String tag;
+
 
         @Override
         public boolean equals(Object o) {

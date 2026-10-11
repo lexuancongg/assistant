@@ -7,9 +7,9 @@ import { DepartmentDto } from '@/services/department/departmentService';
 interface DepartmentSelectModalProps {
     isOpen: boolean;
     departments: DepartmentDto[];
-    selectedDeptIds: string[];
+    selectedDeptIds: (string | number)[];
     onClose: () => void;
-    onConfirm: (selectedIds: string[]) => void;
+    onConfirm: (selectedIds: (string | number)[]) => void;
 }
 
 export default function DepartmentSelectModal({
@@ -20,7 +20,7 @@ export default function DepartmentSelectModal({
     onConfirm,
 }: DepartmentSelectModalProps) {
     const [search, setSearch] = useState('');
-    const [tempSelected, setTempSelected] = useState<string[]>(selectedDeptIds);
+    const [tempSelected, setTempSelected] = useState<(string | number)[]>(selectedDeptIds);
 
     const filtered = useMemo(() => {
         if (!search.trim()) return departments;
@@ -30,9 +30,11 @@ export default function DepartmentSelectModal({
 
     if (!isOpen) return null;
 
-    const toggleSelect = (id: string) => {
+    const toggleSelect = (id: string | number) => {
         setTempSelected((prev) =>
-            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+            prev.map(String).includes(String(id))
+                ? prev.filter((item) => String(item) !== String(id))
+                : [...prev, id]
         );
     };
 
@@ -101,7 +103,7 @@ export default function DepartmentSelectModal({
                 <div className="flex-1 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
                     {filtered.length > 0 ? (
                         filtered.map((dept) => {
-                            const isChecked = tempSelected.includes(dept.id);
+                            const isChecked = tempSelected.map(String).includes(String(dept.id));
                             return (
                                 <div
                                     key={dept.id}

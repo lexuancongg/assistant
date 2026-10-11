@@ -31,6 +31,7 @@ public class AccessRequestService {
     private final FolderRepository folderRepository;
     private final FolderPermissionRepository folderPermissionRepository;
     private final UserRepository userRepository;
+    private final com.xuancong.student_management.repository.FileItemRepository fileItemRepository;
 
     @Transactional
     public AccessRequestResponse createRequest(AccessRequestCreateRequest req, User currentUser) {
@@ -55,9 +56,19 @@ public class AccessRequestService {
     }
 
     @Transactional(readOnly = true)
+    public List<AccessRequestResponse> getAllRequests() {
+        return accessRequestRepository.findAll(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"))
+                .stream()
+                .filter(r -> r.getFileId() == null || fileItemRepository.existsById(r.getFileId()))
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<AccessRequestResponse> getPendingRequests() {
         return accessRequestRepository.findByStatusOrderByCreatedAtDesc(AccessRequestStatus.PENDING)
                 .stream()
+                .filter(r -> r.getFileId() == null || fileItemRepository.existsById(r.getFileId()))
                 .map(this::toResponse)
                 .toList();
     }
@@ -67,6 +78,7 @@ public class AccessRequestService {
         if (currentUser == null) return List.of();
         return accessRequestRepository.findByRequesterIdOrderByCreatedAtDesc(currentUser.getId())
                 .stream()
+                .filter(r -> r.getFileId() == null || fileItemRepository.existsById(r.getFileId()))
                 .map(this::toResponse)
                 .toList();
     }
@@ -77,7 +89,7 @@ public class AccessRequestService {
     }
 
     @Transactional
-    public AccessRequestResponse approveRequest(UUID requestId, User approver) {
+    public AccessRequestResponse approveRequest(Long requestId, User approver) {
         AccessRequest request = accessRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Yêu cầu không tồn tại"));
 
@@ -116,7 +128,7 @@ public class AccessRequestService {
     }
 
     @Transactional
-    public AccessRequestResponse rejectRequest(UUID requestId, User approver) {
+    public AccessRequestResponse rejectRequest(Long requestId, User approver) {
         AccessRequest request = accessRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Yêu cầu không tồn tại"));
 

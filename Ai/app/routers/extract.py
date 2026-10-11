@@ -14,9 +14,16 @@ service = ExtractService()
 
 
 @router.post("/extract", response_model=ExtractResponse)
-async def extract( request: ExtractRequest):
+def extract(request: ExtractRequest):
 
     print("documentId:", request.documentId)
     print("filePath:", request.filePath)
 
     return service.extract(request)
+
+
+@router.delete("/documents/{document_id}")
+def delete_document(document_id: str):
+    print("Deleting Qdrant vectors for documentId:", document_id)
+    service.qdrant_service.delete_by_document(document_id)
+    return {"status": "success", "document_id": document_id}

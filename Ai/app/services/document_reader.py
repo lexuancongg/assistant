@@ -1,3 +1,4 @@
+import os
 import email
 import logging
 import tempfile
@@ -7,12 +8,15 @@ from urllib.parse import urlparse
 
 import boto3
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from docx import Document
 from openpyxl import load_workbook
 from xlrd import open_workbook
 
 from app.services.pdf_service import PdfService
 from app.services.ocr_service import OCRService
+from app.services.vision_service import VisionService
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,7 @@ class DocumentReader:
     def __init__(self):
         self.pdf_service = PdfService()
         self.ocr_service = OCRService()
+        self.vision_service = VisionService()
 
     # =========================================================
     # PUBLIC
@@ -78,19 +83,41 @@ class DocumentReader:
     # =========================================================
 
     def _read_pdf(self, file_path: str) -> str:
-        text = self.pdf_service.extract_text(file_path)
+        text = self.pdf_service.extract_text(file_path, vision_service=self.vision_service)
         if text and text.strip():
             return text
 
         logger.warning("PDF không có text layer, fallback sang OCR: %s", file_path)
-        return self.pdf_service.ocr_pdf(file_path, self.ocr_service)
+        return self.pdf_service.ocr_pdf(file_path, self.ocr_service, vision_service=self.vision_service)
 
     # =========================================================
     # IMAGE
     # =========================================================
 
     def _read_image(self, file_path: str) -> str:
-        return self.ocr_service.extract_text(file_path)
+        parts = []
+        # 1. Trích xuất text thuần bằng OCR
+        ocr_text = self.ocr_service.extract_text(file_path)
+        if ocr_text and ocr_text.strip():
+            parts.append(ocr_text.strip())
+
+        # 2. Phân tích ngữ nghĩa sơ đồ / flowchart nghiệp vụ bằng Vision LLM
+        try:
+            with open(file_path, "rb") as f:
+                img_bytes = f.read()
+            ext = Path(file_path).suffix.lower().lstrip(".")
+            mime_type = "image/jpeg" if ext in ["jpg", "jpeg"] else f"image/{ext}"
+            diagram_desc = self.vision_service.analyze_diagram_image(img_bytes, mime_type=mime_type)
+            if diagram_desc and diagram_desc.strip():
+                parts.append(
+                    f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG HOẠT ĐỘNG TỪ HÌNH ẢNH] ---\n"
+                    f"{diagram_desc.strip()}\n"
+                    f"---------------------------------------------------------\n"
+                )
+        except Exception as e:
+            logger.warning(f"Lỗi khi diễn giải sơ đồ hình ảnh {file_path}: {e}")
+
+        return "\n\n".join(parts)
 
     # =========================================================
     # DOCX
@@ -99,7 +126,7 @@ class DocumentReader:
     def _read_docx(self, file_path: str) -> str:
         """
         Đọc cả paragraphs lẫn nội dung trong bảng (tables),
-        giữ đúng thứ tự xuất hiện trong tài liệu gốc.
+        và diễn giải hình ảnh sơ đồ quy trình đính kèm trong docx.
         file_path ở đây luôn là local path (đã được _resolve_file xử lý).
         """
         with open(file_path, "rb") as f:
@@ -132,6 +159,24 @@ class DocumentReader:
                             if row_text:
                                 parts.append(row_text)
                         break
+
+        # Diễn giải các hình ảnh nhúng trong file docx (nếu có sơ đồ quy trình)
+        try:
+            for rel in doc.part.rels.values():
+                if "image" in rel.target_ref:
+                    img_part = rel.target_part
+                    img_bytes = img_part.blob
+                    ext = Path(rel.target_ref).suffix.lower().lstrip(".")
+                    mime_type = "image/jpeg" if ext in ["jpg", "jpeg"] else "image/png"
+                    desc = self.vision_service.analyze_diagram_image(img_bytes, mime_type=mime_type)
+                    if desc and desc.strip():
+                        parts.append(
+                            f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG HOẠT ĐỘNG TỪ TÀI LIỆU DOCX] ---\n"
+                            f"{desc.strip()}\n"
+                            f"-------------------------------------------------------------\n"
+                        )
+        except Exception as e:
+            logger.debug(f"Không thể phân tích ảnh nhúng trong docx: {e}")
 
         return "\n".join(parts)
 
@@ -205,8 +250,8 @@ class DocumentReader:
 
     def _resolve_file(self, file_path: str) -> str:
         """
-        - Local path → trả về nguyên bản.
-        - S3 URI (s3://bucket/key) → download về temp file qua boto3.
+        - Local path → nếu tồn tại trên đĩa thì trả về nguyên bản.
+        - S3 URI (s3://bucket/key) hoặc S3 Key (docs/...) → download về temp file qua boto3.
         - HTTP(S) URL → download về temp file qua requests.
         """
         if file_path.startswith("s3://"):
@@ -215,17 +260,30 @@ class DocumentReader:
         if file_path.startswith(("http://", "https://")):
             return self._download_from_url(file_path)
 
+        if not os.path.exists(file_path):
+            return self._download_from_s3(file_path)
+
         return file_path
 
     def _download_from_s3(self, file_path: str) -> str:
-        parsed = urlparse(file_path)
-        bucket = parsed.netloc
-        key = parsed.path.lstrip("/")
+        if file_path.startswith("s3://"):
+            parsed = urlparse(file_path)
+            bucket = parsed.netloc
+            key = parsed.path.lstrip("/")
+        else:
+            bucket = os.environ.get("AWS_S3_BUCKET", "employ-management")
+            key = file_path.lstrip("/")
+
         suffix = Path(key).suffix
 
         logger.debug("Downloading s3://%s/%s ...", bucket, key)
 
-        s3 = boto3.client("s3")
+        s3 = boto3.client(
+            "s3",
+            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+            region_name=os.environ.get("AWS_REGION", "us-east-1")
+        )
         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         tmp_file.close()
 
@@ -233,26 +291,38 @@ class DocumentReader:
             s3.download_file(bucket, key, tmp_file.name)
         except Exception as exc:
             self._cleanup(tmp_file.name)
-            raise RuntimeError(f"Không thể download file từ S3: {file_path}") from exc
+            raise RuntimeError(f"Không thể download file từ S3 (bucket={bucket}, key={key}): {file_path}") from exc
 
         return tmp_file.name
 
     def _download_from_url(self, file_path: str) -> str:
+        import time
         suffix = Path(urlparse(file_path).path).suffix
 
         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         tmp_file.close()
 
-        try:
-            response = requests.get(file_path, timeout=30)
-            response.raise_for_status()
-            with open(tmp_file.name, "wb") as f:
-                f.write(response.content)
-        except Exception as exc:
-            self._cleanup(tmp_file.name)
-            raise RuntimeError(f"Không thể download file từ URL: {file_path}") from exc
+        max_attempts = 3
+        last_error = None
+        headers = {"User-Agent": "EnterpriseAI/1.0"}
 
-        return tmp_file.name
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.get(file_path, timeout=(20, 60), headers=headers)
+                response.raise_for_status()
+                with open(tmp_file.name, "wb") as f:
+                    f.write(response.content)
+                return tmp_file.name
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Lần tải file thứ %d/%d thất bại (%s): %s. Đang thử lại...",
+                    attempt, max_attempts, file_path, exc
+                )
+                time.sleep(attempt * 1.5)
+
+        self._cleanup(tmp_file.name)
+        raise RuntimeError(f"Không thể download file từ URL sau {max_attempts} lần thử: {file_path}") from last_error
 
     # =========================================================
     # HELPERS

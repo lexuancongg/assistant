@@ -13,10 +13,10 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -29,12 +29,12 @@ public class NotificationWebSocketService {
     private final DepartmentRepository departmentRepository;
     private final UserRepository userRepository;
 
-    public void sendToUser(UUID userId, NotificationMessage notification) {
+    public void sendToUser(Long userId, NotificationMessage notification) {
         log.info("WebSocket sending notification to user {}: {}", userId, notification.getTitle());
         messagingTemplate.convertAndSend("/topic/user/" + userId, notification);
     }
 
-    public void sendToDepartment(UUID deptId, NotificationMessage notification) {
+    public void sendToDepartment(Long deptId, NotificationMessage notification) {
         log.info("WebSocket sending notification to department {}: {}", deptId, notification.getTitle());
         messagingTemplate.convertAndSend("/topic/department/" + deptId, notification);
     }
@@ -67,16 +67,16 @@ public class NotificationWebSocketService {
         }
 
         NotificationMessage notif = NotificationMessage.builder()
-                .id(UUID.randomUUID().toString())
+                .id(System.currentTimeMillis())
                 .title("Tài liệu mới được chia sẻ")
                 .message(uploaderName + " vừa tải lên tài liệu: \"" + fileItem.getName() + "\" vào thư mục \"" + folderName + "\"")
                 .type("FILE_UPLOAD")
-                .fileId(fileItem.getId() != null ? fileItem.getId().toString() : "")
+                .fileId(fileItem.getId())
                 .fileName(fileItem.getName())
                 .fileType(fileItem.getFileType())
                 .folderId(folderId)
                 .folderName(folderName)
-                .uploaderId(uploader != null && uploader.getId() != null ? uploader.getId().toString() : "")
+                .uploaderId(uploader != null ? uploader.getId() : null)
                 .uploaderName(uploaderName)
                 .uploaderAvatar(uploaderAvatar)
                 .timestamp(Instant.now().toString())
@@ -93,8 +93,13 @@ public class NotificationWebSocketService {
             return;
         }
 
-        // Lấy danh sách phân quyền của folder
-        List<FolderPermission> permissions = folderPermissionRepository.findByFolderId(folderId);
+        // Lấy danh sách phân quyền của folder đa cấp (Duyệt ngược từ thư mục con lên toàn bộ các cấp thư mục cha)
+        List<FolderPermission> permissions = new ArrayList<>();
+        Folder currentFolder = folderRepository.findById(folderId).orElse(null);
+        while (currentFolder != null) {
+            permissions.addAll(folderPermissionRepository.findByFolderId(currentFolder.getId()));
+            currentFolder = currentFolder.getParent();
+        }
 
         if (permissions.isEmpty()) {
             // Folder mặc định không có restricted permissions: Gửi toàn công ty
@@ -104,7 +109,7 @@ public class NotificationWebSocketService {
             return;
         }
 
-        Set<UUID> notifiedUsers = new HashSet<>();
+        Set<Long> notifiedUsers = new HashSet<>();
 
         for (FolderPermission p : permissions) {
             if (p.getSubjectType() == PermissionSubjectType.DEPARTMENT && p.getSubjectId() != null) {
