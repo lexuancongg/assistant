@@ -35,6 +35,7 @@ export interface AgentTraceStepDto {
 export interface ChatAskRequest {
     sessionId?: string | number;
     fileId?: number | string;
+    folderId?: number | string;
     documentId?: number | string;
     question: string;
     persona?: string;

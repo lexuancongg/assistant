@@ -35,11 +35,10 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**").permitAll()
-                        .requestMatchers("/api/v1/files/*/view", "/api/v1/files/*/stream", "/api/v1/files/*/thumbnail", "/api/v1/files/*/versions/*/stream", "/error").permitAll()
+                        .requestMatchers("/api/v1/auth/**", "/error").permitAll()
                         .anyRequest().authenticated()
                 )
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(daoAuthenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -48,25 +47,7 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
-        return new PasswordEncoder() {
-            @Override
-            public String encode(CharSequence rawPassword) {
-                return bcrypt.encode(rawPassword);
-            }
-
-            @Override
-            public boolean matches(CharSequence rawPassword, String encodedPassword) {
-                if (rawPassword == null || encodedPassword == null) return false;
-                try {
-                    if (bcrypt.matches(rawPassword, encodedPassword)) {
-                        return true;
-                    }
-                } catch (Exception ignored) {}
-                String raw = rawPassword.toString();
-                return raw.equals("admin123") || raw.equals("123456") || raw.equals("user123") || raw.equals("manager123");
-            }
-        };
+        return new BCryptPasswordEncoder();
     }
 
     @Bean

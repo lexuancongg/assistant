@@ -1,5 +1,3 @@
-import { RequestInit } from "next/dist/server/web/spec-extension/request";
-
 interface RequestOptions {
     method: string;
     headers: {
@@ -10,7 +8,22 @@ interface RequestOptions {
     body?: any;
 }
 
-const AUTH_BASE = "http://localhost:8080/api/v1/auth";
+export const API_ROOT = (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) 
+    ? process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '') 
+    : 'http://localhost:8080';
+
+const AUTH_BASE = `${API_ROOT}/api/v1/auth`;
+
+export function normalizeUrl(url: string): string {
+    if (!url) return url;
+    if (url.startsWith('http://localhost:8080')) {
+        return url.replace('http://localhost:8080', API_ROOT);
+    }
+    if (url.startsWith('/')) {
+        return `${API_ROOT}${url}`;
+    }
+    return url;
+}
 
 let refreshInProgress: Promise<boolean> | null = null;
 
@@ -113,7 +126,7 @@ function notifyLoadingChange() {
     }
 }
 
-// Production In-flight Request Deduplication: Gộp các request GET trùng lặp đang đồng thời diễn ra
+// Production In-flight Request Deduplication
 const inFlightGetRequests = new Map<string, Promise<Response>>();
 
 const callApi = async (
@@ -124,6 +137,7 @@ const callApi = async (
     _retry: boolean = false,
     quiet: boolean = false
 ): Promise<Response> => {
+    const targetUrl = normalizeUrl(endPoint);
     const contentTypeDefault: string = 'application/json; charset=UTF-8';
 
     const headers: { [key: string]: string } = {
@@ -137,9 +151,8 @@ const callApi = async (
     }
 
     const isGet = method.toUpperCase() === 'GET';
-    const cacheKey = `${endPoint}|${token || ''}`;
+    const cacheKey = `${targetUrl}|${token || ''}`;
 
-    // Nếu có request GET cùng endpoint đang in-flight, tái sử dụng Promise thay vì gửi thêm network request
     if (isGet && !_retry && inFlightGetRequests.has(cacheKey)) {
         const sharedPromise = inFlightGetRequests.get(cacheKey)!;
         const sharedResp = await sharedPromise;
@@ -164,17 +177,16 @@ const callApi = async (
         }
     }
 
-    // Do not show full-screen overlay for background polling, rename, star, or silent requests
     const isQuiet = Boolean(
         quiet ||
-        endPoint.includes('/rename') ||
-        endPoint.includes('/star') ||
-        endPoint.includes('silent=true') ||
-        endPoint.includes('/access-requests/pending') || 
-        endPoint.includes('/access-requests/count') ||
-        endPoint.includes('/auth/me') ||
-        endPoint.includes('/chat-sessions') ||
-        endPoint.includes('/chat')
+        targetUrl.includes('/rename') ||
+        targetUrl.includes('/star') ||
+        targetUrl.includes('silent=true') ||
+        targetUrl.includes('/access-requests/pending') || 
+        targetUrl.includes('/access-requests/count') ||
+        targetUrl.includes('/auth/me') ||
+        targetUrl.includes('/chat-sessions') ||
+        targetUrl.includes('/chat')
     );
 
     if (!isQuiet && !_retry) {
@@ -184,7 +196,7 @@ const callApi = async (
 
     const executeNetworkFetch = async (): Promise<Response> => {
         try {
-            return await fetch(endPoint, requestOptions);
+            return await fetch(targetUrl, requestOptions);
         } finally {
             if (isGet) {
                 inFlightGetRequests.delete(cacheKey);
@@ -200,7 +212,7 @@ const callApi = async (
             const rawResp = await pendingPromise;
             response = rawResp.clone();
         } else {
-            response = await fetch(endPoint, requestOptions);
+            response = await fetch(targetUrl, requestOptions);
         }
     } catch (err) {
         throw err;
@@ -211,8 +223,7 @@ const callApi = async (
         }
     }
 
-    // If 401 Unauthorized, attempt refresh once or redirect to login
-    if ((response.status === 401 || response.status === 403) && !endPoint.includes('/auth/login') && !endPoint.includes('/auth/register')) {
+    if ((response.status === 401 || response.status === 403) && !targetUrl.includes('/auth/login') && !targetUrl.includes('/auth/register')) {
         if (!_retry) {
             const refreshed = await tryRefreshToken();
             if (refreshed) {

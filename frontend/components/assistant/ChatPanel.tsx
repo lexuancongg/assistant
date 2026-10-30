@@ -276,7 +276,7 @@ interface ChatPanelProps {
 export default function ChatPanel({ sessionId, onSessionCreated }: ChatPanelProps) {
     const [input, setInput] = useState('');
     const [executionMode, setExecutionMode] = useState<'AGENTIC_WORKFLOW' | 'STANDARD_RAG'>('AGENTIC_WORKFLOW');
-    const [modelProvider, setModelProvider] = useState<'gemini' | 'deepseek'>('gemini');
+    const modelProvider = 'gemini';
     const [messages, setMessages] = useState<ChatMessageItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [loadingHistory, setLoadingHistory] = useState(false);
@@ -653,16 +653,14 @@ export default function ChatPanel({ sessionId, onSessionCreated }: ChatPanelProp
                         </button>
                     </div>
 
-                    {/* Model Provider Selector */}
-                    <select
-                        value={modelProvider}
-                        onChange={(e) => setModelProvider(e.target.value as any)}
-                        className="text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 text-gray-700 outline-none focus:ring-2 focus:ring-indigo-100 transition cursor-pointer"
-                        title="Chọn mô hình AI (LLM Engine)"
+                    {/* Active AI Model Indicator */}
+                    <div
+                        className="text-xs font-semibold bg-blue-50/80 border border-blue-200/80 rounded-xl px-2.5 py-1.5 text-blue-700 flex items-center gap-1.5 shadow-2xs"
+                        title="Mô hình AI: Google Gemini Flash"
                     >
-                        <option value="gemini">⚡ Gemini Flash</option>
-                        <option value="deepseek">🐳 DeepSeek V3</option>
-                    </select>
+                        <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                        <span className="hidden sm:inline">Gemini Flash</span>
+                    </div>
 
                     {/* Export Presentation PPTX Button */}
                     <button

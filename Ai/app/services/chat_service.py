@@ -1,9 +1,11 @@
 import os
 import re
+import logging
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 load_dotenv()
 from google import genai
+from google.genai import types
 from app.services.embedding_service import EmbeddingService
 from app.services.qdrant_service import QdrantService
 from app.services.reranker_service import RerankerService
@@ -11,6 +13,8 @@ from app.services.agent_service import EnterpriseAgentEngine
 from app.schemas.chat.chat import RagRequest, RagResponse, SourceChunk, AgentTraceStep
 from app.schemas.chat.search import SearchRequest, SearchResponse, SearchSourceChunk
 from app.utils.retry import retry
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """Bạn là Trợ lý AI Doanh nghiệp (Enterprise AI Assistant) thông minh, chuyên nghiệp, chính xác và súc tích.
 Nhiệm vụ của bạn là hỗ trợ người dùng tra cứu, phân tích tài liệu và giải đáp các thắc mắc nhanh chóng, gãy gọn và ĐÚNG TRỌNG TÂM NHẤT.
@@ -26,13 +30,17 @@ Nhiệm vụ của bạn là hỗ trợ người dùng tra cứu, phân tích t�
 2. **ĐÚNG Ý ĐỊNH TRUY VẤN (INTENT-FIRST)**:
    - **Khi người dùng hỏi về danh sách tài liệu / file (ví dụ: "có những file nào...", "danh sách file...", "file nào nói về...", "file nào là CV...")**:
      + Mục tiêu duy nhất: người dùng muốn biết **tên các tài liệu phù hợp**.
-     + **CHỈ LIỆT KÊ TÊN CÁC TÀI LIỆU** phù hợp theo định dạng gạch đầu dòng. Mỗi tài liệu kèm tối đa 1 dòng giải thích ngắn gọn lý do liên quan. Phân biệt rõ giữa CV/hồ sơ ứng tuyển cá nhân (thường có tên ứng viên, vị trí Intern, Developer, thông tin ứng viên) với tài liệu chương trình đào tạo/học phần (như giáo trình, chuẩn đầu ra).
+     + **CHỈ LIỆT KÊ TÊN CÁC TÀI LIỆU** phù hợp theo định dạng gạch đầu dòng. Mỗi tài liệu kèm tối đa 1 dòng giải thích ngắn gọn lý do liên quan. Phân biệt rõ giữa CV/hồ sơ ứng tuyển cá nhân với tài liệu đào tạo/quy trình.
      + **TUYỆT ĐỐI KHÔNG tự ý tóm tắt chi tiết toàn bộ nội dung tài liệu** khi người dùng KHÔNG yêu cầu tóm tắt/phân tích nội dung.
    - **Khi người dùng hỏi tra cứu số liệu, dữ kiện, điều khoản cụ thể (Fact Lookup)**:
      + Trả lời trực diện kết quả / con số / điều khoản ngay ở câu đầu tiên.
      + In đậm các thông tin quan trọng (`**số liệu**`, `**thời hạn**`, `**điều khoản**`, `**tên riêng**`).
-   - **Khi người dùng yêu cầu tóm tắt / giải thích quy trình**:
-     + Trình bày súc tích bằng danh sách gạch đầu dòng (`-`) ngắn gọn, cô đọng (tối đa 3 - 5 ý chính), loại bỏ các chi tiết thừa thãi.
+   - **Khi người dùng hỏi về quy trình, sơ đồ, các bước thực hiện (Diagram / Flowchart / SOP)**:
+     + Bắt buộc liệt kê rõ ràng theo đúng trình tự tuần tự: **Bước 1 -> Bước 2 -> Bước 3...**
+     + Nêu rõ **người/đối tượng chịu trách nhiệm** ở mỗi bước và **các điều kiện rẽ nhánh** (Nếu Đạt/Không đạt, Nếu Có/Không thì chuyển sang bước nào).
+     + Giữ nguyên vẹn tính logic của sơ đồ, không đảo lộn hoặc tự ý suy diễn các bước.
+   - **Khi người dùng hỏi về bảng biểu, số liệu so sánh**:
+     + Trình bày rõ ràng hoặc dưới dạng bảng Markdown, giữ nguyên số liệu chính xác trong tài liệu, không làm tròn sai lệch.
 
 3. **TRUNG THỰC VÀ GIỚI HẠN THÔNG TIN**:
    - Chỉ trả lời dựa trên thông tin thực tế trong [DANH SÁCH TÀI LIỆU HIỆN CÓ] hoặc [NGỮ CẢNH TRÍCH XUẤT].
@@ -43,36 +51,6 @@ Nhiệm vụ của bạn là hỗ trợ người dùng tra cứu, phân tích t�
    - Sử dụng Markdown chuẩn, gạch đầu dòng (`-`), in đậm từ khóa cốt lõi giúp người dùng nắm bắt thông tin ngay tức thì."""
 
 DEFAULT_TOP_K = 5
-
-
-def call_deepseek(prompt: str, system_prompt: str) -> Optional[str]:
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
-    if not api_key:
-        return None
-    try:
-        import json
-        import urllib.request
-        payload = json.dumps({
-            "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.2
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            "https://api.deepseek.com/v1/chat/completions",
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
-            }
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data["choices"][0]["message"]["content"]
-    except Exception:
-        return None
 
 
 class ChatService:
@@ -91,14 +69,14 @@ class ChatService:
 
     def ask(self, request: RagRequest) -> RagResponse:
         # =========================================================================
-        # 1. NẾU CHỌN CHẾ ĐỘ AGENTIC MULTI-AGENT WORKFLOW
+        # 1. CHẾ ĐỘ AGENTIC MULTI-AGENT WORKFLOW (MẶC ĐỊNH)
         # =========================================================================
-        if getattr(request, "mode", None) == "AGENTIC_WORKFLOW":
+        req_mode = getattr(request, "mode", None) or "AGENTIC_WORKFLOW"
+        if "STANDARD" not in req_mode.upper():
             workflow_res = self.agent_engine.run_workflow(
                 question=request.question,
                 document_id=request.documentId,
                 allowed_document_ids=request.allowedDocumentIds,
-                available_files=request.availableFiles,
                 history=request.history,
                 model_provider=request.modelProvider
             )
@@ -110,7 +88,9 @@ class ChatService:
                         content=s.get("content", ""),
                         score=float(s.get("score", 0.0)),
                         documentId=s.get("documentId"),
-                        chunkIndex=s.get("chunkIndex")
+                        chunkIndex=s.get("chunkIndex"),
+                        imagePath=s.get("imagePath"),
+                        isVisual=bool(s.get("imagePath"))
                     )
                     for s in workflow_res.sources
                 ],
@@ -131,21 +111,6 @@ class ChatService:
         # =========================================================================
         # 2. CHẾ ĐỘ STANDARD ADVANCED RAG (VECTORD DB + HYBRID RERANKER + LLM)
         # =========================================================================
-        # 0. Phân tích danh mục file và ánh xạ ID tài liệu
-        doc_id_to_file: Dict[str, str] = {}
-        clean_files_list: List[str] = []
-        if request.availableFiles:
-            for f in request.availableFiles:
-                match = re.search(r'^(.*?)\s*\[DocID:\s*(\d+)\]\s*(.*)$', f)
-                if match:
-                    fname = match.group(1).strip()
-                    num_id = match.group(2).strip()
-                    extra = match.group(3).strip()
-                    doc_id_to_file[num_id] = fname
-                    clean_files_list.append(f"{fname} {extra}".strip())
-                else:
-                    clean_files_list.append(f)
-
         query_vector = self.embedding_service.embed([request.question])[0]
 
         # Lấy ứng viên rộng (top 25) từ Qdrant kèm bộ lọc phân quyền RBAC
@@ -167,6 +132,8 @@ class ChatService:
                 score=float(hit.get("score", hit.get("rerank_score", 0.0))),
                 documentId=hit.get("document_id"),
                 chunkIndex=hit.get("chunk_index"),
+                imagePath=hit.get("image_path"),
+                isVisual=bool(hit.get("image_path"))
             )
             for hit in top_hits
         ]
@@ -174,17 +141,9 @@ class ChatService:
         context_parts = []
         for i, s in enumerate(sources):
             s_doc_id = str(s.documentId) if s.documentId is not None else ""
-            doc_name = doc_id_to_file.get(s_doc_id, "")
-            doc_label = f"Tài liệu: {doc_name} | " if doc_name else ""
+            doc_label = f"Tài liệu #{s_doc_id} | " if s_doc_id else ""
             context_parts.append(f"[Trích đoạn {i+1} - {doc_label}Đoạn {s.chunkIndex or (i+1)}]\n{s.content}")
         context = "\n\n---\n\n".join(context_parts)
-
-        files_text = ""
-        if clean_files_list:
-            file_items = "\n".join(f"- {f}" for f in clean_files_list)
-            files_text = f"### DANH SÁCH TÀI LIỆU HIỆN CÓ TRONG HỆ THỐNG:\n{file_items}\n\n"
-        else:
-            files_text = "### DANH SÁCH TÀI LIỆU HIỆN CÓ TRONG HỆ THỐNG:\n(Hiện tại chưa có tài liệu nào hoặc chưa tải lên)\n\n"
 
         history_text = ""
         if getattr(request, "history", None) and request.history:
@@ -194,7 +153,7 @@ class ChatService:
                 history_lines.append(f"**{role}:** {message.content}")
             history_text = "### LỊCH SỬ CUỘC TRÒ CHUYỆN GẦN ĐÂY:\n" + "\n".join(history_lines) + "\n\n"
 
-        user_content = f"""{files_text}{history_text}### NGỮ CẢNH TRÍCH XUẤT TỪ NỘI DUNG TÀI LIỆU (HYBRID RAG):
+        user_content = f"""{history_text}### NGỮ CẢNH TRÍCH XUẤT TỪ NỘI DUNG TÀI LIỆU (HYBRID RAG):
 {context if context else "(Không có đoạn trích nào từ tài liệu)"}
 
 ---
@@ -205,35 +164,50 @@ class ChatService:
 ### YÊU CẦU BẮT BUỘC KHI TRẢ LỜI:
 - Trả lời trực diện, đúng trọng tâm, ngắn gọn và súc tích.
 - TUYỆT ĐỐI KHÔNG chào hỏi, KHÔNG giới thiệu chức danh/bản thân, KHÔNG kết bài xã giao.
-- Nếu câu hỏi chỉ hỏi danh sách file hoặc có những file nào, CHỈ nêu danh sách tên file phù hợp, TUYỆT ĐỐI KHÔNG tự ý tóm tắt nội dung tài liệu."""
+- Nếu câu hỏi chỉ hỏi danh sách file hoặc có những file nào, CHỈ nêu danh sách tên file phù hợp, TUYỆT ĐỐI KHÔNG tự ý tóm tắt nội dung tài liệu.
+- Nếu câu hỏi liên quan đến sơ đồ / quy trình, liệt kê đầy đủ trình tự các bước tuần tự và các điều kiện rẽ nhánh theo đúng dữ liệu trích xuất."""
 
-        answer_text = None
-        if getattr(request, "modelProvider", "gemini") == "deepseek":
-            answer_text = call_deepseek(user_content, SYSTEM_PROMPT)
+        # Chuẩn bị contents gửi sang Gemini (Hỗ trợ Multimodal Visual Grounding)
+        contents_payload: List[Any] = [user_content]
+        attached_images = 0
+        for hit in top_hits:
+            img_path = hit.get("image_path")
+            if img_path and os.path.exists(img_path) and attached_images < 2:
+                try:
+                    with open(img_path, "rb") as f:
+                        img_bytes = f.read()
+                    ext = os.path.splitext(img_path)[1].lstrip(".").lower()
+                    mime = "image/jpeg" if ext in ["jpg", "jpeg"] else "image/png"
+                    contents_payload.append(types.Part.from_bytes(data=img_bytes, mime_type=mime))
+                    attached_images += 1
+                except Exception as img_err:
+                    logger.debug(f"Không thể nạp ảnh Visual Grounding {img_path}: {img_err}")
+
+        if attached_images > 0:
+            user_content += "\n\n[LƯU Ý THỊ GIÁC]: Đã đính kèm ảnh gốc của sơ đồ/trang tài liệu. Hãy trực tiếp quan sát ảnh để xác nhận mọi chi tiết và trả lời câu hỏi một cách chuẩn xác tuyệt đối!"
+            contents_payload[0] = user_content
 
         prompt_tokens = None
         completion_tokens = None
         total_tokens = None
 
-        if not answer_text:
-            response = retry(
-                lambda: self.client.models.generate_content(
-                    model=self.model,
-                    contents=user_content,
-                    config={
-                        "system_instruction": SYSTEM_PROMPT,
-                        "temperature": 0.2,
-                    },
-                )
+        response = retry(
+            lambda: self.client.models.generate_content(
+                model=self.model,
+                contents=contents_payload,
+                config={
+                    "system_instruction": SYSTEM_PROMPT,
+                    "temperature": 0.2,
+                },
             )
-            answer_text = response.text
-            # Extract real token counts from Gemini usage_metadata
-            if hasattr(response, "usage_metadata") and response.usage_metadata:
-                usage = response.usage_metadata
-                prompt_tokens = getattr(usage, "prompt_token_count", None)
-                completion_tokens = getattr(usage, "candidates_token_count", None)
-                if prompt_tokens is not None and completion_tokens is not None:
-                    total_tokens = prompt_tokens + completion_tokens
+        )
+        answer_text = response.text
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = response.usage_metadata
+            prompt_tokens = getattr(usage, "prompt_token_count", None)
+            completion_tokens = getattr(usage, "candidates_token_count", None)
+            if prompt_tokens is not None and completion_tokens is not None:
+                total_tokens = prompt_tokens + completion_tokens
 
         return RagResponse(
             answer=answer_text,

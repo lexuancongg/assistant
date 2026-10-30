@@ -35,6 +35,37 @@ class AuthenticationService{
         throw response;
     }
 
+    public async loginWithGoogle(
+        data: string | { idToken?: string; accessToken?: string; email?: string; name?: string; avatarUrl?: string },
+        name?: string,
+        avatarUrl?: string
+    ): Promise<LoginResponse> {
+        const payload = typeof data === "string" ? { email: data, name, avatarUrl } : data;
+        const response = await apiClient.post(`${this.baseUrl}/google-login`, JSON.stringify(payload));
+        if (response.ok) {
+            const json = await response.json();
+            try {
+                if (typeof window !== 'undefined') {
+                    if (json.accessToken) window.localStorage.setItem('accessToken', json.accessToken);
+                    if (json.refreshToken) window.localStorage.setItem('refreshToken', json.refreshToken);
+                    window.localStorage.setItem('authUsername', json.name || json.email || '');
+                    window.localStorage.setItem('user', JSON.stringify({
+                        id: json.userId || json.id,
+                        name: json.name || json.email?.split('@')[0] || 'User',
+                        email: json.email || '',
+                        role: json.role ? json.role.replace('ROLE_', '') : 'USER',
+                        avatarUrl: json.avatarUrl || avatarUrl || ''
+                    }));
+                    window.dispatchEvent(new Event('user-profile-updated'));
+                }
+            } catch (e) {
+                console.warn('Cannot access localStorage', e);
+            }
+            return json;
+        }
+        throw response;
+    }
+
     public async register(request: { username: string; password: string; email?: string }): Promise<LoginResponse> {
         const response = await apiClient.post(`${this.baseUrl}/register`, JSON.stringify(request));
         if (response.ok || response.status === 201) {

@@ -46,6 +46,9 @@ public class User {
     @Column(nullable = false, length = 20)
     private UserStatus status = UserStatus.ACTIVE;
 
+    @Column(name = "avatar_url", columnDefinition = "TEXT")
+    private String avatarUrl;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }

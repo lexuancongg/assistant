@@ -9,6 +9,8 @@ class SourceChunk(BaseModel):
     documentId: Optional[Union[str, int, UUID, Any]] = None
     chunkIndex: Optional[int] = None
     page_number: Optional[int] = None
+    imagePath: Optional[str] = None
+    isVisual: Optional[bool] = False
 
 
 class AgentTraceStep(BaseModel):
@@ -28,16 +30,15 @@ class RagRequest(BaseModel):
     question: str = Field(..., min_length=1)
     persona: Optional[str] = None
     history: Optional[List[ChatHistory]] = None
-    availableFiles: Optional[List[str]] = None
-    mode: Optional[str] = "STANDARD_RAG"  # STANDARD_RAG | AGENTIC_WORKFLOW
-    modelProvider: Optional[str] = "gemini"  # gemini | deepseek
+    mode: Optional[str] = "AGENTIC_WORKFLOW"  # AGENTIC_WORKFLOW | STANDARD_RAG
+    modelProvider: Optional[str] = "gemini"
     allowedDocumentIds: Optional[List[Union[str, int, UUID, Any]]] = None
 
 
 class RagResponse(BaseModel):
     answer: str
     sources: List[SourceChunk] = Field(default_factory=list)
-    mode: Optional[str] = "STANDARD_RAG"
+    mode: Optional[str] = "AGENTIC_WORKFLOW"
     intent: Optional[str] = None
     groundednessScore: Optional[float] = None
     reasoningTrace: Optional[List[AgentTraceStep]] = None

@@ -28,7 +28,7 @@ export default function Topbar({ breadcrumb = [] }: TopbarProps) {
     };
 
     return (
-        <header className="sticky top-0 right-0 h-[52px] bg-white dark:bg-slate-900 z-20 border-b border-gray-100 dark:border-slate-800 transition-colors duration-200 select-none">
+        <header className="sticky top-0 right-0 h-[52px] bg-white dark:bg-slate-900 z-40 border-b border-gray-100 dark:border-slate-800 transition-colors duration-200 select-none">
             <div className="h-full flex items-center justify-between gap-4 px-5">
                 {/* 1. Google Drive Capsule Omni-Search Bar (Aligned with content below) */}
                 <div className="flex-1 max-w-[720px]">

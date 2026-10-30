@@ -14,7 +14,7 @@ from docx import Document
 from openpyxl import load_workbook
 from xlrd import open_workbook
 
-from app.services.pdf_service import PdfService
+from app.services.pdf_service import PdfService, _save_diagram_image
 from app.services.ocr_service import OCRService
 from app.services.vision_service import VisionService
 
@@ -95,29 +95,35 @@ class DocumentReader:
     # =========================================================
 
     def _read_image(self, file_path: str) -> str:
-        parts = []
-        # 1. Trích xuất text thuần bằng OCR
-        ocr_text = self.ocr_service.extract_text(file_path)
-        if ocr_text and ocr_text.strip():
-            parts.append(ocr_text.strip())
-
-        # 2. Phân tích ngữ nghĩa sơ đồ / flowchart nghiệp vụ bằng Vision LLM
+        """
+        Đọc nội dung file ảnh với độ chuẩn xác tối đa (Vision-First Strategy):
+        1. Ưu tiên phân tích sâu qua Multimodal Vision (nhận diện cả chữ, bảng biểu Markdown và sơ đồ logic).
+        2. Fallback sang EasyOCR nếu Vision API gặp sự cố hoặc offline.
+        Lưu vết đường dẫn ảnh để hỗ trợ Visual Grounding khi người dùng hỏi.
+        """
+        path_tag = f" | IMAGE_PATH: {os.path.abspath(file_path)}"
+        # 1. Thử phân tích qua Vision LLM trước (Vision-First Strategy)
         try:
             with open(file_path, "rb") as f:
                 img_bytes = f.read()
             ext = Path(file_path).suffix.lower().lstrip(".")
             mime_type = "image/jpeg" if ext in ["jpg", "jpeg"] else f"image/{ext}"
-            diagram_desc = self.vision_service.analyze_diagram_image(img_bytes, mime_type=mime_type)
-            if diagram_desc and diagram_desc.strip():
-                parts.append(
-                    f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG HOẠT ĐỘNG TỪ HÌNH ẢNH] ---\n"
-                    f"{diagram_desc.strip()}\n"
-                    f"---------------------------------------------------------\n"
+            vision_desc = self.vision_service.analyze_diagram_image(img_bytes, mime_type=mime_type)
+            if vision_desc and vision_desc.strip():
+                return (
+                    f"--- [NỘI DUNG & DIỄN GIẢI HÌNH ẢNH / SƠ ĐỒ{path_tag}] ---\n"
+                    f"{vision_desc.strip()}\n"
+                    f"---------------------------------------------------------"
                 )
         except Exception as e:
-            logger.warning(f"Lỗi khi diễn giải sơ đồ hình ảnh {file_path}: {e}")
+            logger.warning(f"Lỗi khi diễn giải hình ảnh qua VisionService {file_path}: {e}")
 
-        return "\n\n".join(parts)
+        # 2. Fallback sang EasyOCR cục bộ nếu Vision không thành công
+        logger.info(f"Fallback sang EasyOCR cục bộ cho ảnh: {file_path}")
+        ocr_text = self.ocr_service.extract_text(file_path)
+        if ocr_text and ocr_text.strip():
+            return f"--- [NỘI DUNG HÌNH ẢNH OCR{path_tag}] ---\n{ocr_text.strip()}\n---------------------------------------------------------"
+        return ""
 
     # =========================================================
     # DOCX
@@ -170,8 +176,10 @@ class DocumentReader:
                     mime_type = "image/jpeg" if ext in ["jpg", "jpeg"] else "image/png"
                     desc = self.vision_service.analyze_diagram_image(img_bytes, mime_type=mime_type)
                     if desc and desc.strip():
+                        saved_img_path = _save_diagram_image(img_bytes, prefix="docx_diag", ext=ext or "png")
+                        path_tag = f" | IMAGE_PATH: {saved_img_path}" if saved_img_path else ""
                         parts.append(
-                            f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG HOẠT ĐỘNG TỪ TÀI LIỆU DOCX] ---\n"
+                            f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG HOẠT ĐỘNG TỪ TÀI LIỆU DOCX{path_tag}] ---\n"
                             f"{desc.strip()}\n"
                             f"-------------------------------------------------------------\n"
                         )

@@ -26,7 +26,7 @@ class ForderService {
     private baseUrl : string
 
     constructor() {
-        this.baseUrl = 'http://localhost:8080/api/v1/forders'
+        this.baseUrl = '/api/v1/folders'
     }
 
     public async getFolderById(folderId: string | number): Promise<any> {

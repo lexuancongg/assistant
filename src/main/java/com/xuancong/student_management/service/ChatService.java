@@ -21,7 +21,18 @@ import com.xuancong.student_management.repository.ChatMessageRepository;
 import com.xuancong.student_management.repository.ChatSessionRepository;
 import com.xuancong.student_management.repository.FileItemRepository;
 import com.xuancong.student_management.repository.UserRepository;
+import com.xuancong.student_management.entity.Folder;
+import com.xuancong.student_management.repository.FolderRepository;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -31,14 +42,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -50,6 +53,7 @@ public class ChatService {
     private final ChatCitationRepository chatCitationRepository;
     private final UserRepository userRepository;
     private final FileItemRepository fileItemRepository;
+    private final FolderRepository folderRepository;
     private final AiService aiService;
     private final FileManagementService fileManagementService;
     private final ActivityLogManagementService activityLogManagementService;
@@ -179,17 +183,34 @@ public class ChatService {
         userMessage.setContent(question);
         chatMessageRepository.save(userMessage);
 
-        List<RagRequest.ChatHistoryMessage> history = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAsc(chatSession.getId())
-                .stream()
-                .filter(m -> !m.getId().equals(userMessage.getId()))
-                .map(m -> new RagRequest.ChatHistoryMessage(
-                        m.getRole() != null ? m.getRole().name() : "USER",
-                        m.getContent()
-                ))
-                .toList();
+        List<RagRequest.ChatHistoryMessage> history = new ArrayList<>(
+                chatMessageRepository
+                        .findBySession_IdOrderByCreatedAtAsc(chatSession.getId())
+                        .stream()
+                        .filter(m -> !m.getId().equals(userMessage.getId()))
+                        .map(m -> new RagRequest.ChatHistoryMessage(
+                                m.getRole() != null ? m.getRole().name() : "USER",
+                                m.getContent()
+                        ))
+                        .toList()
+        );
 
-        List<String> availableFiles = new ArrayList<>();
+        // Fallback: Nếu DB history của session này rỗng nhưng client có gửi kèm history (multi-turn chat)
+        if (history.isEmpty() && chatRequest.history() != null && !chatRequest.history().isEmpty()) {
+            history = chatRequest.history().stream()
+                    .filter(h -> h != null && h.content() != null && !h.content().isBlank())
+                    .map(h -> new RagRequest.ChatHistoryMessage(
+                            h.role() != null ? h.role().toUpperCase() : "USER",
+                            h.content()
+                    ))
+                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        }
+
+        // Giới hạn ngữ cảnh (tối đa 10 tin nhắn gần nhất) để tối ưu token RAG
+        if (history.size() > 10) {
+            history = new ArrayList<>(history.subList(history.size() - 10, history.size()));
+        }
+
         List<String> allowedDocumentIds = new ArrayList<>();
         try {
             List<FileItem> allActiveFiles = fileItemRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
@@ -201,13 +222,23 @@ public class ChatService {
                     .toList();
 
             String targetFileId = chatRequest.fileId();
+            if ((targetFileId == null || targetFileId.isBlank()) && chatRequest.documentId() != null && chatRequest.documentId() > 0) {
+                targetFileId = String.valueOf(chatRequest.documentId());
+            }
+            String targetFolderId = chatRequest.folderId();
+
             if (targetFileId != null && !targetFileId.isBlank()) {
+                // =========================================================================
+                // TRƯỜNG HỢP 1: Hỏi đích danh theo 1 TÀI LIỆU (File)
+                // =========================================================================
                 try {
                     Long targetLong = Long.parseLong(targetFileId);
                     FileItem targetFile = fileItemRepository.findById(targetLong).orElse(null);
-                    if (targetFile != null && !fileManagementService.hasFileAccess(targetFile, finalUser, PermissionLevel.VIEWER)) {
+
+                    // BẮT BUỘC KIỂM TRA QUYỀN TRÊN TÀI LIỆU NÀY
+                    if (targetFile == null || !fileManagementService.hasFileAccess(targetFile, finalUser, PermissionLevel.VIEWER)) {
                         activityLogManagementService.logActivity(
-                                targetFile.getCompany(),
+                                targetFile != null ? targetFile.getCompany() : (finalUser != null ? finalUser.getCompany() : null),
                                 finalUser,
                                 ActivityType.AI_QUERY_BLOCKED,
                                 targetFile,
@@ -218,38 +249,43 @@ public class ChatService {
                     allowedDocumentIds = List.of(targetFileId);
                 } catch (ResponseStatusException rse) {
                     throw rse;
-                } catch (Exception ignored) {
-                    allowedDocumentIds = List.of(targetFileId);
+                } catch (NumberFormatException nfe) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mã tài liệu không hợp lệ: " + targetFileId);
                 }
-            } else if (chatRequest.documentId() != null && chatRequest.documentId() > 0) {
-                allowedDocumentIds = List.of(String.valueOf(chatRequest.documentId()));
+
+            } else if (targetFolderId != null && !targetFolderId.isBlank() && !"all".equalsIgnoreCase(targetFolderId)) {
+                // =========================================================================
+                // TRƯỜNG HỢP 2: Hỏi theo 1 THƯ MỤC cụ thể (Folder - bao gồm các thư mục con)
+                // =========================================================================
+                try {
+                    Long folderLong = Long.parseLong(targetFolderId);
+                    Set<Long> targetFolderIds = getFolderAndSubFolderIds(folderLong);
+
+                    // CHỈ LỌC các file nằm trong thư mục này VÀ user phải có quyền VIEWER
+                    allowedDocumentIds = activeFiles.stream()
+                            .filter(f -> f.getFolder() != null && targetFolderIds.contains(f.getFolder().getId()))
+                            .map(FileItem::getId)
+                            .filter(Objects::nonNull)
+                            .map(String::valueOf)
+                            .distinct()
+                            .toList();
+
+                    log.info("Chat scoped to folder ID {}: Found {} permitted files for user {}", 
+                            folderLong, allowedDocumentIds.size(), finalUser != null ? finalUser.getEmail() : "anonymous");
+                } catch (NumberFormatException nfe) {
+                    log.warn("Invalid folderId format: {}", targetFolderId);
+                    allowedDocumentIds = List.of();
+                }
+
             } else {
+                // =========================================================================
+                // TRƯỜNG HỢP 3: Hỏi trên TOÀN BỘ DRIVE
+                // =========================================================================
                 allowedDocumentIds = activeFiles.stream()
                         .map(FileItem::getId)
                         .filter(Objects::nonNull)
                         .map(String::valueOf)
                         .distinct()
-                        .toList();
-            }
-
-            if (!activeFiles.isEmpty()) {
-                availableFiles = activeFiles.stream()
-                        .map(f -> {
-                            String name = f.getName();
-                            String type = f.getFileType() != null ? f.getFileType().toUpperCase() : "FILE";
-                            long numId = f.getId() != null ? f.getId() : 0L;
-                            String tagStr = "";
-                            if (f.getTags() != null && !f.getTags().isEmpty()) {
-                                String joined = f.getTags().stream()
-                                        .map(FileTag::getTag)
-                                        .filter(Objects::nonNull)
-                                        .collect(Collectors.joining(", "));
-                                if (!joined.isBlank()) {
-                                    tagStr = " [Tags: " + joined + "]";
-                                }
-                            }
-                            return name + tagStr + " [DocID: " + numId + "] (" + type + ")";
-                        })
                         .toList();
             }
         } catch (ResponseStatusException rse) {
@@ -258,9 +294,9 @@ public class ChatService {
             log.warn("Error resolving active files for chat: {}", e.getMessage());
         }
 
-        String mode = (chatRequest.mode() != null && chatRequest.mode().toUpperCase().contains("AGENTIC"))
-                ? "AGENTIC_WORKFLOW"
-                : "STANDARD_RAG";
+        String mode = (chatRequest.mode() != null && chatRequest.mode().toUpperCase().contains("STANDARD"))
+                ? "STANDARD_RAG"
+                : "AGENTIC_WORKFLOW";
         String modelProvider = chatRequest.modelProvider() != null ? chatRequest.modelProvider() : "gemini";
 
         long startTime = System.currentTimeMillis();
@@ -268,10 +304,9 @@ public class ChatService {
         try {
             ragResponse = aiService.ask(
                     RagRequest.builder()
-                            .documentId(chatRequest.documentId())
+                            .documentId(null) // Luôn dùng allowedDocumentIds để đảm bảo Qdrant chạy qua bộ lọc RBAC đã thẩm duyệt
                             .question(question)
                             .history(history)
-                            .availableFiles(availableFiles)
                             .mode(mode)
                             .modelProvider(modelProvider)
                             .allowedDocumentIds(allowedDocumentIds)
@@ -322,7 +357,7 @@ public class ChatService {
             completionTokens = ragResponse.completionTokens() != null ? ragResponse.completionTokens() : 0;
             totalTokens = ragResponse.totalTokens();
         } else {
-            // Fallback estimation for DeepSeek or when token data unavailable
+            // Fallback estimation when real token metadata is unavailable
             promptTokens = Math.max(50, (question != null ? question.length() : 0) * 2 + (answerText.length() / 2));
             completionTokens = Math.max(20, answerText.length() / 3);
             totalTokens = promptTokens + completionTokens;
@@ -335,7 +370,7 @@ public class ChatService {
             tokenUsage.setDepartment(currentUser.getDepartment());
             tokenUsage.setUser(currentUser);
             tokenUsage.setMessage(assistantMessage);
-            tokenUsage.setModelName(modelProvider != null ? modelProvider : "gemini-1.5-pro");
+            tokenUsage.setModelName("gemini-flash");
             tokenUsage.setPromptTokens(promptTokens);
             tokenUsage.setCompletionTokens(completionTokens);
             tokenUsage.setTotalTokens(totalTokens);
@@ -436,5 +471,31 @@ public class ChatService {
         return firstQuestion.length() > 50
                 ? firstQuestion.substring(0, 50) + "..."
                 : firstQuestion;
+    }
+
+    /**
+     * Thu thập danh sách ID của thư mục gốc và toàn bộ các thư mục con phân cấp (đệ quy)
+     */
+    private Set<Long> getFolderAndSubFolderIds(Long rootFolderId) {
+        Set<Long> result = new HashSet<>();
+        if (rootFolderId == null) return result;
+        result.add(rootFolderId);
+
+        try {
+            List<Folder> allFolders = folderRepository.findAll();
+            boolean added = true;
+            while (added) {
+                added = false;
+                for (Folder f : allFolders) {
+                    if (f.getParent() != null && result.contains(f.getParent().getId()) && !result.contains(f.getId())) {
+                        result.add(f.getId());
+                        added = true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error resolving subfolders for folderId {}: {}", rootFolderId, e.getMessage());
+        }
+        return result;
     }
 }

@@ -23,14 +23,18 @@ public class AIServiceClient {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+
     @Value("${ai.service.url:http://127.0.0.1:8000}")
     private String aiServiceUrl;
+
+    @Value("${qdrant.url:http://localhost:6333}")
+    private String qdrantBaseUrl;
 
     public ExtractResponse extract(ExtractRequest request) {
         try {
             log.info("AI request = {}", objectMapper.writeValueAsString(request));
         } catch (JsonProcessingException e) {
-            log.error("Cannot convert request to JSON", e.getMessage());
+            log.error("Cannot convert request to JSON: {}", e.getMessage());
         }
         try {
             return restClient.post()
@@ -50,7 +54,7 @@ public class AIServiceClient {
         try {
             log.info("AI ask request = {}", objectMapper.writeValueAsString(request));
         } catch (JsonProcessingException e) {
-            log.error("Cannot convert request to JSON", e.getMessage());
+            log.error("Cannot convert request to JSON: {}", e.getMessage());
         }
         try {
             return restClient.post()
@@ -69,7 +73,7 @@ public class AIServiceClient {
         try {
             log.info("AI semantic search request = {}", objectMapper.writeValueAsString(request));
         } catch (JsonProcessingException e) {
-            log.error("Cannot convert request to JSON", e.getMessage());
+            log.error("Cannot convert request to JSON: {}", e.getMessage());
         }
         try {
             return restClient.post()
@@ -132,7 +136,7 @@ public class AIServiceClient {
 
     private void deleteDirectlyFromQdrant(Long documentId) {
         try {
-            String qdrantUrl = "http://localhost:6333/collections/documents/points/delete";
+            String qdrantUrl = qdrantBaseUrl.replaceAll("/+$", "") + "/collections/documents/points/delete";
             String payload = String.format(
                     "{\"filter\":{\"should\":[{\"key\":\"document_id\",\"match\":{\"value\":\"%d\"}},{\"key\":\"document_id\",\"match\":{\"value\":%d}}]}}",
                     documentId, documentId

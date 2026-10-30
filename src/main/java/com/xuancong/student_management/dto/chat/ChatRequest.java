@@ -5,6 +5,7 @@ import java.util.List;
 public record ChatRequest(
         String sessionId,
         String fileId,
+        String folderId,
         Long documentId,
         String question,
         String persona,
@@ -13,11 +14,11 @@ public record ChatRequest(
         String modelProvider
 ) {
     public ChatRequest(String sessionId, Long documentId, String question, String persona, List<ChatHistoryMessage> history) {
-        this(sessionId, null, documentId, question, persona, history, "STANDARD", "gemini");
+        this(sessionId, null, null, documentId, question, persona, history, "STANDARD", "gemini");
     }
 
     public ChatRequest(String sessionId, Long documentId, String question, String persona, List<ChatHistoryMessage> history, String mode, String modelProvider) {
-        this(sessionId, null, documentId, question, persona, history, mode, modelProvider);
+        this(sessionId, null, null, documentId, question, persona, history, mode, modelProvider);
     }
 
     public record ChatHistoryMessage(

@@ -8,7 +8,6 @@ import {
     Home,
     FolderTree,
     Bot,
-    GitCompare,
     ShieldCheck,
     Building2,
     ClipboardList,
@@ -848,23 +847,7 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                             {isOpen && <span className="truncate">Có gắn dấu sao</span>}
                         </Link>
 
-                        {/* 7. So sánh Tài liệu */}
-                        <Link
-                            href="/compare"
-                            title={!isOpen ? 'So sánh Tài liệu' : undefined}
-                            className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
-                                isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
-                            } ${
-                                pathname === '/compare'
-                                    ? 'bg-[#c2e7ff] text-[#001d35] dark:bg-[#004a77] dark:text-[#c2e7ff] font-medium'
-                                    : 'text-[#444746] dark:text-slate-300 hover:bg-[#f0f4f9] dark:hover:bg-slate-800/60 hover:text-[#1f1f1f] dark:hover:text-slate-100 font-normal'
-                            }`}
-                        >
-                            <GitCompare className={`w-4 h-4 shrink-0 ${pathname === '/compare' ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
-                            {isOpen && <span className="truncate">So sánh Tài liệu</span>}
-                        </Link>
-
-                        {/* 8. Thùng rác */}
+                        {/* 7. Thùng rác */}
                         <Link
                             href="/trash"
                             title={!isOpen ? 'Thùng rác' : undefined}
@@ -917,53 +900,59 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                             )}
                         </Link>
 
-                        {/* Cấu hình Phân quyền */}
-                        <Link
-                            href="/files/permissions"
-                            title={!isOpen ? 'Cấu hình Phân quyền' : undefined}
-                            className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
-                                isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
-                            } ${
-                                pathname.startsWith('/files/permissions')
-                                    ? 'bg-[#c2e7ff] text-[#001d35] dark:bg-[#004a77] dark:text-[#c2e7ff] font-medium'
-                                    : 'text-[#444746] dark:text-slate-300 hover:bg-[#f0f4f9] dark:hover:bg-slate-800/60 hover:text-[#1f1f1f] dark:hover:text-slate-100 font-normal'
-                            }`}
-                        >
-                            <ShieldCheck className={`w-4 h-4 shrink-0 ${pathname.startsWith('/files/permissions') ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
-                            {isOpen && <span className="truncate">Cấu hình Phân quyền</span>}
-                        </Link>
+                        {/* Cấu hình Phân quyền (Chỉ ADMIN) */}
+                        {user.role?.toUpperCase() === 'ADMIN' && (
+                            <Link
+                                href="/files/permissions"
+                                title={!isOpen ? 'Cấu hình Phân quyền' : undefined}
+                                className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
+                                    isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
+                                } ${
+                                    pathname.startsWith('/files/permissions')
+                                        ? 'bg-[#c2e7ff] text-[#001d35] dark:bg-[#004a77] dark:text-[#c2e7ff] font-medium'
+                                        : 'text-[#444746] dark:text-slate-300 hover:bg-[#f0f4f9] dark:hover:bg-slate-800/60 hover:text-[#1f1f1f] dark:hover:text-slate-100 font-normal'
+                                }`}
+                            >
+                                <ShieldCheck className={`w-4 h-4 shrink-0 ${pathname.startsWith('/files/permissions') ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
+                                {isOpen && <span className="truncate">Cấu hình Phân quyền</span>}
+                            </Link>
+                        )}
 
-                        {/* Quản trị Tổ chức */}
-                        <Link
-                            href="/departments"
-                            title={!isOpen ? 'Quản trị Tổ chức' : undefined}
-                            className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
-                                isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
-                            } ${
-                                pathname.startsWith('/departments')
-                                    ? 'bg-[#c2e7ff] text-[#001d35] dark:bg-[#004a77] dark:text-[#c2e7ff] font-medium'
-                                    : 'text-[#444746] dark:text-slate-300 hover:bg-[#f0f4f9] dark:hover:bg-slate-800/60 hover:text-[#1f1f1f] dark:hover:text-slate-100 font-normal'
-                            }`}
-                        >
-                            <Building2 className={`w-4 h-4 shrink-0 ${pathname.startsWith('/departments') ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
-                            {isOpen && <span className="truncate">Quản trị Tổ chức</span>}
-                        </Link>
+                        {/* Quản trị Tổ chức (Chỉ ADMIN) */}
+                        {user.role?.toUpperCase() === 'ADMIN' && (
+                            <Link
+                                href="/departments"
+                                title={!isOpen ? 'Quản trị Tổ chức' : undefined}
+                                className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
+                                    isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
+                                } ${
+                                    pathname.startsWith('/departments')
+                                        ? 'bg-[#c2e7ff] text-[#001d35] dark:bg-[#004a77] dark:text-[#c2e7ff] font-medium'
+                                        : 'text-[#444746] dark:text-slate-300 hover:bg-[#f0f4f9] dark:hover:bg-slate-800/60 hover:text-[#1f1f1f] dark:hover:text-slate-100 font-normal'
+                                }`}
+                            >
+                                <Building2 className={`w-4 h-4 shrink-0 ${pathname.startsWith('/departments') ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
+                                {isOpen && <span className="truncate">Quản trị Tổ chức</span>}
+                            </Link>
+                        )}
 
-                        {/* Người dùng & Nhân sự */}
-                        <Link
-                            href="/users"
-                            title={!isOpen ? 'Người dùng & Nhân sự' : undefined}
-                            className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
-                                isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
-                            } ${
-                                pathname.startsWith('/users')
-                                    ? 'bg-[#c2e7ff] text-[#001d35] dark:bg-[#004a77] dark:text-[#c2e7ff] font-medium'
-                                    : 'text-[#444746] dark:text-slate-300 hover:bg-[#f0f4f9] dark:hover:bg-slate-800/60 hover:text-[#1f1f1f] dark:hover:text-slate-100 font-normal'
-                            }`}
-                        >
-                            <Users className={`w-4 h-4 shrink-0 ${pathname.startsWith('/users') ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
-                            {isOpen && <span className="truncate">Người dùng & Nhân sự</span>}
-                        </Link>
+                        {/* Người dùng & Nhân sự (Chỉ ADMIN) */}
+                        {user.role?.toUpperCase() === 'ADMIN' && (
+                            <Link
+                                href="/users"
+                                title={!isOpen ? 'Người dùng & Nhân sự' : undefined}
+                                className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
+                                    isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
+                                } ${
+                                    pathname.startsWith('/users')
+                                        ? 'bg-[#c2e7ff] text-[#001d35] dark:bg-[#004a77] dark:text-[#c2e7ff] font-medium'
+                                        : 'text-[#444746] dark:text-slate-300 hover:bg-[#f0f4f9] dark:hover:bg-slate-800/60 hover:text-[#1f1f1f] dark:hover:text-slate-100 font-normal'
+                                }`}
+                            >
+                                <Users className={`w-4 h-4 shrink-0 ${pathname.startsWith('/users') ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
+                                {isOpen && <span className="truncate">Người dùng & Nhân sự</span>}
+                            </Link>
+                        )}
 
                         {/* Cài đặt Hệ thống */}
                         <Link

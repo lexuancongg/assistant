@@ -56,21 +56,33 @@ public class AccessRequestService {
     }
 
     @Transactional(readOnly = true)
-    public List<AccessRequestResponse> getAllRequests() {
-        return accessRequestRepository.findAll(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"))
-                .stream()
-                .filter(r -> r.getFileId() == null || fileItemRepository.existsById(r.getFileId()))
-                .map(this::toResponse)
-                .toList();
+    public List<AccessRequestResponse> getAllRequests(User currentUser) {
+        if (currentUser == null) return List.of();
+        // Chỉ ADMIN mới xem được tất cả các yêu cầu trong hệ thống
+        if (currentUser.getRole() == com.xuancong.student_management.entity.enums.UserRole.ADMIN) {
+            return accessRequestRepository.findAll(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"))
+                    .stream()
+                    .filter(r -> r.getFileId() == null || fileItemRepository.existsById(r.getFileId()))
+                    .map(this::toResponse)
+                    .toList();
+        }
+        // User thông thường chỉ xem được các yêu cầu do chính mình tạo
+        return getMyRequests(currentUser);
     }
 
     @Transactional(readOnly = true)
-    public List<AccessRequestResponse> getPendingRequests() {
-        return accessRequestRepository.findByStatusOrderByCreatedAtDesc(AccessRequestStatus.PENDING)
-                .stream()
-                .filter(r -> r.getFileId() == null || fileItemRepository.existsById(r.getFileId()))
-                .map(this::toResponse)
-                .toList();
+    public List<AccessRequestResponse> getPendingRequests(User currentUser) {
+        if (currentUser == null) return List.of();
+        // Chỉ ADMIN mới có danh sách yêu cầu cần duyệt
+        if (currentUser.getRole() == com.xuancong.student_management.entity.enums.UserRole.ADMIN) {
+            return accessRequestRepository.findByStatusOrderByCreatedAtDesc(AccessRequestStatus.PENDING)
+                    .stream()
+                    .filter(r -> r.getFileId() == null || fileItemRepository.existsById(r.getFileId()))
+                    .map(this::toResponse)
+                    .toList();
+        }
+        // User thông thường không có quyền duyệt yêu cầu của ai khác
+        return List.of();
     }
 
     @Transactional(readOnly = true)
@@ -84,12 +96,19 @@ public class AccessRequestService {
     }
 
     @Transactional(readOnly = true)
-    public long getPendingCount() {
+    public long getPendingCount(User currentUser) {
+        if (currentUser == null || currentUser.getRole() != com.xuancong.student_management.entity.enums.UserRole.ADMIN) {
+            return 0L;
+        }
         return accessRequestRepository.countByStatus(AccessRequestStatus.PENDING);
     }
 
     @Transactional
     public AccessRequestResponse approveRequest(Long requestId, User approver) {
+        if (approver == null || approver.getRole() != com.xuancong.student_management.entity.enums.UserRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản trị viên (ADMIN) mới có quyền phê duyệt yêu cầu");
+        }
+
         AccessRequest request = accessRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Yêu cầu không tồn tại"));
 
@@ -129,6 +148,10 @@ public class AccessRequestService {
 
     @Transactional
     public AccessRequestResponse rejectRequest(Long requestId, User approver) {
+        if (approver == null || approver.getRole() != com.xuancong.student_management.entity.enums.UserRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản trị viên (ADMIN) mới có quyền từ chối yêu cầu");
+        }
+
         AccessRequest request = accessRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Yêu cầu không tồn tại"));
 

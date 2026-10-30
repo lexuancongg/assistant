@@ -9,7 +9,6 @@ public record RagRequest(
         Long documentId,
         String question,
         List<ChatHistoryMessage> history,
-        List<String> availableFiles,
         String mode,
         String modelProvider,
         List<String> allowedDocumentIds

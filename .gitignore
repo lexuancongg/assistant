@@ -37,6 +37,27 @@ db/
 Ai/.env
 src/main/resources/application.yaml
 
+# Credentials & Backups
+*CREDENTIALS*
+credentials*.txt
+*.pem
+*.key
+
 # Python caches
 **/__pycache__/
 **/*.py[cod]
+
+# Google OAuth Secrets
+client_secret_*.json
+
+# Storage caches
+Ai/storage/diagrams/
+Ai/qdrant_storage/
+
+# Temporary documents & archives
+*.docx
+*.doc
+*.zip
+*.pdf
+baocao/
+docs/

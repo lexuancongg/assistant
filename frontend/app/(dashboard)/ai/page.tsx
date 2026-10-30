@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
     Sparkles,
+    Workflow,
     Folder,
     FileText,
     FileSpreadsheet,
@@ -173,6 +174,7 @@ function DriveAiContent() {
     const [showAddSourceModal, setShowAddSourceModal] = useState(false);
 
     // AI Overview & Chat states
+    const [executionMode, setExecutionMode] = useState<'AGENTIC_WORKFLOW' | 'STANDARD_RAG'>('AGENTIC_WORKFLOW');
     const [overviewSummary, setOverviewSummary] = useState<string>('');
     const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
     const [messages, setMessages] = useState<ChatMessageDto[]>([]);
@@ -373,19 +375,23 @@ function DriveAiContent() {
     };
 
     // Save conversation to global history
-    const saveConversationToHistory = (queryText: string, updatedMsgs: ChatMessageDto[]) => {
+    const saveConversationToHistory = (queryText: string, updatedMsgs: ChatMessageDto[], targetSessionId?: string | number) => {
         const activeSources = sources.filter((s) => s.checked);
         const sourceSummary = activeSources.map((s) => s.name).join(', ') || 'Toàn bộ Drive';
 
         setChatSessions((prevSessions) => {
-            const sidStr = sessionId.toString();
-            const existingIndex = prevSessions.findIndex((s) => s.id === sidStr);
+            const currentSid = (targetSessionId || sessionId).toString();
+            // Tìm session theo ID mới hoặc ID tạm thời cũ
+            const existingIndex = prevSessions.findIndex(
+                (s) => s.id === currentSid || (sessionId && s.id === sessionId.toString())
+            );
             let nextSessions: ChatHistorySession[];
 
             if (existingIndex >= 0) {
                 nextSessions = [...prevSessions];
                 nextSessions[existingIndex] = {
                     ...nextSessions[existingIndex],
+                    id: currentSid,
                     messages: updatedMsgs,
                     timestamp: Date.now(),
                     createdAt: formatSessionDate(new Date()),
@@ -393,7 +399,7 @@ function DriveAiContent() {
                 };
             } else {
                 const newSession: ChatHistorySession = {
-                    id: sidStr,
+                    id: currentSid,
                     title: queryText.length > 55 ? queryText.substring(0, 55) + '...' : queryText,
                     createdAt: formatSessionDate(new Date()),
                     timestamp: Date.now(),
@@ -484,21 +490,33 @@ function DriveAiContent() {
         const activeSources = sources.filter((s) => s.checked);
         const hasDriveScope = activeSources.some((s) => s.type === 'drive' || s.id === 'all');
         const activeFileId = hasDriveScope ? undefined : activeSources.find((s) => s.type === 'file')?.id;
+        const activeFolderSource = hasDriveScope ? undefined : activeSources.find((s) => s.type === 'folder');
+        const activeFolderId = activeFolderSource ? (activeFolderSource.folderId || activeFolderSource.id) : undefined;
 
         try {
+            // Nạp toàn bộ lịch sử hội thoại trước câu hỏi hiện tại
+            const historyPayload = messages.map((m) => ({
+                role: m.role.toUpperCase(),
+                content: m.content,
+            }));
+
             const askReq: ChatAskRequest = {
                 sessionId: sessionId,
                 fileId: activeFileId,
+                folderId: activeFolderId,
                 question: query,
-                mode: 'STANDARD',
+                mode: executionMode,
                 modelProvider: 'gemini',
-                history: messages.map((m) => ({
-                    role: m.role.toLowerCase(),
-                    content: m.content,
-                })),
+                history: historyPayload,
             };
 
             const res = await chatService.ask(askReq);
+
+            // Cập nhật lại sessionId từ Backend để các câu hỏi tiếp theo kế thừa phiên trò chuyện này
+            const returnedSessionId = (res as any).id || (res.sessionId ? res.sessionId.toString() : null);
+            if (returnedSessionId && returnedSessionId !== sessionId.toString()) {
+                setSessionId(returnedSessionId);
+            }
 
             const aiMsg: ChatMessageDto = {
                 role: 'ASSISTANT',
@@ -506,82 +524,23 @@ function DriveAiContent() {
             };
             const finalMsgs = [...currentMessagesWithUser, aiMsg];
             setMessages(finalMsgs);
-            saveConversationToHistory(query, finalMsgs);
+            saveConversationToHistory(query, finalMsgs, returnedSessionId || sessionId);
         } catch (err: any) {
-            console.warn('Backend chat API failed, generating intelligent context answer:', err);
+            console.error('Backend chat API failed:', err);
+            const status = err?.response?.status;
+            let displayMessage = err?.response?.data?.message || err?.message;
 
-            // High quality fallback intelligent response tailored to the query and permissions
-            let generatedAnswer = '';
-            const qLower = query.toLowerCase();
-
-            if (hasDriveScope) {
-                generatedAnswer = `Dựa trên các tài liệu bạn có quyền truy cập trong **Toàn bộ Drive**:
-
-1. **Tổng quan nguồn dữ liệu**:
-   - Hệ thống đã kiểm tra quyền sở hữu và quyền truy cập được chia sẻ (RBAC) của bạn trên toàn bộ không gian làm việc.
-   - Các tệp và thư mục đang hoạt động gồm có: hồ sơ kỹ thuật (\`cv\`), tài liệu dự án, hợp đồng và bảng tính liên quan.
-
-2. **Giải đáp cho câu hỏi *"${query}"***:
-   - Các tài liệu dự án mới nhất ghi nhận sự phát triển của hệ thống **Enterprise AI Assistant** tích hợp mô hình Gemini và cơ sở dữ liệu vector Qdrant.
-   - Mọi dữ liệu trích xuất đều tuân thủ các quy tắc bảo mật và quyền đọc của tài khoản hiện tại.`;
-            } else if (qLower.includes('kỹ năng') || qLower.includes('skill')) {
-                generatedAnswer = `Dựa trên hồ sơ kỹ thuật của **Lê Công**, các kỹ năng kỹ thuật chính được ghi nhận bao gồm:
-
-1. **Ngôn ngữ & Nền tảng cốt lõi**:
-   - **Java** (Java 17, Java 21) chuyên sâu với hệ sinh thái **Spring Boot**, Spring Security, Spring Data JPA.
-   - **Frontend**: React, Next.js, Tailwind CSS, TypeScript.
-
-2. **Kiến trúc & Cơ sở dữ liệu**:
-   - Thiết kế hệ thống phân tán, Microservices, RESTful API chuẩn mực.
-   - Cơ sở dữ liệu quan hệ: **PostgreSQL**, MySQL với tối ưu hóa chỉ mục (indexing) và phân vùng bảng.
-   - Caching & NoSQL: **Redis** (caching, pub/sub), **Elasticsearch** (tìm kiếm toàn văn bản).
-
-3. **Công nghệ AI & Vector Search**:
-   - Tích hợp mô hình ngôn ngữ lớn (LLM Gemini, OpenAI).
-   - Cơ sở dữ liệu vector **Qdrant** phục vụ tìm kiếm ngữ nghĩa (RAG pipeline) và xử lý nhúng (Embeddings).
-
-4. **DevOps & Triển khai**:
-   - Docker, Docker Compose, AWS S3 lưu trữ đám mây.`;
-            } else if (qLower.includes('dự án') || qLower.includes('so sánh')) {
-                generatedAnswer = `Qua phân tích các dự án cá nhân được đề cập trong tài liệu của **Lê Công**:
-
-- **Enterprise AI Assistant (Dự án hiện tại)**:
-  - *Mục tiêu*: Trợ lý AI toàn diện cho doanh nghiệp mô phỏng Google Drive tích hợp RAG.
-  - *Công nghệ*: Spring Boot, Next.js 14, Qdrant Vector DB, Gemini AI, PostgreSQL, AWS S3.
-  - *Điểm nổi bật*: Tìm kiếm ngữ nghĩa tài liệu, phân quyền đa tầng, xem trước trực tiếp và hỏi đáp tức thời.
-
-- **Hệ thống Quản lý Nhân sự & Tuyển dụng (E-HRM)**:
-  - *Mục tiêu*: Quản lý hồ sơ nhân sự, phân quyền phòng ban và tích hợp tự động hóa quy trình.
-  - *Công nghệ*: Spring Security, JWT, Redis, PostgreSQL.
-
-- **Nền tảng Thương mại Điện tử Đa chi nhánh**:
-  - *Mục tiêu*: Xử lý giao dịch với độ trễ thấp, kiểm soát tồn kho tức thời.
-  - *Công nghệ*: Microservices, Redis Cache, RabbitMQ.`;
-            } else if (qLower.includes('tối ưu') || qLower.includes('công nghệ')) {
-                generatedAnswer = `Để tối ưu hóa hiệu năng và độ ổn định trong các dự án, Lê Công áp dụng các giải pháp công nghệ chính:
-
-1. **Bộ nhớ đệm đa tầng (Multi-layer Caching)**:
-   - Sử dụng **Redis** để lưu trữ phiên đăng nhập và các truy vấn cơ sở dữ liệu có tần suất cao, giảm tải đến 70% truy vấn trực tiếp vào PostgreSQL.
-
-2. **Truy vấn Vector & Hybrid Search**:
-   - Sử dụng **Qdrant Vector Database** kết hợp full-text filter để tìm kiếm tài liệu chính xác trong phạm vi mili-giây thay vì quét toàn bộ dữ liệu.
-
-3. **Kiến trúc Bất đồng bộ (Asynchronous Processing)**:
-   - Xử lý OCR và trích xuất vector embeddings nền thông qua hàng đợi tác vụ, giúp API phản hồi ngay lập tức đến người dùng.
-
-4. **Tối ưu hóa Truy vấn JPA/Hibernate**:
-   - Xử lý triệt để lỗi N+1 Query thông qua \`JOIN FETCH\` và phân trang (pagination) khoa học.`;
+            if (status === 403 || (displayMessage && displayMessage.toLowerCase().includes('quyền'))) {
+                displayMessage = '⚠️ **Từ chối truy cập (403 Forbidden):** Bạn không có quyền truy cập hoặc tra cứu nội dung từ tài liệu này qua AI.';
+            } else if (!displayMessage) {
+                displayMessage = '⚠️ **Lỗi kết nối:** Không thể kết nối với máy chủ AI. Vui lòng kiểm tra lại dịch vụ Backend hoặc thử lại sau.';
             } else {
-                generatedAnswer = `Dựa trên tài liệu từ nguồn **${activeSources.map((s) => s.name).join(', ')}**:
-
-Câu hỏi của bạn: *"${query}"*
-
-Hệ thống đã phân tích các nội dung liên quan và xác nhận rằng thông tin yêu cầu được đối chiếu trực tiếp từ các tài liệu bạn có quyền đọc. Bạn có thể nhấn vào các tài liệu đề xuất bên trái để mở rộng ngữ cảnh câu trả lời hoặc yêu cầu trích xuất chi tiết hơn.`;
+                displayMessage = `⚠️ **Lỗi:** ${displayMessage}`;
             }
 
             const aiMsg: ChatMessageDto = {
                 role: 'ASSISTANT',
-                content: generatedAnswer,
+                content: displayMessage,
             };
             const finalMsgs = [...currentMessagesWithUser, aiMsg];
             setMessages(finalMsgs);
@@ -604,7 +563,7 @@ Hệ thống đã phân tích các nội dung liên quan và xác nhận rằng 
     return (
         <div className="flex flex-col h-[calc(100vh-56px)] bg-[#f8fafd] dark:bg-slate-950 overflow-hidden font-sans select-none">
             {/* ── TOP HEADER BAR (Exact match to Google Drive AI Assistant) ── */}
-            <div className="h-14 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 z-20">
+            <div className="h-14 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 z-10">
                 <div className="flex items-center gap-3">
                     <button
                         type="button"
@@ -621,18 +580,36 @@ Hệ thống đã phân tích các nội dung liên quan và xác nhận rằng 
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    {/* Blue pill button: Lưu dưới dạng dự án */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            toast.success('Đã lưu phiên làm việc dưới dạng Dự án thành công!');
-                        }}
-                        className="flex items-center gap-2 px-3.5 py-1.5 bg-[#0b57d0] hover:bg-[#0842a0] text-white text-xs font-medium rounded-full shadow-xs transition cursor-pointer"
-                    >
-                        <BookmarkPlus className="w-3.5 h-3.5" />
-                        <span>Lưu dưới dạng dự án</span>
-                    </button>
+                <div className="flex items-center gap-3">
+                    {/* Mode Selector Toggle */}
+                    <div className="flex items-center bg-gray-100 dark:bg-slate-800 p-0.5 rounded-xl border border-gray-200 dark:border-slate-700">
+                        <button
+                            type="button"
+                            onClick={() => setExecutionMode('AGENTIC_WORKFLOW')}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                                executionMode === 'AGENTIC_WORKFLOW'
+                                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                    : 'text-gray-500 hover:text-gray-700 dark:text-slate-400'
+                            }`}
+                            title="Kích hoạt luồng Multi-Agent: Router -> RBAC Retrieval -> Hybrid Rerank -> Fact-Checker"
+                        >
+                            <Workflow className="w-3.5 h-3.5 text-indigo-500" />
+                            <span>Multi-Agent (Mặc định)</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setExecutionMode('STANDARD_RAG')}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                                executionMode === 'STANDARD_RAG'
+                                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                                    : 'text-gray-500 hover:text-gray-700 dark:text-slate-400'
+                            }`}
+                            title="Truy xuất RAG Tiêu chuẩn tốc độ cao"
+                        >
+                            <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                            <span>RAG Thường</span>
+                        </button>
+                    </div>
 
                     {/* Close 'X' button */}
                     <button

@@ -1,14 +1,14 @@
 import uuid
 import os
-from typing import Any
+from typing import Any, Optional, List, Dict
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct,
     Filter, FieldCondition, MatchValue, MatchAny,
 )
 
-COLLECTION_NAME = "documents"
-VECTOR_SIZE = 1536
+COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "documents")
+VECTOR_SIZE = int(os.getenv("VECTOR_SIZE", "1536"))
 BATCH_SIZE = 100
 
 
@@ -42,24 +42,31 @@ class QdrantService:
             chunks: list[str],
             vectors: list[list[float]],
             document_id: Any = None,
+            payloads: Optional[List[Dict[str, Any]]] = None,
     ) -> list[str]:
         if len(chunks) != len(vectors):
             raise ValueError(
                 f"Số lượng chunks ({len(chunks)}) không khớp số lượng vectors ({len(vectors)})"
             )
 
-        points = [
-            PointStruct(
-                id=str(uuid.uuid4()),
-                vector=vector,
-                payload={
-                    "document_id": str(document_id) if document_id is not None else None,
-                    "chunk_index": i,
-                    "text": chunk,
-                },
+        points = []
+        for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
+            custom_payload = payloads[i] if (payloads and i < len(payloads)) else {}
+            point_payload = {
+                "document_id": str(document_id) if document_id is not None else None,
+                "chunk_index": i,
+                "text": chunk,
+            }
+            if custom_payload:
+                point_payload.update(custom_payload)
+
+            points.append(
+                PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=vector,
+                    payload=point_payload,
+                )
             )
-            for i, (chunk, vector) in enumerate(zip(chunks, vectors))
-        ]
 
         for i in range(0, len(points), BATCH_SIZE):
             self.client.upsert(
@@ -74,12 +81,14 @@ class QdrantService:
             chunks: list[str] = None,
             vectors: list[list[float]] = None,
             document_id: Any = None,
+            payloads: list = None,
             **kwargs,
     ) -> list[str]:
         actual_chunks = chunks if chunks is not None else kwargs.get("chunks", [])
         actual_vectors = vectors if vectors is not None else kwargs.get("vectors", [])
         actual_doc_id = document_id if document_id is not None else kwargs.get("document_id")
-        return self.upsert(chunks=actual_chunks, vectors=actual_vectors, document_id=actual_doc_id)
+        actual_payloads = payloads if payloads is not None else kwargs.get("payloads")
+        return self.upsert(chunks=actual_chunks, vectors=actual_vectors, document_id=actual_doc_id, payloads=actual_payloads)
 
     def search(
             self,
@@ -103,7 +112,6 @@ class QdrantService:
                 should_conds.append(FieldCondition(key="document_id", match=MatchValue(value=doc_int)))
             must_conditions.append(Filter(should=should_conds))
         elif allowed_document_ids is not None:
-            # RBAC Payload Filtering: Chỉ tìm kiếm trong các tài liệu mà người dùng được phép truy cập
             str_ids = [str(d) for d in allowed_document_ids if str(d) not in ("0", "", "None")]
             int_ids = []
             for d in allowed_document_ids:
@@ -121,7 +129,6 @@ class QdrantService:
             if should_clauses:
                 must_conditions.append(Filter(should=should_clauses))
             elif len(allowed_document_ids) == 0:
-                # Nếu allowed_document_ids rỗng (không có quyền tài liệu nào), trả về rỗng ngay lập tức
                 return []
 
         query_filter = Filter(must=must_conditions) if must_conditions else None
@@ -141,6 +148,9 @@ class QdrantService:
                 "document_id": r.payload.get("document_id"),
                 "chunk_index": r.payload.get("chunk_index"),
                 "score": r.score,
+                "image_path": r.payload.get("image_path"),
+                "page_number": r.payload.get("page_number"),
+                "is_diagram": r.payload.get("is_diagram", False),
             }
             for r in results.points
         ]

@@ -1,7 +1,9 @@
 package com.xuancong.student_management.dto.chat;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record RagResponse(
         String answer,
         List<SourceChunk> sources,
@@ -13,12 +15,15 @@ public record RagResponse(
         Integer completionTokens,
         Integer totalTokens
 ) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record SourceChunk(
             String chunkId,
             String content,
             Double score,
             Object documentId,
-            Integer chunkIndex
+            Integer chunkIndex,
+            String imagePath,
+            Boolean isVisual
     ) {
         public Long getDocIdLong() {
             if (documentId == null) return null;
@@ -31,6 +36,7 @@ public record RagResponse(
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record AgentTraceStepResponse(
             String agentName,
             String action,

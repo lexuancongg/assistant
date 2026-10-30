@@ -2094,8 +2094,7 @@ function FilesContent() {
                                                                     type="button"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        setSelectedFile(file);
-                                                                        setIsPreviewModalOpen(true);
+                                                                        handleRowClick(file);
                                                                     }}
                                                                     className="font-normal text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3] group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate max-w-[240px] sm:max-w-[340px] transition-colors hover:underline text-left cursor-pointer"
                                                                     title={file.name}
@@ -2258,8 +2257,7 @@ function FilesContent() {
                                                                                 type="button"
                                                                                 onClick={() => {
                                                                                     setActiveRowMenuId(null);
-                                                                                    setSelectedFile(file);
-                                                                                    setIsPreviewModalOpen(true);
+                                                                                    handleRowClick(file);
                                                                                 }}
                                                                                 className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
                                                                             >
@@ -2540,8 +2538,8 @@ function FilesContent() {
                                                     <span
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            setSelectedFile(file);
-                                                            setIsPreviewModalOpen(true);
+                                                            handleRowClick(file);
+                                                            setShowDetailsDrawer(true);
                                                         }}
                                                         className="text-xs font-medium text-gray-800 dark:text-slate-100 truncate hover:underline cursor-pointer"
                                                         title={file.name}
@@ -2578,8 +2576,8 @@ function FilesContent() {
                                             <div
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setSelectedFile(file);
-                                                    setIsPreviewModalOpen(true);
+                                                    handleRowClick(file);
+                                                    setShowDetailsDrawer(true);
                                                 }}
                                                 className="w-full h-28 my-2 rounded-lg bg-white dark:bg-slate-950 border border-gray-200/80 dark:border-slate-800 overflow-hidden cursor-pointer shadow-2xs hover:shadow-xs transition relative group/preview"
                                                 title={`Xem trước: ${file.name}`}
@@ -2605,8 +2603,8 @@ function FilesContent() {
                                                 type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setSelectedFile(file);
-                                                    setIsPreviewModalOpen(true);
+                                                    handleRowClick(file);
+                                                    setShowDetailsDrawer(true);
                                                 }}
                                                 className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-100/60 dark:hover:bg-blue-950/60 px-2.5 py-0.5 rounded-full transition cursor-pointer"
                                             >
@@ -2691,11 +2689,10 @@ function FilesContent() {
                                     {effectiveDetailFile ? (
                                         <div
                                             onClick={() => {
-                                                setSelectedFile(effectiveDetailFile);
-                                                setIsPreviewModalOpen(true);
+                                                handleRowClick(effectiveDetailFile);
                                             }}
                                             className="w-full h-36 rounded-xl border border-gray-200 dark:border-slate-800 overflow-hidden relative bg-white dark:bg-slate-950 cursor-pointer shadow-none hover:shadow-xs transition group"
-                                            title="Nhấp để mở tệp"
+                                            title="Nhấp để chọn tệp"
                                         >
                                             <FileThumbnailPreview
                                                 id={effectiveDetailFile.id}

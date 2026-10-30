@@ -32,13 +32,19 @@ public class AccessRequestController {
     }
 
     @GetMapping
-    public ResponseEntity<List<AccessRequestResponse>> getAllRequests() {
-        return ResponseEntity.ok(accessRequestService.getAllRequests());
+    public ResponseEntity<List<AccessRequestResponse>> getAllRequests(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        User currentUser = userDetails != null ? userDetails.getUser() : null;
+        return ResponseEntity.ok(accessRequestService.getAllRequests(currentUser));
     }
 
     @GetMapping("/pending")
-    public ResponseEntity<List<AccessRequestResponse>> getPendingRequests() {
-        return ResponseEntity.ok(accessRequestService.getPendingRequests());
+    public ResponseEntity<List<AccessRequestResponse>> getPendingRequests(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        User currentUser = userDetails != null ? userDetails.getUser() : null;
+        return ResponseEntity.ok(accessRequestService.getPendingRequests(currentUser));
     }
 
     @GetMapping("/my")
@@ -50,8 +56,11 @@ public class AccessRequestController {
     }
 
     @GetMapping("/count")
-    public ResponseEntity<Map<String, Long>> getPendingCount() {
-        return ResponseEntity.ok(Map.of("pendingCount", accessRequestService.getPendingCount()));
+    public ResponseEntity<Map<String, Long>> getPendingCount(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        User currentUser = userDetails != null ? userDetails.getUser() : null;
+        return ResponseEntity.ok(Map.of("pendingCount", accessRequestService.getPendingCount(currentUser)));
     }
 
     @PutMapping("/{id}/approve")

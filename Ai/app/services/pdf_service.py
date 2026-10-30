@@ -1,3 +1,5 @@
+import os
+import uuid
 import logging
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -5,6 +7,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import fitz
 
 logger = logging.getLogger(__name__)
+
+DIAGRAM_STORAGE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "storage", "diagrams"))
+os.makedirs(DIAGRAM_STORAGE_DIR, exist_ok=True)
+
+
+def _save_diagram_image(img_bytes: bytes, prefix: str = "diag", ext: str = "png") -> str:
+    """Lưu ảnh sơ đồ/trang scan vào thư mục storage để phục vụ Visual Grounding."""
+    filename = f"{prefix}_{uuid.uuid4().hex[:12]}.{ext}"
+    full_path = os.path.join(DIAGRAM_STORAGE_DIR, filename)
+    try:
+        with open(full_path, "wb") as f:
+            f.write(img_bytes)
+        return full_path
+    except Exception as e:
+        logger.warning(f"Không thể lưu ảnh sơ đồ vào {full_path}: {e}")
+        return ""
 
 
 class PdfService:
@@ -24,11 +42,8 @@ class PdfService:
                 pages_data = []
 
                 # 1. Trích xuất text cơ bản theo từng trang
-                has_any_text = False
                 for page_idx, page in enumerate(doc):
                     text = page.get_text().strip()
-                    if text:
-                        has_any_text = True
                     pages_data.append({
                         "index": page_idx,
                         "text": text,
@@ -74,6 +89,7 @@ class PdfService:
     def _extract_diagrams_from_page(self, doc, page, page_idx: int, vision_service) -> list:
         """
         Trích xuất hình ảnh hoặc vector graphics từ trang PDF và gửi tới VisionService để diễn giải luồng.
+        Đồng thời lưu trữ ảnh gốc để phục vụ Visual Grounding khi Chatbot trả lời.
         """
         diagram_texts = []
         try:
@@ -95,8 +111,10 @@ class PdfService:
                     mime_type = "image/jpeg" if img_ext in ["jpg", "jpeg"] else "image/png"
                     desc = vision_service.analyze_diagram_image(img_bytes, mime_type=mime_type)
                     if desc and desc.strip():
+                        saved_img_path = _save_diagram_image(img_bytes, prefix=f"p{page_idx + 1}", ext=img_ext)
+                        path_tag = f" | IMAGE_PATH: {saved_img_path}" if saved_img_path else ""
                         diagram_texts.append(
-                            f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG QUY TRÌNH HÌNH ẢNH - TRANG {page_idx + 1}] ---\n"
+                            f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG QUY TRÌNH HÌNH ẢNH - TRANG {page_idx + 1}{path_tag}] ---\n"
                             f"{desc.strip()}\n"
                             f"---------------------------------------------------------\n"
                         )
@@ -111,8 +129,10 @@ class PdfService:
                     img_bytes = pix.tobytes("png")
                     desc = vision_service.analyze_diagram_image(img_bytes, mime_type="image/png")
                     if desc and desc.strip():
+                        saved_img_path = _save_diagram_image(img_bytes, prefix=f"vector_p{page_idx + 1}", ext="png")
+                        path_tag = f" | IMAGE_PATH: {saved_img_path}" if saved_img_path else ""
                         diagram_texts.append(
-                            f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG QUY TRÌNH VECTOR - TRANG {page_idx + 1}] ---\n"
+                            f"\n--- [DIỄN GIẢI SƠ ĐỒ / LUỒNG QUY TRÌNH VECTOR - TRANG {page_idx + 1}{path_tag}] ---\n"
                             f"{desc.strip()}\n"
                             f"---------------------------------------------------------\n"
                         )
@@ -128,8 +148,8 @@ class PdfService:
 
     def ocr_pdf(self, path: str, ocr_service, vision_service=None) -> str:
         """
-        Render từng trang PDF thành ảnh rồi chạy OCR và phân tích sơ đồ luồng song song qua Multimodal Vision.
-        Dùng khi PDF không có text layer (scanned document).
+        Render từng trang PDF thành ảnh rồi đọc bằng chiến lược Vision-First (chính xác cao nhất).
+        Lưu ảnh từng trang để hỗ trợ Visual Grounding khi người dùng hỏi về trang scan đó.
         """
         try:
             with fitz.open(path) as doc:
@@ -145,24 +165,28 @@ class PdfService:
                             pix = page.get_pixmap(matrix=mat)
                             img_bytes = pix.tobytes("png")
 
-                            page_parts = []
-                            if ocr_service:
-                                text = ocr_service.extract_text_from_bytes(img_bytes)
-                                if text and text.strip():
-                                    page_parts.append(text.strip())
+                            saved_img_path = _save_diagram_image(img_bytes, prefix=f"scan_p{page_num + 1}", ext="png")
+                            path_tag = f" | IMAGE_PATH: {saved_img_path}" if saved_img_path else ""
 
+                            # 1. Ưu tiên Vision LLM (vừa đọc chữ vừa phân tích cấu trúc)
                             if vision_service:
                                 desc = vision_service.analyze_diagram_image(img_bytes, mime_type="image/png")
                                 if desc and desc.strip():
-                                    page_parts.append(
-                                        f"\n--- [DIỄN GIẢI NỘI DUNG & SƠ ĐỒ TRANG {page_num + 1}] ---\n"
+                                    return page_num, (
+                                        f"--- [NỘI DUNG & DIỄN GIẢI TRANG {page_num + 1}{path_tag}] ---\n"
                                         f"{desc.strip()}\n"
-                                        f"---------------------------------------------------------\n"
+                                        f"---------------------------------------------------------"
                                     )
 
-                            return page_num, "\n\n".join(page_parts) if page_parts else ""
+                            # 2. Fallback sang EasyOCR nếu Vision không thành công
+                            if ocr_service:
+                                text = ocr_service.extract_text_from_bytes(img_bytes)
+                                if text and text.strip():
+                                    return page_num, f"[Trang {page_num + 1}{path_tag}]\n{text.strip()}"
+
+                            return page_num, ""
                     except Exception as err:
-                        logger.warning("Lỗi OCR/Vision trang %d: %s", page_num + 1, err)
+                        logger.warning("Lỗi xử lý trang scan %d: %s", page_num + 1, err)
                         return page_num, ""
 
                 results = [None] * total_pages

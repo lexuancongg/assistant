@@ -29,31 +29,32 @@ class ExtractService:
         # 3. AI Extract (type + metadata + summary)
         ai_result = self.openai_service.extract(text)
 
-        # 4. Chunk text
-        chunks = self.chunk_service.chunk(text)
+        # 4. Chunk text kèm Metadata hình ảnh (Visual Grounding Payload)
+        chunk_items = self.chunk_service.chunk_with_metadata(text)
+        chunks = [item["text"] for item in chunk_items]
+        payloads = [
+            {
+                "image_path": item.get("image_path"),
+                "page_number": item.get("page_number"),
+                "is_diagram": item.get("is_diagram", False)
+            }
+            for item in chunk_items
+        ]
 
         # 5. Embedding
         vectors = self.embedding_service.embed(chunks)
 
-
         point_ids = self.qdrant_service.upsert(
             chunks=chunks,
             vectors=vectors,
-            document_id=request.documentId
+            document_id=request.documentId,
+            payloads=payloads
         )
         chunk_infos = [
             ChunkInfo(chunkIndex=i, content=chunks[i], embeddingId=point_ids[i])
             for i in range(len(chunks))
         ]
 
-        response = ExtractResponse(
-            documentType=ai_result.documentType,
-            summary=ai_result.summary,
-            ocrText=text,
-            metadata=ai_result.metadata,
-            chunks=chunk_infos,
-            confidence =  ai_result.confidence,
-        )
         # 7. Return response
         return ExtractResponse(
             documentType=ai_result.documentType.upper(),
@@ -61,5 +62,5 @@ class ExtractService:
             ocrText=text,
             metadata=ai_result.metadata,
             chunks=chunk_infos,
-            confidence = ai_result.confidence,
+            confidence=ai_result.confidence,
         )

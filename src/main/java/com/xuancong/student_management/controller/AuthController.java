@@ -22,6 +22,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -108,6 +110,102 @@ public class AuthController {
         } catch (AuthenticationException ex) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${google.client-id:328719666150-q2jcea6fk54u1q71soo2puql4lgvbs8i.apps.googleusercontent.com}")
+    private String googleClientId;
+
+    @PostMapping("/google-login")
+    public ResponseEntity<AuthResponse> googleLogin(@RequestBody Map<String, String> body) {
+        String idToken = body.get("idToken");
+        if (idToken == null || idToken.isBlank()) {
+            idToken = body.get("credential");
+        }
+        String googleAccessToken = body.get("accessToken");
+
+        String email = null;
+        String name = null;
+        String avatarUrl = null;
+
+        if (idToken != null && !idToken.isBlank()) {
+            try {
+                org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+                String url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken.trim();
+                Map<?, ?> googleUser = restTemplate.getForObject(url, Map.class);
+                if (googleUser != null && googleUser.get("email") != null) {
+                    email = (String) googleUser.get("email");
+                    name = (String) googleUser.get("name");
+                    avatarUrl = (String) googleUser.get("picture");
+                }
+            } catch (Exception e) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+        } else if (googleAccessToken != null && !googleAccessToken.isBlank()) {
+            try {
+                org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+                org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+                headers.setBearerAuth(googleAccessToken.trim());
+                org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(headers);
+                ResponseEntity<Map> response = restTemplate.exchange(
+                        "https://www.googleapis.com/oauth2/v3/userinfo",
+                        org.springframework.http.HttpMethod.GET,
+                        entity,
+                        Map.class
+                );
+                Map<?, ?> googleUser = response.getBody();
+                if (googleUser != null && googleUser.get("email") != null) {
+                    email = (String) googleUser.get("email");
+                    name = (String) googleUser.get("name");
+                    avatarUrl = (String) googleUser.get("picture");
+                }
+            } catch (Exception e) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+        } else {
+            email = body.get("email");
+            name = body.getOrDefault("name", "");
+            avatarUrl = body.getOrDefault("avatarUrl", "");
+        }
+
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        String normalizedEmail = email.trim().toLowerCase();
+        final String resolvedName = (name != null && !name.isBlank()) ? name.trim() : normalizedEmail.split("@")[0];
+        final String resolvedAvatarUrl = avatarUrl;
+
+        User user = userRepository.findByEmail(normalizedEmail).orElseGet(() -> {
+            Company company = companyRepository.findAll().stream().findFirst().orElseGet(() -> {
+                Company c = new Company();
+                c.setName("Enterprise AI Assistant");
+                return companyRepository.save(c);
+            });
+
+            User newUser = new User();
+            newUser.setEmail(normalizedEmail);
+            newUser.setName(resolvedName);
+            newUser.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
+            newUser.setRole(userRepository.count() == 0 ? UserRole.ADMIN : UserRole.USER);
+            newUser.setStatus(UserStatus.ACTIVE);
+            newUser.setCompany(company);
+            if (resolvedAvatarUrl != null && !resolvedAvatarUrl.isBlank()) {
+                newUser.setAvatarUrl(resolvedAvatarUrl);
+            }
+            return userRepository.save(newUser);
+        });
+
+        if (user.getStatus() == UserStatus.LOCKED) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        String accessToken = jwtService.createAccessToken(user);
+        var refreshToken = refreshTokenService.createRefreshToken(user, jwtService.calculateRefreshTokenExpiry());
+
+        return ResponseEntity.ok(new AuthResponse(
+                user.getId(), user.getName(), user.getEmail(),
+                accessToken, refreshToken.getToken(),
+                "ROLE_" + user.getRole().name()));
     }
 
     @PostMapping("/logout")

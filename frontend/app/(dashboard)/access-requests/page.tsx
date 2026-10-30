@@ -8,6 +8,7 @@ import {
     X,
     CheckCircle2,
     XCircle,
+    Clock,
     Folder,
     FileSpreadsheet,
     FileText,
@@ -120,6 +121,7 @@ function AccessRequestsContent() {
     usePageBreadcrumb(['Bảo mật & Quản trị', 'Yêu cầu quyền truy cập']);
     const router = useRouter();
 
+    const [userRole, setUserRole] = useState<string>('USER');
     const [activeTab, setActiveTab] = useState<'pending' | 'all' | 'my'>('pending');
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
     const [loading, setLoading] = useState(true);
@@ -131,6 +133,22 @@ function AccessRequestsContent() {
 
     const [selectedRequest, setSelectedRequest] = useState<AccessRequestDto | null>(null);
     const [showDetailDrawer, setShowDetailDrawer] = useState(false);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const stored = window.localStorage.getItem('user');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    const role = (parsed.role || 'USER').toUpperCase();
+                    setUserRole(role);
+                    if (role !== 'ADMIN') {
+                        setActiveTab('my');
+                    }
+                }
+            } catch (e) {}
+        }
+    }, []);
 
     // Fetch data from real backend
     const loadRequests = async () => {
@@ -146,9 +164,11 @@ function AccessRequestsContent() {
             setAllRequests(all);
             setMyRequests(my);
 
-            // Auto-select first pending request if any
-            if (pending.length > 0 && !selectedRequest) {
+            // Auto-select first request if any
+            if (activeTab === 'pending' && pending.length > 0 && !selectedRequest) {
                 setSelectedRequest(pending[0]);
+            } else if (activeTab === 'my' && my.length > 0 && !selectedRequest) {
+                setSelectedRequest(my[0]);
             }
         } catch (err) {
             console.error('Lỗi tải danh sách yêu cầu quyền:', err);
@@ -160,7 +180,7 @@ function AccessRequestsContent() {
 
     useEffect(() => {
         loadRequests();
-    }, []);
+    }, [activeTab]);
 
     // Filter requests according to tab and status filter
     const currentList = useMemo(() => {
@@ -219,58 +239,64 @@ function AccessRequestsContent() {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-56px)] bg-white dark:bg-slate-900 font-sans select-none overflow-hidden">
-            {/* ── ROW 1: GOOGLE DRIVE STYLE TITLE ── */}
-            <div className="h-14 px-4 sm:px-6 flex items-center justify-between shrink-0">
-                <h1 className="text-[22px] font-normal text-[#1F1F1F] dark:text-slate-100">
-                    Yêu cầu quyền truy cập
-                </h1>
+        <div className="h-full flex flex-col overflow-hidden bg-white dark:bg-slate-900 font-sans select-none">
+            {/* ── TOP HEADER (TITLE & CONTROLS) - Chuẩn Google Drive theo Thùng rác ── */}
+            <div className="px-6 pt-3 pb-2 shrink-0 flex items-center justify-between border-b border-transparent">
+                <div>
+                    <h1 className="text-[22px] font-normal text-[#1F1F1F] dark:text-[#E3E3E3] tracking-tight">
+                        Yêu cầu quyền truy cập
+                    </h1>
+                </div>
             </div>
 
             {/* ── ROW 2: GOOGLE MATERIAL UNDERLINE TABS ── */}
-            <div className="flex items-center justify-between border-b border-gray-200/80 dark:border-slate-800 px-4 sm:px-6 shrink-0">
+            <div className="flex items-center justify-between border-b border-gray-200/80 dark:border-slate-800 px-6 shrink-0">
                 <div className="flex items-center gap-6">
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setActiveTab('pending');
-                            setStatusFilter('ALL');
-                        }}
-                        className={`relative pb-3 pt-1 text-[13px] font-medium transition-colors cursor-pointer flex items-center gap-2 ${
-                            activeTab === 'pending'
-                                ? 'text-[#0b57d0] dark:text-[#c2e7ff]'
-                                : 'text-[#444746] dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
-                        }`}
-                    >
-                        <span>Chờ tôi phê duyệt</span>
-                        {pendingRequests.length > 0 && (
-                            <span className="px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 dark:bg-red-950/80 dark:text-red-300">
-                                {pendingRequests.length}
-                            </span>
-                        )}
-                        {activeTab === 'pending' && (
-                            <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#0b57d0] dark:bg-[#c2e7ff] rounded-t-full" />
-                        )}
-                    </button>
+                    {userRole === 'ADMIN' && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('pending');
+                                    setStatusFilter('ALL');
+                                }}
+                                className={`relative pb-3 pt-1 text-[13px] font-medium transition-colors cursor-pointer flex items-center gap-2 ${
+                                    activeTab === 'pending'
+                                        ? 'text-[#0b57d0] dark:text-[#c2e7ff]'
+                                        : 'text-[#444746] dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
+                                }`}
+                            >
+                                <span>Chờ tôi phê duyệt</span>
+                                {pendingRequests.length > 0 && (
+                                    <span className="px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 dark:bg-red-950/80 dark:text-red-300">
+                                        {pendingRequests.length}
+                                    </span>
+                                )}
+                                {activeTab === 'pending' && (
+                                    <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#0b57d0] dark:bg-[#c2e7ff] rounded-t-full" />
+                                )}
+                            </button>
 
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setActiveTab('all');
-                            setStatusFilter('ALL');
-                        }}
-                        className={`relative pb-3 pt-1 text-[13px] font-medium transition-colors cursor-pointer flex items-center gap-2 ${
-                            activeTab === 'all'
-                                ? 'text-[#0b57d0] dark:text-[#c2e7ff]'
-                                : 'text-[#444746] dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
-                        }`}
-                    >
-                        <span>Tất cả yêu cầu</span>
-                        <span className="text-[11px] text-gray-400">({allRequests.length})</span>
-                        {activeTab === 'all' && (
-                            <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#0b57d0] dark:bg-[#c2e7ff] rounded-t-full" />
-                        )}
-                    </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('all');
+                                    setStatusFilter('ALL');
+                                }}
+                                className={`relative pb-3 pt-1 text-[13px] font-medium transition-colors cursor-pointer flex items-center gap-2 ${
+                                    activeTab === 'all'
+                                        ? 'text-[#0b57d0] dark:text-[#c2e7ff]'
+                                        : 'text-[#444746] dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
+                                }`}
+                            >
+                                <span>Tất cả yêu cầu</span>
+                                <span className="text-[11px] text-gray-400">({allRequests.length})</span>
+                                {activeTab === 'all' && (
+                                    <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#0b57d0] dark:bg-[#c2e7ff] rounded-t-full" />
+                                )}
+                            </button>
+                        </>
+                    )}
 
                     <button
                         type="button"
@@ -318,7 +344,7 @@ function AccessRequestsContent() {
 
             {/* ── ROW 3: MAIN LIST TABLE & RIGHT DETAILS DRAWER ── */}
             <div className="flex-1 flex overflow-hidden min-h-0">
-                <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-2">
+                <div className="flex-1 overflow-y-auto px-6 py-2">
                     {loading ? (
                         <div className="py-20 flex flex-col items-center justify-center text-gray-400 gap-2">
                             <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -456,7 +482,7 @@ function AccessRequestsContent() {
 
                                                 {/* 5. Status / Actions */}
                                                 <td className="py-2 pr-3 text-right">
-                                                    {req.status === 'PENDING' ? (
+                                                    {req.status === 'PENDING' && activeTab === 'pending' && userRole === 'ADMIN' ? (
                                                         <div className="flex items-center justify-end gap-1.5">
                                                             <button
                                                                 type="button"
@@ -479,6 +505,11 @@ function AccessRequestsContent() {
                                                                 <span>Từ chối</span>
                                                             </button>
                                                         </div>
+                                                    ) : req.status === 'PENDING' ? (
+                                                        <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-600 dark:text-amber-400">
+                                                            <Clock className="w-3.5 h-3.5" />
+                                                            <span>Đang chờ duyệt</span>
+                                                        </span>
                                                     ) : req.status === 'APPROVED' ? (
                                                         <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-emerald-600 dark:text-emerald-400">
                                                             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -609,7 +640,7 @@ function AccessRequestsContent() {
                             </div>
 
                             {/* Action Buttons in Drawer */}
-                            {selectedRequest.status === 'PENDING' && (
+                            {selectedRequest.status === 'PENDING' && userRole === 'ADMIN' && (
                                 <div className="pt-2 space-y-2">
                                     <button
                                         type="button"
