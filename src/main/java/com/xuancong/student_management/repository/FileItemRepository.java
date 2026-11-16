@@ -11,6 +11,9 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
 
     List<FileItem> findByDeletedAtIsNull();
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"uploadedBy", "folder", "ownerDepartment", "tags"})
+    List<FileItem> findWithDetailsByDeletedAtIsNullOrderByCreatedAtDesc();
+
     List<FileItem> findByDeletedAtIsNullOrderByCreatedAtDesc();
 
     List<FileItem> findByDeletedAtIsNotNull();

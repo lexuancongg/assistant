@@ -29,7 +29,7 @@ export default function RagOptimizationCard({ totalFiles = 0, aiIndexedFiles = 0
               title: `${notIndexed} tài liệu chưa đồng bộ tìm kiếm AI`,
               desc: `Hiện có ${notIndexed}/${totalFiles} tài liệu mới chưa được lập chỉ mục (${indexedPct}% hoàn thành). Hãy đồng bộ để nhân sự tra cứu dữ liệu đầy đủ nhất.`,
               action: 'Đồng bộ tri thức ngay',
-              onAction: () => { toast.loading('Đang đồng bộ dữ liệu AI...'); router.push('/'); },
+              onAction: () => { router.push('/'); },
           }
         : {
               icon: <ShieldCheck className="w-3.5 h-3.5" />,

@@ -9,8 +9,9 @@ router = APIRouter(prefix="/api/v1/ml", tags=["ml"])
 try:
     from prophet import Prophet
     HAS_PROPHET = True
-except Exception:
+except BaseException:
     HAS_PROPHET = False
+    Prophet = None
 
 
 class SeriesPoint(BaseModel):

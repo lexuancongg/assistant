@@ -1,3 +1,4 @@
+'use client';
 export default function ReviewAlertCard({ count }:{count:any}) {
     return (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-center justify-between">

@@ -1,4 +1,6 @@
 'use client';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 import React, { useEffect, useState, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -23,8 +25,6 @@ import {
     BookmarkPlus,
     CornerDownRight,
     Copy,
-    ThumbsUp,
-    ThumbsDown,
     MoreVertical,
     RefreshCw,
     FolderInput,
@@ -65,78 +65,63 @@ export interface ChatHistorySession {
     messages: ChatMessageDto[];
 }
 
-function formatSessionDate(date: Date = new Date()): string {
-    const today = new Date();
-    const isToday = date.toDateString() === today.toDateString();
+function formatSessionTimestamp(timestamp?: number | string | Date): string {
+    if (!timestamp) return 'Gần đây';
+
+    let date: Date;
+    if (timestamp instanceof Date) {
+        date = timestamp;
+    } else if (typeof timestamp === 'number') {
+        date = new Date(timestamp);
+    } else {
+        const parsedMs = Date.parse(timestamp);
+        if (!isNaN(parsedMs)) {
+            date = new Date(parsedMs);
+        } else {
+            const timeMatch = timestamp.match(/(\d{1,2}):(\d{2})/);
+            if (timeMatch) {
+                const now = new Date();
+                date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(timeMatch[1], 10), parseInt(timeMatch[2], 10));
+            } else {
+                return timestamp;
+            }
+        }
+    }
+
+    if (isNaN(date.getTime())) return 'Gần đây';
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const sessionDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.floor((today.getTime() - sessionDay.getTime()) / (24 * 60 * 60 * 1000));
+
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
-    if (isToday) {
+
+    if (diffDays === 0) {
         return `Hôm nay, ${hours}:${minutes}`;
+    } else if (diffDays === 1) {
+        return `Hôm qua, ${hours}:${minutes}`;
+    } else if (diffDays < 7) {
+        return `${diffDays} ngày trước, ${hours}:${minutes}`;
+    } else {
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}, ${hours}:${minutes}`;
     }
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    return `${day}/${month}, ${hours}:${minutes}`;
 }
 
-const DEFAULT_SAMPLE_SESSIONS: ChatHistorySession[] = [
-    {
-        id: 'sample_session_1',
-        title: 'Phân tích hồ sơ và năng lực kỹ thuật của Lê Công',
-        createdAt: 'Hôm nay, 00:36',
-        timestamp: Date.now() - 3600000 * 14,
-        sourceSummary: 'Thư mục cv',
-        messages: [
-            {
-                role: 'USER',
-                content: 'Phân tích hồ sơ và năng lực kỹ thuật của Lê Công',
-            },
-            {
-                role: 'ASSISTANT',
-                content: `Dựa trên hồ sơ kỹ thuật của **Lê Công**, các kỹ năng kỹ thuật chính được ghi nhận bao gồm:
+const formatSessionDate = formatSessionTimestamp;
 
-1. **Ngôn ngữ & Nền tảng cốt lõi**:
-   - **Java** (Java 17, Java 21) chuyên sâu với hệ sinh thái **Spring Boot**, Spring Security, Spring Data JPA.
-   - **Frontend**: React, Next.js, Tailwind CSS, TypeScript.
+function formatMarkdownContent(raw: string): string {
+    if (!raw) return '';
+    let formatted = raw.replace(/([^\n])\n(\s*[\*\-\+]\s+)/g, '$1\n\n$2');
+    formatted = formatted.replace(/([^\n])\n(\s*\d+\.\s+)/g, '$1\n\n$2');
+    return formatted;
+}
 
-2. **Kiến trúc & Cơ sở dữ liệu**:
-   - Thiết kế hệ thống phân tán, Microservices, RESTful API chuẩn mực.
-   - Cơ sở dữ liệu quan hệ: **PostgreSQL**, MySQL với tối ưu hóa chỉ mục.
-   - Caching & NoSQL: **Redis** (caching, pub/sub), **Elasticsearch**.
-
-3. **Công nghệ AI & Vector Search**:
-   - Tích hợp mô hình ngôn ngữ lớn (LLM Gemini, OpenAI).
-   - Cơ sở dữ liệu vector **Qdrant** phục vụ tìm kiếm ngữ nghĩa (RAG pipeline).`,
-            },
-        ],
-    },
-    {
-        id: 'sample_session_2',
-        title: 'Tổng hợp các tài liệu và dự án trong Drive',
-        createdAt: 'Hôm qua, 18:20',
-        timestamp: Date.now() - 3600000 * 24,
-        sourceSummary: 'Toàn bộ Drive',
-        messages: [
-            {
-                role: 'USER',
-                content: 'Tổng hợp các tài liệu và dự án trong Drive',
-            },
-            {
-                role: 'ASSISTANT',
-                content: `Tổng hợp các dự án quan trọng được ghi nhận trong kho tài liệu Drive:
-
-1. **Enterprise AI Assistant (Trợ lý AI Doanh nghiệp)**:
-   - Hệ thống mô phỏng Google Drive tích hợp tìm kiếm ngữ nghĩa RAG và trợ lý ảo Gemini.
-   - Phân quyền RBAC đa cấp, xem trước tệp trực tiếp và chat tương tác theo ngữ cảnh tài liệu.
-
-2. **Hệ thống E-HRM Quản trị Nhân sự**:
-   - Tự động hóa quy trình quản lý hồ sơ, chấm công và tuyển dụng.
-
-3. **Cơ sở hạ tầng & Triển khai**:
-   - Đóng gói container hóa với Docker & Docker Compose, tích hợp AWS S3 lưu trữ đối tượng.`,
-            },
-        ],
-    },
-];
+const DEFAULT_SAMPLE_SESSIONS: ChatHistorySession[] = [];
 
 function DriveAiContent() {
     usePageBreadcrumb(['Drive', 'Hỏi Gemini']);
@@ -170,7 +155,6 @@ function DriveAiContent() {
     const [allFiles, setAllFiles] = useState<FileItemDto[]>([]);
     const [allFolders, setAllFolders] = useState<any[]>([]);
     const [isSuggestedOpen, setIsSuggestedOpen] = useState(true);
-    const [searchExternalSources, setSearchExternalSources] = useState(false);
     const [showAddSourceModal, setShowAddSourceModal] = useState(false);
 
     // AI Overview & Chat states
@@ -192,21 +176,39 @@ function DriveAiContent() {
 
     // Load global chat history sessions on mount
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem('gemini_drive_chat_sessions_v2');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    setChatSessions(parsed);
+        const fetchHistory = async () => {
+            try {
+                const apiSessions = await chatService.listSessions().catch(() => []);
+                if (Array.isArray(apiSessions) && apiSessions.length > 0) {
+                    const mapped: ChatHistorySession[] = apiSessions.map((s) => ({
+                        id: s.sessionId.toString(),
+                        title: s.title || 'Cuộc trò chuyện',
+                        createdAt: s.createdAt || new Date().toISOString(),
+                        timestamp: s.createdAt ? new Date(s.createdAt).getTime() : Date.now(),
+                        sourceSummary: s.documentName || 'Toàn bộ Drive',
+                        messages: [],
+                    }));
+                    setChatSessions(mapped);
                     return;
                 }
+                const saved = localStorage.getItem('gemini_drive_chat_sessions_v2');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        const valid = parsed.filter((p: any) => !p.id?.toString().startsWith('sample_session_'));
+                        if (valid.length > 0) {
+                            setChatSessions(valid);
+                            return;
+                        }
+                    }
+                }
+                setChatSessions([]);
+            } catch (e) {
+                console.warn('Failed to load chat history:', e);
+                setChatSessions([]);
             }
-            setChatSessions(DEFAULT_SAMPLE_SESSIONS);
-            localStorage.setItem('gemini_drive_chat_sessions_v2', JSON.stringify(DEFAULT_SAMPLE_SESSIONS));
-        } catch (e) {
-            console.warn('Failed to load chat history:', e);
-            setChatSessions(DEFAULT_SAMPLE_SESSIONS);
-        }
+        };
+        fetchHistory();
     }, []);
 
     // Initialize sources from query parameters or default to 'Toàn bộ Drive'
@@ -253,42 +255,20 @@ function DriveAiContent() {
                 setAllFiles(filesData);
                 setAllFolders(treeData);
 
-                // Find suggested files for the folder (e.g. cv files)
-                const currentFolderName = (paramFolderName || 'cv').toLowerCase();
-                const matchedFiles = filesData.filter((f) => {
-                    const fName = (f.name || '').toLowerCase();
-                    const folderMatch = f.folderName && f.folderName.toLowerCase().includes(currentFolderName);
-                    const nameMatch = fName.includes('cv') || fName.includes('lexuancong') || fName.includes('developer') || fName.includes('intern');
-                    return folderMatch || nameMatch;
-                });
-
-                if (matchedFiles.length > 0) {
-                    setSuggestedFiles(matchedFiles);
+                // Đề xuất các file thực tế từ kho dữ liệu doanh nghiệp của người dùng
+                if (Array.isArray(filesData) && filesData.length > 0) {
+                    let candidates: FileItemDto[] = [];
+                    if (paramFolderId) {
+                        candidates = filesData.filter((f) => f.folderId?.toString() === paramFolderId.toString());
+                    } else if (paramFileId) {
+                        candidates = filesData.filter((f) => f.id?.toString() !== paramFileId.toString());
+                    }
+                    if (candidates.length === 0) {
+                        candidates = [...filesData];
+                    }
+                    setSuggestedFiles(candidates);
                 } else {
-                    // Fallback to top 3 files or sample CV documents from screenshot
-                    setSuggestedFiles([
-                        {
-                            id: 101,
-                            name: 'Java developer - lexuancong.pdf',
-                            fileType: 'pdf',
-                            size: '184 KB',
-                            uploadedByName: 'Lê Xuân Công',
-                        },
-                        {
-                            id: 102,
-                            name: 'Web Developer Intern - LeXuancong.pdf',
-                            fileType: 'pdf',
-                            size: '142 KB',
-                            uploadedByName: 'Lê Xuân Công',
-                        },
-                        {
-                            id: 103,
-                            name: 'Web Developer Intern - LeXuancong (1).pdf',
-                            fileType: 'pdf',
-                            size: '145 KB',
-                            uploadedByName: 'Lê Xuân Công',
-                        },
-                    ]);
+                    setSuggestedFiles([]);
                 }
             } catch (err) {
                 console.warn('Failed to load drive data in AI assistant:', err);
@@ -726,108 +706,6 @@ function DriveAiContent() {
                                 </div>
                             </div>
 
-                            {/* Bottom sections of Left Sidebar */}
-                            <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-slate-800">
-                                {/* Search across Google ecosystem card */}
-                                <div className="p-3 bg-gray-50 dark:bg-slate-800/50 rounded-2xl border border-gray-200/60 dark:border-slate-800">
-                                    <div className="flex items-center justify-between">
-                                        <p className="text-[11px] font-medium text-gray-700 dark:text-slate-300">
-                                            Cho phép Gemini tìm kiếm nguồn
-                                        </p>
-                                        <button
-                                            type="button"
-                                            onClick={() => setSearchExternalSources(!searchExternalSources)}
-                                            className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
-                                                searchExternalSources
-                                                    ? 'bg-[#0b57d0]'
-                                                    : 'bg-gray-300 dark:bg-slate-700'
-                                            }`}
-                                        >
-                                            <div
-                                                className={`bg-white w-4 h-4 rounded-full shadow-xs transform transition-transform ${
-                                                    searchExternalSources ? 'translate-x-4' : 'translate-x-0'
-                                                }`}
-                                            />
-                                        </button>
-                                    </div>
-
-                                    {/* App icons */}
-                                    <div className="flex items-center gap-2 mt-2 text-[10px]">
-                                        <div className="w-4 h-4 rounded bg-amber-500 text-white flex items-center justify-center font-bold text-[8px]" title="Google Drive">
-                                            ▲
-                                        </div>
-                                        <div className="w-4 h-4 rounded bg-blue-600 text-white flex items-center justify-center font-bold text-[8px]" title="Google Docs">
-                                            ≡
-                                        </div>
-                                        <div className="w-4 h-4 rounded bg-emerald-600 text-white flex items-center justify-center font-bold text-[8px]" title="Google Sheets">
-                                            ⊞
-                                        </div>
-                                        <div className="w-4 h-4 rounded bg-amber-600 text-white flex items-center justify-center font-bold text-[8px]" title="Google Slides">
-                                            □
-                                        </div>
-                                        <div className="w-4 h-4 rounded bg-red-500 text-white flex items-center justify-center font-bold text-[8px]" title="Gmail">
-                                            M
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Accordion: Được đề xuất */}
-                                <div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsSuggestedOpen(!isSuggestedOpen)}
-                                        className="w-full flex items-center justify-between text-xs font-semibold text-gray-700 dark:text-slate-300 hover:text-gray-900 transition mb-1 cursor-pointer"
-                                    >
-                                        <span>Được đề xuất</span>
-                                        {isSuggestedOpen ? (
-                                            <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
-                                        ) : (
-                                            <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-                                        )}
-                                    </button>
-
-                                    {isSuggestedOpen && (
-                                        <div className="space-y-2 mt-2">
-                                            <p className="text-[10.5px] text-gray-500 dark:text-slate-400 leading-tight">
-                                                Thêm nguồn để dùng cho các câu trả lời trong tương lai.{' '}
-                                                <span className="text-blue-600 hover:underline cursor-pointer">
-                                                    Tìm hiểu thêm
-                                                </span>
-                                            </p>
-
-                                            <div className="space-y-1">
-                                                {suggestedFiles.slice(0, 4).map((file) => (
-                                                    <div
-                                                        key={file.id}
-                                                        className="flex items-center justify-between p-1.5 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl text-xs transition group"
-                                                    >
-                                                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                            <div className="w-4 h-4 rounded bg-red-100 dark:bg-red-950/40 text-red-600 flex items-center justify-center shrink-0">
-                                                                <FileText className="w-3 h-3" />
-                                                            </div>
-                                                            <span
-                                                                className="truncate text-[11.5px] text-gray-700 dark:text-slate-200"
-                                                                title={file.name}
-                                                            >
-                                                                {file.name}
-                                                            </span>
-                                                        </div>
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleAddSuggestedSource(file)}
-                                                            className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-gray-500 hover:text-blue-600 rounded-full transition cursor-pointer shrink-0 ml-1"
-                                                            title="Thêm vào nguồn"
-                                                        >
-                                                            <Plus className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
                         </div>
                     ) : (
                         /* ── TAB NHẬT KÝ HỎI ĐÁP TỔNG THỂ (ALL CHAT HISTORY) ── */
@@ -868,53 +746,63 @@ function DriveAiContent() {
                                 <div className="space-y-2 overflow-y-auto">
                                     {chatSessions.map((session) => {
                                         const isCurrent = session.id === sessionId.toString();
+                                        const displayTime = formatSessionTimestamp(session.timestamp || session.createdAt);
                                         return (
                                             <div
                                                 key={session.id}
                                                 onClick={() => handleSelectHistorySession(session)}
-                                                className={`p-2.5 rounded-xl border text-xs transition cursor-pointer group relative ${
+                                                className={`relative p-3 rounded-2xl border text-xs transition-all duration-150 cursor-pointer group overflow-hidden ${
                                                     isCurrent
-                                                        ? 'bg-[#c2e7ff]/35 border-blue-400/80 dark:bg-blue-950/40 dark:border-blue-600/80 shadow-2xs'
-                                                        : 'bg-white hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800 border-gray-200/70 dark:border-slate-800'
+                                                        ? 'bg-[#e8f0fe] border-[#4285f4] shadow-xs dark:bg-blue-950/50 dark:border-blue-500'
+                                                        : 'bg-white hover:bg-[#f8fafd] hover:border-gray-300 dark:bg-slate-800/60 dark:hover:bg-slate-800 border-gray-200/90 dark:border-slate-700/70 shadow-2xs'
                                                 }`}
                                             >
-                                                {/* Header row: time + delete */}
-                                                <div className="flex items-center justify-between text-[10.5px] text-gray-400 dark:text-slate-500 mb-1">
-                                                    <div className="flex items-center gap-1.5 truncate">
-                                                        <Clock className="w-3 h-3 shrink-0" />
-                                                        <span>{session.createdAt}</span>
+                                                {/* Active Indicator Bar on left */}
+                                                {isCurrent && (
+                                                    <div className="absolute left-0 top-2 bottom-2 w-1.5 bg-[#1a73e8] rounded-r-full" />
+                                                )}
+
+                                                {/* Top Row: Time & Delete */}
+                                                <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-slate-400 mb-1.5 pl-0.5">
+                                                    <div className="flex items-center gap-1.5 font-medium truncate">
+                                                        <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                                        <span>{displayTime}</span>
                                                     </div>
 
                                                     <button
                                                         type="button"
                                                         onClick={(e) => handleDeleteHistorySession(session.id, e)}
-                                                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-50 dark:hover:bg-red-950/40 text-gray-400 hover:text-red-500 rounded transition"
+                                                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 rounded-lg text-gray-400 transition-all cursor-pointer"
                                                         title="Xóa phiên này"
                                                     >
-                                                        <Trash2 className="w-3 h-3" />
+                                                        <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
                                                 </div>
 
                                                 {/* Title */}
-                                                <p className="font-medium text-gray-800 dark:text-slate-100 line-clamp-2 leading-snug">
+                                                <p className={`text-[12.5px] leading-snug line-clamp-2 transition-colors ${
+                                                    isCurrent
+                                                        ? 'text-[#1a73e8] dark:text-blue-300 font-semibold'
+                                                        : 'text-gray-800 dark:text-slate-100 font-medium group-hover:text-[#1a73e8]'
+                                                }`}>
                                                     {session.title}
                                                 </p>
 
-                                                {/* Source tag badge */}
-                                                <div className="mt-1.5 flex items-center gap-1.5">
-                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-slate-700/60 text-[10px] text-gray-600 dark:text-slate-300 truncate max-w-[190px]">
+                                                {/* Bottom Badges */}
+                                                <div className="mt-2.5 flex items-center justify-between gap-1.5 pt-2 border-t border-gray-100 dark:border-slate-700/60">
+                                                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700/70 text-[10.5px] text-gray-600 dark:text-slate-300 font-medium truncate max-w-[160px]">
                                                         {session.sourceSummary.includes('Toàn bộ Drive') ? (
-                                                            <span className="text-[#0b57d0] font-bold text-[8px]">▲</span>
+                                                            <span className="text-[#0b57d0] font-bold text-[9px]">▲</span>
                                                         ) : session.sourceSummary.includes('cv') || session.sourceSummary.toLowerCase().includes('thư mục') ? (
-                                                            <Folder className="w-2.5 h-2.5 text-blue-500 shrink-0" />
+                                                            <Folder className="w-3 h-3 text-blue-500 shrink-0" />
                                                         ) : (
-                                                            <FileText className="w-2.5 h-2.5 text-red-500 shrink-0" />
+                                                            <FileText className="w-3 h-3 text-blue-600 shrink-0" />
                                                         )}
                                                         <span className="truncate">{session.sourceSummary}</span>
-                                                    </span>
+                                                    </div>
 
-                                                    <span className="text-[10px] text-gray-400 shrink-0">
-                                                        ({session.messages.length} tin)
+                                                    <span className="text-[10px] font-medium text-gray-400 dark:text-slate-400 shrink-0">
+                                                        {session.messages.length} tin
                                                     </span>
                                                 </div>
                                             </div>
@@ -995,22 +883,83 @@ function DriveAiContent() {
                                             )}
 
                                             <div
-                                                className={`rounded-2xl p-4 max-w-[85%] text-[13px] leading-relaxed select-text ${
+                                                className={`max-w-[85%] select-text ${
                                                     isUser
-                                                        ? 'bg-[#c2e7ff] text-[#001d35] font-medium rounded-br-xs'
-                                                        : 'bg-[#f8fafd] dark:bg-slate-800/80 border border-gray-200/80 dark:border-slate-700/80 text-gray-800 dark:text-slate-100 rounded-bl-xs whitespace-pre-wrap'
+                                                        ? 'bg-[#c2e7ff] text-[#001d35] font-medium rounded-2xl rounded-br-xs px-4 py-2.5 text-[13.5px] leading-relaxed shadow-3xs'
+                                                        : 'w-full bg-[#f8fafd] dark:bg-slate-800/85 border border-gray-200/90 dark:border-slate-700/80 rounded-2xl rounded-tl-xs p-4 sm:p-5 text-[13.5px] leading-relaxed shadow-xs text-gray-800 dark:text-slate-100'
                                                 }`}
                                             >
-                                                {msg.content}
+                                                {isUser ? (
+                                                    msg.content
+                                                ) : (
+                                                    <div className="ai-markdown-content font-sans">
+                                                        <ReactMarkdown
+                                                            remarkPlugins={[remarkGfm]}
+                                                            components={{
+                                                                p: ({ node, ...props }) => (
+                                                                    <p className="my-2 leading-relaxed text-gray-800 dark:text-slate-100 text-[13.5px]" {...props} />
+                                                                ),
+                                                                strong: ({ node, ...props }) => (
+                                                                    <strong className="font-semibold text-gray-900 dark:text-white" {...props} />
+                                                                ),
+                                                                ul: ({ node, ...props }) => (
+                                                                    <ul className="my-2.5 ml-4 list-disc space-y-1.5 text-[13.5px] marker:text-blue-500" {...props} />
+                                                                ),
+                                                                ol: ({ node, ...props }) => (
+                                                                    <ol className="my-2.5 ml-4 list-decimal space-y-1.5 text-[13.5px] marker:text-blue-600 font-medium" {...props} />
+                                                                ),
+                                                                li: ({ node, ...props }) => (
+                                                                    <li className="leading-relaxed pl-1" {...props} />
+                                                                ),
+                                                                h1: ({ node, ...props }) => (
+                                                                    <h1 className="text-base font-bold text-gray-900 dark:text-white mt-4 mb-2 pb-1 border-b border-gray-100 dark:border-slate-800" {...props} />
+                                                                ),
+                                                                h2: ({ node, ...props }) => (
+                                                                    <h2 className="text-[14.5px] font-bold text-gray-900 dark:text-white mt-3.5 mb-1.5" {...props} />
+                                                                ),
+                                                                h3: ({ node, ...props }) => (
+                                                                    <h3 className="text-[13.5px] font-semibold text-gray-900 dark:text-white mt-2.5 mb-1" {...props} />
+                                                                ),
+                                                                blockquote: ({ node, ...props }) => (
+                                                                    <blockquote className="my-2.5 pl-3 py-1.5 border-l-3 border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 text-gray-700 dark:text-slate-300 italic text-[13px] rounded-r-lg" {...props} />
+                                                                ),
+                                                                code: ({ inline, className, children, ...props }: any) => {
+                                                                    return inline ? (
+                                                                        <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-gray-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-mono text-[12px] border border-gray-200/70 dark:border-slate-700/70" {...props}>
+                                                                            {children}
+                                                                        </code>
+                                                                    ) : (
+                                                                        <div className="my-3 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 bg-slate-900 text-slate-100 p-3.5 font-mono text-xs overflow-x-auto shadow-inner">
+                                                                            <code {...props}>{children}</code>
+                                                                        </div>
+                                                                    );
+                                                                },
+                                                                table: ({ node, ...props }) => (
+                                                                    <div className="my-3 overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
+                                                                        <table className="w-full text-left text-xs border-collapse" {...props} />
+                                                                    </div>
+                                                                ),
+                                                                th: ({ node, ...props }) => (
+                                                                    <th className="bg-gray-100 dark:bg-slate-800 p-2 font-semibold text-gray-700 dark:text-slate-200 border-b border-gray-200 dark:border-slate-700" {...props} />
+                                                                ),
+                                                                td: ({ node, ...props }) => (
+                                                                    <td className="p-2 border-b border-gray-100 dark:border-slate-800/60" {...props} />
+                                                                ),
+                                                            }}
+                                                        >
+                                                            {formatMarkdownContent(msg.content)}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                )}
 
                                                 {/* Action buttons for AI messages */}
                                                 {!isUser && (
-                                                    <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-gray-200/50 dark:border-slate-700/50 text-gray-400">
+                                                    <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-gray-200/60 dark:border-slate-700/60 text-gray-400">
                                                         <button
                                                             type="button"
                                                             onClick={() => handleCopy(msg.content, index)}
-                                                            className="p-1 hover:bg-gray-200/60 dark:hover:bg-slate-700 rounded-md transition"
-                                                            title="Sao chép"
+                                                            className="p-1.5 hover:bg-gray-200/60 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-slate-200 rounded-lg transition"
+                                                            title="Sao chép nội dung"
                                                         >
                                                             {copiedIndex === index ? (
                                                                 <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1018,22 +967,7 @@ function DriveAiContent() {
                                                                 <Copy className="w-3.5 h-3.5" />
                                                             )}
                                                         </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toast.success('Cảm ơn bạn đã phản hồi tốt!')}
-                                                            className="p-1 hover:bg-gray-200/60 dark:hover:bg-slate-700 rounded-md transition"
-                                                            title="Thích"
-                                                        >
-                                                            <ThumbsUp className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toast.success('Đã ghi nhận phản hồi để cải thiện!')}
-                                                            className="p-1 hover:bg-gray-200/60 dark:hover:bg-slate-700 rounded-md transition"
-                                                            title="Không thích"
-                                                        >
-                                                            <ThumbsDown className="w-3.5 h-3.5" />
-                                                        </button>
+
                                                     </div>
                                                 )}
                                             </div>
@@ -1042,13 +976,19 @@ function DriveAiContent() {
                                 })}
 
                                 {isGenerating && (
-                                    <div className="flex gap-3.5 items-center">
-                                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shrink-0 animate-pulse">
-                                            <Sparkles className="w-4 h-4" />
+                                    <div className="flex gap-3 items-center pt-2 pl-1 animate-in fade-in duration-200">
+                                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#8ab4f8] to-[#c2e7ff] flex items-center justify-center text-white shadow-sm ring-2 ring-blue-100 dark:ring-blue-900/40 animate-pulse shrink-0">
+                                            <Sparkles className="w-4 h-4 fill-white" />
                                         </div>
-                                        <div className="bg-[#f8fafd] dark:bg-slate-800/80 border border-gray-200/80 dark:border-slate-700/80 rounded-2xl p-3 text-xs text-gray-500 flex items-center gap-2">
-                                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                                            <span>Gemini đang phân tích tài liệu...</span>
+                                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#f0f4f9] dark:bg-slate-800/80 border border-gray-200/60 dark:border-slate-700/60 shadow-2xs">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.3s]"></span>
+                                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce [animation-delay:-0.15s]"></span>
+                                                <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-bounce"></span>
+                                            </div>
+                                            <span className="text-[12.5px] font-medium text-gray-600 dark:text-slate-300">
+                                                Gemini đang xử lý câu trả lời...
+                                            </span>
                                         </div>
                                     </div>
                                 )}

@@ -1182,33 +1182,31 @@ export default function HomePage() {
         setIsDeletingItem(true);
         if (deleteModal.type === 'files' && deleteModal.targetIds) {
             const count = deleteModal.targetIds.length;
-            const tId = toast.loading(`Đang chuyển ${count} tệp vào thùng rác...`);
             try {
                 for (const id of deleteModal.targetIds) {
                     await fileManagementService.softDelete(id);
                 }
-                toast.success(`Đã chuyển ${count} tệp vào thùng rác thành công!`, { id: tId });
+                toast.success(`Đã chuyển ${count} tệp vào thùng rác thành công!`);
                 setSelectedFileIds([]);
                 setContextMenu(null);
                 setDeleteModal(null);
                 fetchHomeData();
             } catch (err: any) {
-                toast.error('Lỗi khi xóa tệp: ' + (err?.message || err), { id: tId });
+                toast.error('Lỗi khi xóa tệp: ' + (err?.message || err));
             } finally {
                 setIsDeletingItem(false);
             }
         } else if (deleteModal.type === 'folder' && deleteModal.targetFolder) {
             const folder = deleteModal.targetFolder;
-            const tId = toast.loading(`Đang chuyển thư mục "${folder.name}" vào thùng rác...`);
             try {
                 await forderService.deleteFolder(folder.id);
-                toast.success(`Đã chuyển thư mục "${folder.name}" vào thùng rác!`, { id: tId });
+                toast.success(`Đã chuyển thư mục "${folder.name}" vào thùng rác!`);
                 setFolderContextMenu(null);
                 setDeleteModal(null);
                 window.dispatchEvent(new CustomEvent('folder_tree_updated'));
                 fetchHomeData();
             } catch (err: any) {
-                toast.error(err?.message || 'Lỗi khi xóa thư mục', { id: tId });
+                toast.error(err?.message || 'Lỗi khi xóa thư mục');
             } finally {
                 setIsDeletingItem(false);
             }
@@ -1308,19 +1306,18 @@ export default function HomePage() {
 
     // Mở file trực tiếp qua Google Docs
     const handleOpenInGoogleDocs = async (file: UnifiedSuggestedFile) => {
-        toast.loading(`Đang kết nối Google Docs cho "${file.name}"...`, { id: 'gdoc-open' });
         try {
             const previewData = await fileManagementService.getPreviewUrl(file.id);
             const targetUrl = previewData?.url;
 
             if (!targetUrl) {
-                toast.error('Không tìm thấy đường dẫn tệp để mở!', { id: 'gdoc-open' });
+                toast.error('Không tìm thấy đường dẫn tệp để mở!');
                 return;
             }
 
             // Nếu là URL localhost: Google Docs không thể truy cập từ internet
             if (targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1')) {
-                toast.error('Tệp đang lưu trên Localhost máy cá nhân (Google Docs cần link S3/Internet để nạp). Đang mở danh sách tệp...', { id: 'gdoc-open', duration: 4000 });
+                toast.error('Tệp đang lưu trên Localhost máy cá nhân (Google Docs cần link S3/Internet để nạp). Đang mở danh sách tệp...', { duration: 4000 });
                 router.push('/files');
                 return;
             }
@@ -1328,11 +1325,11 @@ export default function HomePage() {
             // Mở thẳng qua Google Docs Viewer
             const gDocsUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(targetUrl)}`;
             window.open(gDocsUrl, '_blank', 'noopener,noreferrer');
-            toast.success('Đã mở tài liệu trên Google Docs!', { id: 'gdoc-open' });
+            toast.success('Đã mở tài liệu trên Google Docs!');
         } catch (err) {
             console.error('Lỗi khi mở qua Google Docs:', err);
             router.push('/files');
-            toast.error('Chưa thể mở qua Google Docs, đã chuyển sang danh sách tệp.', { id: 'gdoc-open' });
+            toast.error('Chưa thể mở qua Google Docs, đã chuyển sang danh sách tệp.');
         }
     };
 

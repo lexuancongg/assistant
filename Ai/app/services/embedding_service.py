@@ -1,14 +1,16 @@
 import logging
 import os
+from typing import Optional
 from google import genai
 from google.genai import types
 from app.utils.retry import retry
+
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
 
-    BATCH_SIZE = 100  # Gemini embedding API giới hạn nhỏ hơn OpenAI, an toàn với 100
+    BATCH_SIZE = 100  # Gemini embedding API giới hạn an toàn với 100
 
     def __init__(self):
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -18,18 +20,20 @@ class EmbeddingService:
         self.client = genai.Client(api_key=api_key)
         self.model = os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 
-    def embed(self, chunks: list[str]) -> list[list[float]]:
+    def embed(self, chunks: list[str], is_query: bool = False) -> list[list[float]]:
         if not chunks:
             return []
 
+        task_type = "RETRIEVAL_QUERY" if is_query else "RETRIEVAL_DOCUMENT"
         results = []
 
         for i in range(0, len(chunks), self.BATCH_SIZE):
             batch = chunks[i : i + self.BATCH_SIZE]
             logger.debug(
-                "Embedding batch %d/%d",
+                "Embedding batch %d/%d (task_type=%s)",
                 i // self.BATCH_SIZE + 1,
-                -(-len(chunks) // self.BATCH_SIZE),  # ceiling division
+                -(-len(chunks) // self.BATCH_SIZE),
+                task_type
             )
 
             response = retry(
@@ -37,7 +41,7 @@ class EmbeddingService:
                     model=self.model,
                     contents=batch,
                     config=types.EmbedContentConfig(
-                        task_type="RETRIEVAL_DOCUMENT",
+                        task_type=task_type,
                         output_dimensionality=1536,
                     ),
                 )

@@ -1,13 +1,13 @@
 import { LoginResponse } from "@/models/auth/loginResponse";
 import { AuthRequest } from "@/models/auth/authRequest";
-import apiClient from "@/utils/api/apiClientFixed";
+    import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
 import { AuthStateResponse } from "@/models/auth/AuthStateResponse";
 
 class AuthenticationService{
     private baseUrl:string
     constructor() {
         // backend auth endpoints
-        this.baseUrl = "http://localhost:8080/api/v1/auth"
+        this.baseUrl = `${API_ROOT}/api/v1/auth`;
     }
 
     public async login(authRequest : AuthRequest):Promise<LoginResponse>{

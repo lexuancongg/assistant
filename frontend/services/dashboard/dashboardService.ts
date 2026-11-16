@@ -1,4 +1,4 @@
-import apiClient from "@/utils/api/apiClientFixed";
+import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
 
 export interface FormatStatDto {
     format: string;
@@ -69,7 +69,7 @@ class DashboardService {
     private baseUrl: string;
 
     constructor() {
-        this.baseUrl = "http://localhost:8080/api/v1/dashboard";
+        this.baseUrl = `${API_ROOT}/api/v1/dashboard`;
     }
 
     public async getStats(): Promise<DashboardStatsDto> {

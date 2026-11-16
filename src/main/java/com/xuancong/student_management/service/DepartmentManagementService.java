@@ -19,7 +19,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class DepartmentManagementService {
+public class    DepartmentManagementService {
 
     private static final Long DEFAULT_COMPANY_ID = 1L;
 
@@ -29,9 +29,20 @@ public class DepartmentManagementService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    private Long resolveCurrentCompanyId() {
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)) {
+            User currentUser = userRepository.findByEmail(auth.getName()).orElse(null);
+            if (currentUser != null && currentUser.getCompany() != null) {
+                return currentUser.getCompany().getId();
+            }
+        }
+        return 1L;
+    }
+
     public List<DepartmentResponse> getAll() {
-        List<Department> departments = departmentRepository.findByCompanyId(DEFAULT_COMPANY_ID);
-        // Với mỗi department, lấy danh sách user thuộc phòng ban đó
+        Long companyId = resolveCurrentCompanyId();
+        List<Department> departments = departmentRepository.findByCompanyId(companyId);
         List<User> allUsers = userRepository.findAll();
         return departments.stream()
                 .map(dept -> toResponse(dept, allUsers))
@@ -40,7 +51,7 @@ public class DepartmentManagementService {
 
     public DepartmentResponse create(DepartmentCreateRequest request) {
         Company company = new Company();
-        company.setId(DEFAULT_COMPANY_ID);
+        company.setId(resolveCurrentCompanyId());
 
         Department dept = new Department();
         dept.setName(request.name().trim());
@@ -95,9 +106,7 @@ public class DepartmentManagementService {
             entityManager.createQuery("UPDATE Folder f SET f.defaultDepartment = null WHERE f.defaultDepartment.id = :deptId")
                     .setParameter("deptId", deptId)
                     .executeUpdate();
-            entityManager.createQuery("UPDATE AiTokenUsage t SET t.department = null WHERE t.department.id = :deptId")
-                    .setParameter("deptId", deptId)
-                    .executeUpdate();
+
             entityManager.createQuery("UPDATE User u SET u.department = null WHERE u.department.id = :deptId")
                     .setParameter("deptId", deptId)
                     .executeUpdate();
@@ -124,7 +133,7 @@ public class DepartmentManagementService {
                         u.getId(),
                         u.getName(),
                         u.getEmail(),
-                        u.getRole() != null && u.getRole().name().equals("MANAGER") ? "Trưởng phòng" : "Thành viên"
+                        u.getRole() != null && u.getRole().name().equals("ADMIN") ? "Quản trị viên" : (u.getRole() != null && u.getRole().name().equals("MANAGER") ? "Quản lý" : "Thành viên")
                 ))
                 .toList();
         return new DepartmentResponse(dept.getId(), dept.getName(), members);

@@ -614,7 +614,6 @@ function PermissionsPageContent() {
 
     const handleSavePermissions = async () => {
         setSaving(true);
-        const tId = toast.loading('Đang lưu thay đổi...');
         try {
             if (folderId) {
                 try {
@@ -670,11 +669,11 @@ function PermissionsPageContent() {
                 };
 
                 await forderService.updateFolderPermissions(folderId, payload);
-                toast.success('Đã lưu cấu hình phân quyền thành công!', { id: tId });
+                toast.success('Đã lưu cấu hình phân quyền thành công!');
             }
         } catch (err: any) {
             console.error('Lỗi lưu phân quyền:', err);
-            toast.error(err?.message || 'Có lỗi xảy ra khi lưu phân quyền', { id: tId });
+            toast.error(err?.message || 'Có lỗi xảy ra khi lưu phân quyền');
         } finally {
             setSaving(false);
         }

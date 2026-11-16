@@ -38,9 +38,7 @@ public class DashboardService {
     private final ActivityLogRepository activityLogRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatCitationRepository chatCitationRepository;
-    private final ChatMessageFeedbackRepository chatMessageFeedbackRepository;
     private final DocumentChunkRepository documentChunkRepository;
-    private final AiTokenUsageRepository aiTokenUsageRepository;
 
     @Transactional
     public DashboardStatsResponse getStats() {
@@ -122,18 +120,10 @@ public class DashboardService {
         // Real Qdrant Cluster Status
         String qdrantStatus = checkQdrantHealth();
 
-        // Extended AI Metrics (User Feedback, Chunks, Token Usage, Personas)
-        long likes = chatMessageFeedbackRepository.countLikes();
-        long dislikes = chatMessageFeedbackRepository.countDislikes();
-        Double userSatisfactionRate = (likes + dislikes > 0)
-                ? Math.round((likes * 100.0 / (likes + dislikes)) * 10.0) / 10.0
-                : null;
-
+        // Extended AI Metrics (User Feedback & Token Usage deprecated)
+        Double userSatisfactionRate = null;
         long totalChunksIndexed = documentChunkRepository.count();
-
-        // Token usage filtered to current month only (not all-time)
-        Instant startOfMonth = LocalDate.now(VN_ZONE).withDayOfMonth(1).atStartOfDay(VN_ZONE).toInstant();
-        long monthlyTokensUsed = aiTokenUsageRepository.sumTotalTokensByCompanyIdAndCreatedAtAfter(companyId, startOfMonth);
+        long monthlyTokensUsed = 0L;
 
         // 2. Active Files & Format Breakdown
         List<FileItem> activeFiles = fileItemRepository.findByCompanyIdAndDeletedAtIsNull(companyId);

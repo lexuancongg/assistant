@@ -1,3 +1,4 @@
+'use client';
 const STATUS_MAP: Record<string, { label: string; className: string }> = {
     done: { label: 'Đã trích xuất', className: 'bg-green-50 text-green-700' },
     processing: { label: 'Đang xử lý', className: 'bg-blue-50 text-blue-700' },

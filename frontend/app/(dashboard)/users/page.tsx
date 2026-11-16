@@ -1,10 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Search, Plus, MoreVertical, X, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Plus, MoreVertical, X, Loader2 } from 'lucide-react';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
 import userService, { UserDto } from '@/services/user/userService';
 import toast from 'react-hot-toast';
-import LoadingOverlay from '@/components/common/LoadingOverlay';
 
 export default function UsersPage() {
     usePageBreadcrumb(['Quản lý người dùng']);
@@ -18,8 +17,6 @@ export default function UsersPage() {
     const [loading, setLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
     const [togglingId, setTogglingId] = useState<string | number | null>(null);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [processingText, setProcessingText] = useState('Đang xử lý...');
 
     const loadUsers = async (silent = false) => {
         if (!silent) setLoading(true);
@@ -46,9 +43,6 @@ export default function UsersPage() {
         if (!name.trim() || !email.trim() || !password.trim() || isCreating) return;
 
         setIsCreating(true);
-        setIsProcessing(true);
-        setProcessingText('Đang tạo tài khoản người dùng...');
-        const tId = toast.loading('Đang tạo người dùng...');
         try {
             await userService.createUser({
                 name: name.trim(),
@@ -56,52 +50,39 @@ export default function UsersPage() {
                 password: password.trim(),
                 role
             });
-            toast.success('Tạo người dùng thành công!', { id: tId });
+            toast.success('Tạo người dùng thành công!');
             setShowCreateModal(false);
             setName('');
             setEmail('');
             setPassword('');
             await loadUsers(true);
         } catch (err: any) {
-            toast.error('Tạo người dùng thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Tạo người dùng thất bại: ' + (err?.message || err));
         } finally {
             setIsCreating(false);
-            setIsProcessing(false);
         }
     };
 
     const handleToggleStatus = async (id: string | number, currentStatus: string) => {
         const nextStatus = currentStatus.toUpperCase() === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
         setTogglingId(id);
-        setIsProcessing(true);
-        setProcessingText('Đang cập nhật trạng thái người dùng...');
-        const tId = toast.loading('Đang cập nhật trạng thái...');
         try {
             await userService.updateStatus(id, nextStatus);
-            toast.success('Đã cập nhật trạng thái người dùng!', { id: tId });
+            toast.success('Đã cập nhật trạng thái người dùng!');
             await loadUsers(true);
         } catch (err: any) {
-            toast.error('Cập nhật trạng thái thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Cập nhật trạng thái thất bại: ' + (err?.message || err));
         } finally {
             setTogglingId(null);
-            setIsProcessing(false);
         }
     };
 
     return (
-        <div className="px-6 pt-5 pb-6 relative">
-            <LoadingOverlay isLoading={isProcessing} text={processingText} />
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                    <h1 className="text-xl font-semibold text-gray-900">Quản lý người dùng</h1>
-                    <button
-                        onClick={() => loadUsers()}
-                        className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition"
-                        title="Tải lại danh sách"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
-                    </button>
-                </div>
+        <div className="px-6 pt-3 pb-6 relative">
+            <div className="flex items-center justify-between pb-3 mb-2 shrink-0 select-none">
+                <h1 className="text-[20px] font-normal text-[#1F1F1F] dark:text-slate-100 tracking-normal">
+                    Quản lý người dùng
+                </h1>
                 <button
                     onClick={() => setShowCreateModal(true)}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 transition-colors"

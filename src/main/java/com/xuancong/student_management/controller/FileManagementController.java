@@ -52,8 +52,11 @@ public class FileManagementController {
     }
 
     @GetMapping({ "/{id}/stream", "/{id}/view" })
-    public ResponseEntity<byte[]> streamFile(@PathVariable Long id) {
-        return fileManagementService.streamFile(id);
+    public ResponseEntity<?> streamFile(
+            @PathVariable Long id,
+            @RequestHeader(value = org.springframework.http.HttpHeaders.RANGE, required = false) String rangeHeader
+    ) {
+        return fileManagementService.streamFile(id, rangeHeader);
     }
 
     @GetMapping("/{id}/preview-url")

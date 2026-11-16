@@ -285,7 +285,6 @@ export default function WordDocumentEditor({
     const handleDownloadDocx = async () => {
         if (!editorRef.current) return;
         try {
-            toast.loading('Đang khởi tạo file Word (.docx)...', { id: 'download-docx' });
             const docxBlob = await convertHtmlElementToDocxBlob(editorRef.current, file.name);
             const url = URL.createObjectURL(docxBlob);
             const a = document.createElement('a');
@@ -296,10 +295,10 @@ export default function WordDocumentEditor({
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            toast.success('Đã tải xuống file Word thành công!', { id: 'download-docx' });
+            toast.success('Đã tải xuống file Word thành công!');
         } catch (err) {
             console.error('Lỗi tải file Word:', err);
-            toast.error('Không thể xuất file Word', { id: 'download-docx' });
+            toast.error('Không thể xuất file Word');
         }
     };
 

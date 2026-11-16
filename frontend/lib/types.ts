@@ -9,7 +9,7 @@ export interface FolderNode {
 }
 
 // lib/types.ts — bổ sung
-export type DepartmentRole = 'Trưởng phòng' | 'Thành viên';
+export type DepartmentRole = 'Quản trị viên' | 'Quản lý' | 'Thành viên' | 'Trưởng phòng';
 
 export type DepartmentMember = {
     userId: number | string;

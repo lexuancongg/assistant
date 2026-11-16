@@ -11,12 +11,9 @@ import com.xuancong.student_management.entity.enums.ActivityType;
 import com.xuancong.student_management.entity.enums.ChatRole;
 import com.xuancong.student_management.entity.enums.PermissionLevel;
 import com.xuancong.student_management.entity.AgentExecutionTrace;
-import com.xuancong.student_management.entity.AiTokenUsage;
 import com.xuancong.student_management.entity.enums.AgentTraceStepType;
 import com.xuancong.student_management.repository.AgentExecutionTraceRepository;
-import com.xuancong.student_management.repository.AiTokenUsageRepository;
 import com.xuancong.student_management.repository.ChatCitationRepository;
-import com.xuancong.student_management.repository.ChatMessageFeedbackRepository;
 import com.xuancong.student_management.repository.ChatMessageRepository;
 import com.xuancong.student_management.repository.ChatSessionRepository;
 import com.xuancong.student_management.repository.FileItemRepository;
@@ -58,31 +55,17 @@ public class ChatService {
     private final FileManagementService fileManagementService;
     private final ActivityLogManagementService activityLogManagementService;
     private final AgentExecutionTraceRepository agentExecutionTraceRepository;
-    private final AiTokenUsageRepository aiTokenUsageRepository;
-    private final ChatMessageFeedbackRepository chatMessageFeedbackRepository;
 
     @Transactional
     public ChatSessionResponse getChatSession(Long sessionId) {
         return chatSessionRepository.findById(sessionId)
                 .map(session -> {
                     List<ChatMessage> messages = chatMessageRepository.findBySession_IdOrderByCreatedAtAsc(session.getId());
-                    List<Long> messageIds = messages.stream().map(ChatMessage::getId).filter(Objects::nonNull).toList();
-                    Map<Long, String> feedbackMap = Map.of();
-                    if (!messageIds.isEmpty()) {
-                        feedbackMap = chatMessageFeedbackRepository.findByMessage_IdIn(messageIds).stream()
-                                .filter(fb -> fb.getMessage() != null && fb.getMessage().getId() != null)
-                                .collect(Collectors.toMap(
-                                        fb -> fb.getMessage().getId(),
-                                        fb -> fb.getRating() != null ? fb.getRating().name() : "LIKE",
-                                        (existing, replace) -> existing
-                                ));
-                    }
-                    Map<Long, String> finalFeedbackMap = feedbackMap;
                     return ChatSessionResponse.builder()
                             .session(session.getId().toString())
                             .messages(
                                     messages.stream()
-                                            .map(m -> ChatSessionResponse.Messages.fromChatMessage(m, finalFeedbackMap.get(m.getId())))
+                                            .map(ChatSessionResponse.Messages::fromChatMessage)
                                             .toList()
                             )
                             .build();
@@ -109,6 +92,7 @@ public class ChatService {
                             .assistantPersona("Trợ lý AI")
                             .favorite(false)
                             .messageCount(messageCount)
+                            .createdAt(session.getCreatedAt())
                             .build();
                 })
                 .toList();
@@ -133,9 +117,7 @@ public class ChatService {
 
         if (!messageIds.isEmpty()) {
             // Xóa các bảng con tham chiếu đến chat_messages (không có cascade ở DB)
-            aiTokenUsageRepository.deleteByMessage_IdIn(messageIds);
             agentExecutionTraceRepository.deleteByMessage_IdIn(messageIds);
-            chatMessageFeedbackRepository.deleteByMessage_IdIn(messageIds);
         }
 
         // Xóa session (cascade ALL sẽ tự xóa chat_messages + citations)
@@ -361,21 +343,6 @@ public class ChatService {
             promptTokens = Math.max(50, (question != null ? question.length() : 0) * 2 + (answerText.length() / 2));
             completionTokens = Math.max(20, answerText.length() / 3);
             totalTokens = promptTokens + completionTokens;
-        }
-        BigDecimal costUsd = BigDecimal.valueOf(totalTokens * 0.000002);
-
-        if (currentUser != null) {
-            AiTokenUsage tokenUsage = new AiTokenUsage();
-            tokenUsage.setCompany(currentUser.getCompany());
-            tokenUsage.setDepartment(currentUser.getDepartment());
-            tokenUsage.setUser(currentUser);
-            tokenUsage.setMessage(assistantMessage);
-            tokenUsage.setModelName("gemini-flash");
-            tokenUsage.setPromptTokens(promptTokens);
-            tokenUsage.setCompletionTokens(completionTokens);
-            tokenUsage.setTotalTokens(totalTokens);
-            tokenUsage.setCostUsd(costUsd);
-            aiTokenUsageRepository.save(tokenUsage);
         }
 
         // 3. Persist Citations to DB (phục vụ tính RAG Accuracy & Top tài liệu trích dẫn)

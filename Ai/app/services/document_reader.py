@@ -131,7 +131,7 @@ class DocumentReader:
 
     def _read_docx(self, file_path: str) -> str:
         """
-        Đọc cả paragraphs lẫn nội dung trong bảng (tables),
+        Đọc cả paragraphs lẫn nội dung trong bảng (tables) theo thứ tự xuất hiện O(N),
         và diễn giải hình ảnh sơ đồ quy trình đính kèm trong docx.
         file_path ở đây luôn là local path (đã được _resolve_file xử lý).
         """
@@ -142,29 +142,31 @@ class DocumentReader:
         parts = []
         body = doc.element.body
 
+        # Tối ưu O(1) tra cứu thay vì quét lặp O(N^2)
+        p_map = {p._element: p for p in doc.paragraphs}
+        tbl_map = {t._element: t for t in doc.tables}
+
         for child in body.iterchildren():
             tag = child.tag.split("}")[-1]
 
             if tag == "p":
-                for p in doc.paragraphs:
-                    if p._element is child:
-                        text = p.text.strip()
-                        if text:
-                            parts.append(text)
-                        break
+                p = p_map.get(child)
+                if p:
+                    text = p.text.strip()
+                    if text:
+                        parts.append(text)
 
             elif tag == "tbl":
-                for table in doc.tables:
-                    if table._element is child:
-                        for row in table.rows:
-                            row_text = " | ".join(
-                                cell.text.strip()
-                                for cell in row.cells
-                                if cell.text.strip()
-                            )
-                            if row_text:
-                                parts.append(row_text)
-                        break
+                table = tbl_map.get(child)
+                if table:
+                    for row in table.rows:
+                        row_text = " | ".join(
+                            cell.text.strip()
+                            for cell in row.cells
+                            if cell.text.strip()
+                        )
+                        if row_text:
+                            parts.append(row_text)
 
         # Diễn giải các hình ảnh nhúng trong file docx (nếu có sơ đồ quy trình)
         try:

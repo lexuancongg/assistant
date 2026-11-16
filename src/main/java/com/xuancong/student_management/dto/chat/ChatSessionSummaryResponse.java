@@ -1,6 +1,7 @@
 package com.xuancong.student_management.dto.chat;
 
 import lombok.Builder;
+import java.time.Instant;
 
 @Builder
 public record ChatSessionSummaryResponse(
@@ -11,6 +12,7 @@ public record ChatSessionSummaryResponse(
         Boolean favorite,
         Long documentId,
         String documentName,
-        Integer messageCount
+        Integer messageCount,
+        Instant createdAt
 ) {
 }

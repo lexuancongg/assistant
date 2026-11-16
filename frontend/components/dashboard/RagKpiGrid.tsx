@@ -13,13 +13,11 @@ interface RagKpiGridProps {
     totalStorageGb?: number;
     totalFolders?: number;
     totalStorageText?: string;
-    userSatisfactionRate?: number | null;
     totalUsers?: number;
     totalDepartments?: number;
     totalAiQueries?: number;
     activePersonasCount?: number;
     totalChunksIndexed?: number;
-    monthlyTokensUsed?: number;
 }
 
 export default function RagKpiGrid({
@@ -32,12 +30,10 @@ export default function RagKpiGrid({
     totalStorageGb = 100,
     totalFolders = 0,
     totalStorageText = '0 B',
-    userSatisfactionRate = null,
     totalUsers = 0,
     totalDepartments = 0,
     totalAiQueries = 0,
     activePersonasCount = 0,
-    monthlyTokensUsed = 0,
 }: RagKpiGridProps) {
     const vectorPercentage = totalFiles > 0 ? ((vectorIndexed / totalFiles) * 100).toFixed(1) : '0.0';
     const storagePercentage = totalStorageGb > 0 ? ((usedStorageGb / totalStorageGb) * 100).toFixed(2) : '0.00';
@@ -192,29 +188,8 @@ export default function RagKpiGrid({
             </div>
 
             {/* Enterprise Business & System Metrics (100% Real data from PostgreSQL) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-purple-50/70 dark:from-slate-900/80 dark:via-indigo-950/30 dark:to-slate-900/80 p-3 rounded-2xl border border-blue-100 dark:border-slate-800">
-                {/* 1. User Satisfaction */}
-                <div className="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xs px-3.5 py-2.5 rounded-xl border border-blue-100/80 dark:border-slate-700/60 shadow-2xs">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-                        <ThumbsUp className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                        <div className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider truncate">
-                            Độ Hài Lòng Phản Hồi
-                        </div>
-                        <div className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
-                            {userSatisfactionRate !== null && userSatisfactionRate !== undefined ? (
-                                <>
-                                    {userSatisfactionRate}% <span className="text-[10px] font-medium text-gray-400 dark:text-slate-500 font-sans">(Đánh giá thực tế)</span>
-                                </>
-                            ) : (
-                                <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 font-sans">Chưa có đánh giá</span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* 2. Enterprise Scale (Users & Departments) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-purple-50/70 dark:from-slate-900/80 dark:via-indigo-950/30 dark:to-slate-900/80 p-3 rounded-2xl border border-blue-100 dark:border-slate-800">
+                {/* 1. Enterprise Scale (Users & Departments) */}
                 <div className="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xs px-3.5 py-2.5 rounded-xl border border-blue-100/80 dark:border-slate-700/60 shadow-2xs">
                     <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                         <Users className="w-4 h-4" />
@@ -229,22 +204,7 @@ export default function RagKpiGrid({
                     </div>
                 </div>
 
-                {/* 3. Monthly LLM Tokens */}
-                <div className="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xs px-3.5 py-2.5 rounded-xl border border-blue-100/80 dark:border-slate-700/60 shadow-2xs">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
-                        <Coins className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                        <div className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider truncate">
-                            Tokens LLM Tháng Này
-                        </div>
-                        <div className="text-base font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">
-                            {monthlyTokensUsed.toLocaleString()} <span className="text-[10px] font-medium text-gray-400 dark:text-slate-500 font-sans">tokens</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* 4. Total Cumulative Inquiries */}
+                {/* 2. Total Cumulative Inquiries */}
                 <div className="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xs px-3.5 py-2.5 rounded-xl border border-blue-100/80 dark:border-slate-700/60 shadow-2xs">
                     <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/50 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
                         <Sparkles className="w-4 h-4" />

@@ -1,4 +1,4 @@
-import apiClient from "@/utils/api/apiClientFixed";
+import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
 
 export interface ChatSessionSummaryDto {
     id?: number | string;
@@ -9,6 +9,7 @@ export interface ChatSessionSummaryDto {
     documentId?: number | string;
     documentName?: string;
     messageCount?: number;
+    createdAt?: string;
 }
 
 export interface ChatMessageDto {
@@ -16,7 +17,6 @@ export interface ChatMessageDto {
     messageId?: number | string;
     role: 'USER' | 'ASSISTANT' | 'user' | 'assistant';
     content: string;
-    feedbackRating?: 'LIKE' | 'DISLIKE';
 }
 
 export interface ChatSessionDetailDto {
@@ -59,21 +59,13 @@ export interface ChatAskResponse {
     mode?: string;
 }
 
-export type FeedbackRating = 'LIKE' | 'DISLIKE';
-export type FeedbackReason = 'HALLUCINATION' | 'INACCURATE' | 'INCOMPLETE' | 'WRONG_CITATION' | 'OTHER';
 
-export interface FeedbackRequest {
-    rating: FeedbackRating;
-    reason?: FeedbackReason;
-    comment?: string;
-    correctedAnswer?: string;
-}
 
 class ChatService {
     private managementUrl: string;
 
     constructor() {
-        this.managementUrl = "http://localhost:8080/api/v1/chat-sessions";
+        this.managementUrl = `${API_ROOT}/api/v1/chat-sessions`;
     }
 
     public async getChatSession(sessionId: number | string): Promise<ChatSessionDetailDto> {
@@ -99,13 +91,7 @@ class ChatService {
         throw response;
     }
 
-    public async submitFeedback(messageId: number | string, payload: FeedbackRequest): Promise<void> {
-        const response = await apiClient.post(
-            `http://localhost:8080/api/v1/chat/messages/${messageId}/feedback`,
-            JSON.stringify(payload)
-        );
-        if (!response.ok) throw response;
-    }
+
 
     public async deleteSession(sessionId: number | string): Promise<void> {
         const response = await apiClient.delete(`${this.managementUrl}/${sessionId}`);

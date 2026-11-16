@@ -41,7 +41,7 @@ import {
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
 import fileManagementService, { TrashItemDto } from '@/services/files/fileManagementService';
 import toast from 'react-hot-toast';
-import LoadingOverlay from '@/components/common/LoadingOverlay';
+
 import FileThumbnailPreview from '@/components/files/FileThumbnailPreview';
 
 // File Type Configuration (Matches Google Drive & Home page)
@@ -226,9 +226,7 @@ export default function TrashPage() {
     const [loading, setLoading] = useState(true);
     const [actionId, setActionId] = useState<string | number | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [processingText, setProcessingText] = useState('Đang xử lý...');
-
+        
     // Layout & Google Drive state
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
     const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
@@ -387,22 +385,18 @@ export default function TrashPage() {
     const handleRestore = async (id: string | number, e?: React.MouseEvent) => {
         e?.stopPropagation();
         setActionId(id);
-        setIsProcessing(true);
-        setProcessingText('Đang khôi phục file...');
-        const tId = toast.loading('Đang khôi phục file...');
         try {
             await fileManagementService.restore(id);
-            toast.success('Đã khôi phục file thành công!', { id: tId });
+            toast.success('Đã khôi phục file thành công!');
             await loadTrash(true);
             if (detailFileId === id) {
                 setDetailFileId(null);
                 setIsDetailDrawerOpen(false);
             }
         } catch (err: any) {
-            toast.error('Khôi phục thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Khôi phục thất bại: ' + (err?.message || err));
         } finally {
             setActionId(null);
-            setIsProcessing(false);
         }
     };
 
@@ -411,22 +405,18 @@ export default function TrashPage() {
         e?.stopPropagation();
         if (!confirm('Bạn có chắc chắn muốn xóa vĩnh viễn file này? Thao tác không thể hoàn tác!')) return;
         setActionId(id);
-        setIsProcessing(true);
-        setProcessingText('Đang xóa vĩnh viễn file khỏi hệ thống...');
-        const tId = toast.loading('Đang xóa vĩnh viễn...');
         try {
             await fileManagementService.deletePermanently(id);
-            toast.success('Đã xóa vĩnh viễn file!', { id: tId });
+            toast.success('Đã xóa vĩnh viễn file!');
             await loadTrash(true);
             if (detailFileId === id) {
                 setDetailFileId(null);
                 setIsDetailDrawerOpen(false);
             }
         } catch (err: any) {
-            toast.error('Xóa vĩnh viễn thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Xóa vĩnh viễn thất bại: ' + (err?.message || err));
         } finally {
             setActionId(null);
-            setIsProcessing(false);
         }
     };
 
@@ -434,18 +424,13 @@ export default function TrashPage() {
     const handleBulkRestore = async () => {
         if (selectedIds.size === 0) return;
         const ids = Array.from(selectedIds);
-        setIsProcessing(true);
-        setProcessingText(`Đang khôi phục ${ids.length} file đã chọn...`);
-        const tId = toast.loading(`Đang khôi phục ${ids.length} file...`);
         try {
             await fileManagementService.restoreBatch(ids);
-            toast.success(`Đã khôi phục thành công ${ids.length} file!`, { id: tId });
+            toast.success(`Đã khôi phục thành công ${ids.length} file!`);
             await loadTrash(true);
             setSelectedIds(new Set());
         } catch (err: any) {
-            toast.error('Khôi phục hàng loạt thất bại: ' + (err?.message || err), { id: tId });
-        } finally {
-            setIsProcessing(false);
+            toast.error('Khôi phục hàng loạt thất bại: ' + (err?.message || err));
         }
     };
 
@@ -456,18 +441,13 @@ export default function TrashPage() {
         if (!confirm(`CẢNH BÁO: Bạn có chắc chắn muốn xóa vĩnh viễn ${ids.length} mục đã chọn?\nThao tác này hoàn toàn không thể hoàn tác!`)) {
             return;
         }
-        setIsProcessing(true);
-        setProcessingText(`Đang xóa vĩnh viễn ${ids.length} file khỏi hệ thống...`);
-        const tId = toast.loading(`Đang xóa vĩnh viễn ${ids.length} file...`);
         try {
             await fileManagementService.deletePermanentlyBatch(ids);
-            toast.success(`Đã xóa vĩnh viễn ${ids.length} file!`, { id: tId });
+            toast.success(`Đã xóa vĩnh viễn ${ids.length} file!`);
             await loadTrash(true);
             setSelectedIds(new Set());
         } catch (err: any) {
-            toast.error('Xóa hàng loạt thất bại: ' + (err?.message || err), { id: tId });
-        } finally {
-            setIsProcessing(false);
+            toast.error('Xóa hàng loạt thất bại: ' + (err?.message || err));
         }
     };
 
@@ -476,20 +456,15 @@ export default function TrashPage() {
         if (trashItems.length === 0) return;
         setShowEmptyTrashModal(false);
         const allIds = trashItems.map((i) => i.id);
-        setIsProcessing(true);
-        setProcessingText('Đang dọn sạch thùng rác...');
-        const tId = toast.loading('Đang dọn sạch thùng rác...');
         try {
             await fileManagementService.deletePermanentlyBatch(allIds);
-            toast.success('Đã dọn sạch thùng rác thành công!', { id: tId });
+            toast.success('Đã dọn sạch thùng rác thành công!');
             await loadTrash(true);
             setSelectedIds(new Set());
             setIsDetailDrawerOpen(false);
             setDetailFileId(null);
         } catch (err: any) {
-            toast.error('Dọn sạch thùng rác thất bại: ' + (err?.message || err), { id: tId });
-        } finally {
-            setIsProcessing(false);
+            toast.error('Dọn sạch thùng rác thất bại: ' + (err?.message || err));
         }
     };
 
@@ -510,7 +485,7 @@ export default function TrashPage() {
 
     return (
         <div className="h-full flex flex-col overflow-hidden bg-white dark:bg-slate-900 select-none">
-            <LoadingOverlay isLoading={isProcessing} text={processingText} />
+            
 
             {/* ── TOP HEADER (TITLE & CONTROLS) ── */}
             <div className="px-6 pt-3 pb-2 shrink-0 flex items-center justify-between border-b border-transparent">

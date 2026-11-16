@@ -5,7 +5,7 @@ import Sidebar from '@/components/layout/Sidebar';
 import Topbar from '@/components/layout/Topbar';
 import { BreadcrumbProvider, useBreadcrumb } from '@/lib/breadcrumb-context';
 import { SidebarProvider, useSidebar } from '@/lib/sidebar-context';
-import LoadingOverlay from '@/components/common/LoadingOverlay';
+
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
     const { isOpen, setIsOpen } = useSidebar();

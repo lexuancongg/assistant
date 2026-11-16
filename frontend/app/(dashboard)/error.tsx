@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 export default function Error({
     error,
@@ -16,7 +17,7 @@ export default function Error({
     return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
             <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
-                <i className="bi bi-exclamation-triangle text-2xl"></i>
+                <AlertTriangle className="w-8 h-8" />
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">Đã xảy ra lỗi</h2>
             <p className="text-sm text-gray-500 max-w-md mb-6">

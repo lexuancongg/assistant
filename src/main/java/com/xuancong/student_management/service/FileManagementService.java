@@ -697,7 +697,11 @@ public class FileManagementService {
         );
     }
 
-    public ResponseEntity<byte[]> streamFile(Long id) {
+    public ResponseEntity<?> streamFile(Long id) {
+        return streamFile(id, null);
+    }
+
+    public ResponseEntity<?> streamFile(Long id, String rangeHeader) {
         FileItem file = getOrThrow(id);
         User currentUser = getAuthenticatedUser();
         if (currentUser != null && !hasFileAccess(file, currentUser, PermissionLevel.VIEWER)) {
@@ -721,11 +725,31 @@ public class FileManagementService {
                     .filename(file.getName() != null ? file.getName() : "document", StandardCharsets.UTF_8)
                     .build();
 
+            long totalLength = bytes.length;
+            if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+                String[] ranges = rangeHeader.substring(6).split("-");
+                long start = Long.parseLong(ranges[0]);
+                long end = ranges.length > 1 && !ranges[1].isBlank() ? Long.parseLong(ranges[1]) : totalLength - 1;
+                if (start <= end && end < totalLength) {
+                    int rangeLength = (int) (end - start + 1);
+                    byte[] rangeBytes = new byte[rangeLength];
+                    System.arraycopy(bytes, (int) start, rangeBytes, 0, rangeLength);
+                    return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+                            .contentType(MediaType.parseMediaType(contentType))
+                            .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                            .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + totalLength)
+                            .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(rangeLength))
+                            .body(rangeBytes);
+                }
+            }
+
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(contentType))
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
                     .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
                     .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                    .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(totalLength))
                     .body(bytes);
         } catch (Exception e) {
             log.warn("Cannot stream file {} from S3: {}", id, e.getMessage());

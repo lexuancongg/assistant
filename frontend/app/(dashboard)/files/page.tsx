@@ -79,7 +79,7 @@ import forderService from '@/services/forder/forderService';
 import fileManagementService, { FileItemDto } from '@/services/files/fileManagementService';
 import { ForderCreateRequest } from '@/models/forder/forder';
 import toast from 'react-hot-toast';
-import LoadingOverlay from '@/components/common/LoadingOverlay';
+
 import apiClient from '@/utils/api/apiClient';
 
 // Visual configuration helper for file types (Identical to Home page)
@@ -305,9 +305,7 @@ function FilesContent() {
     const [loadingFiles, setLoadingFiles] = useState(true);
     const [loadingTree, setLoadingTree] = useState(true);
     const [deletingId, setDeletingId] = useState<string | number | null>(null);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [processingText, setProcessingText] = useState('Đang xử lý...');
-    const [showFolderMenu, setShowFolderMenu] = useState(false);
+            const [showFolderMenu, setShowFolderMenu] = useState(false);
     const folderMenuRef = useRef<HTMLDivElement>(null);
 
     // Companion dock state
@@ -395,22 +393,18 @@ function FilesContent() {
 
     const handleDeleteFolder = async (folderId: string | number, folderName: string) => {
         if (!confirm(`Bạn có chắc chắn muốn chuyển thư mục "${folderName}" vào thùng rác?`)) return;
-        setIsProcessing(true);
-        setProcessingText(`Đang xóa thư mục "${folderName}"...`);
-        const tId = toast.loading('Đang xóa thư mục...');
+        
         try {
             await forderService.deleteFolder(folderId);
-            toast.success(`Đã chuyển thư mục "${folderName}" vào thùng rác thành công!`, { id: tId });
+            toast.success(`Đã chuyển thư mục "${folderName}" vào thùng rác thành công!`);
             window.dispatchEvent(new CustomEvent('folder_tree_updated'));
             await loadData(true);
             if (selectedFolder === folderId.toString()) {
                 navigateToFolder('all', 'Drive của tôi');
             }
         } catch (err: any) {
-            toast.error(err?.message || 'Chuyển thư mục vào thùng rác thất bại', { id: tId });
-        } finally {
-            setIsProcessing(false);
-        }
+            toast.error(err?.message || 'Chuyển thư mục vào thùng rác thất bại');
+        } 
     };
 
     // Close menus when clicking outside
@@ -491,13 +485,20 @@ function FilesContent() {
                             type: 'file' as const,
                             fileType: f.fileType,
                             size: f.size,
+                            uploadedByName: f.uploadedByName,
                             uploadedByEmail: f.uploadedByEmail,
+                            owner: f.owner,
                         }));
 
                     return {
+                        ...n,
                         id: folderIdStr,
                         name: n.name,
                         type: 'folder' as const,
+                        ownerId: n.ownerId,
+                        ownerName: n.ownerName,
+                        ownerEmail: n.ownerEmail,
+                        updatedAt: n.createdAt || n.updatedAt,
                         children: [...childFolders, ...childFiles],
                     };
                 });
@@ -762,8 +763,7 @@ function FilesContent() {
                 (currentUser?.name && (
                     file.owner?.toLowerCase() === currentUser.name.toLowerCase() ||
                     file.uploadedByName?.toLowerCase() === currentUser.name.toLowerCase()
-                )) ||
-                file.owner === 'me'
+                ))
             );
             if (filterPeople === 'me') {
                 matchesPeople = isOwner;
@@ -863,17 +863,16 @@ function FilesContent() {
     const handleDeleteFile = async (id: number | string) => {
         if (!confirm('Bạn có chắc chắn muốn chuyển tài liệu này vào thùng rác?')) return;
         setDeletingId(id);
-        const tId = toast.loading('Đang chuyển vào thùng rác...');
-        try {
+                try {
             await fileManagementService.softDelete(id);
-            toast.success('Đã chuyển tài liệu vào thùng rác thành công', { id: tId });
+            toast.success('Đã chuyển tài liệu vào thùng rác thành công');
             setSelectedFileIds((prev) => prev.filter((selectedId) => selectedId !== id.toString()));
             if (activeDetailFile?.id.toString() === id.toString()) {
                 setActiveDetailFile(null);
             }
             await loadData(true);
         } catch (err: any) {
-            toast.error('Lỗi khi xóa file: ' + (err?.message || err), { id: tId });
+            toast.error('Lỗi khi xóa file: ' + (err?.message || err));
         } finally {
             setDeletingId(null);
         }
@@ -883,22 +882,18 @@ function FilesContent() {
         if (selectedFileIds.length === 0) return;
         if (!confirm(`Bạn có chắc chắn muốn xóa ${selectedFileIds.length} tài liệu đã chọn vào thùng rác?`)) return;
 
-        setIsProcessing(true);
-        setProcessingText(`Đang chuyển ${selectedFileIds.length} tài liệu vào thùng rác...`);
-        const tId = toast.loading(`Đang xóa ${selectedFileIds.length} tài liệu...`);
+        
         try {
             for (const id of selectedFileIds) {
                 await fileManagementService.softDelete(id);
             }
-            toast.success(`Đã xóa ${selectedFileIds.length} tài liệu thành công!`, { id: tId });
+            toast.success(`Đã xóa ${selectedFileIds.length} tài liệu thành công!`);
             setSelectedFileIds([]);
             setActiveDetailFile(null);
             await loadData(true);
         } catch (err: any) {
-            toast.error('Lỗi khi xóa tài liệu: ' + (err?.message || err), { id: tId });
-        } finally {
-            setIsProcessing(false);
-        }
+            toast.error('Lỗi khi xóa tài liệu: ' + (err?.message || err));
+        } 
     };
 
     const handleDownloadFile = (fileId: string | number, fileName: string) => {
@@ -939,8 +934,7 @@ function FilesContent() {
                 ? `Đang chuyển "${firstFileName}" vào thư mục "${targetFolderName}"...`
                 : `Đang chuyển ${count} tài liệu vào thư mục "${targetFolderName}"...`;
 
-        const tId = toast.loading(`${loadingTitle}\n${loadingDesc}`);
-
+        
         try {
             if (count === 1) {
                 await fileManagementService.moveFile(validFileIds[0], targetFolderId);
@@ -954,7 +948,7 @@ function FilesContent() {
                     ? `Đã chuyển "${firstFileName}" vào thư mục "${targetFolderName}".`
                     : `Đã chuyển thành công ${count} tài liệu vào thư mục "${targetFolderName}".`;
 
-            toast.success(`${successTitle}\n${successDesc}`, { id: tId });
+            toast.success(`${successTitle}\n${successDesc}`);
             setSelectedFileIds([]);
             await loadData(true);
         } catch (err: any) {
@@ -968,18 +962,15 @@ function FilesContent() {
             } else if (err?.message) {
                 errorMsg = err.message;
             }
-            toast.error(`${errorTitle}\n${errorMsg}`, { id: tId, duration: 4500 });
+            toast.error(`${errorTitle}\n${errorMsg}`, { duration: 4500 });
         }
     };
 
     const handleBatchReindex = async () => {
-        setIsProcessing(true);
-        const count = selectedFileIds.length > 0 ? selectedFileIds.length : filteredFiles.length;
-        setProcessingText(`Đang thực hiện Vector Re-Index cho ${count} tài liệu...`);
-        const tId = toast.loading(`Đang gửi yêu cầu Batch Re-Index (${count} tài liệu)...`);
+                const count = selectedFileIds.length > 0 ? selectedFileIds.length : filteredFiles.length;
+                const tId = toast.loading(`Đang gửi yêu cầu Batch Re-Index (${count} tài liệu)...`);
         setTimeout(async () => {
-            setIsProcessing(false);
-            toast.success(`Batch Re-Index thành công! ${count} tài liệu đã sẵn sàng cho RAG Semantic Search.`, {
+                        toast.success(`Batch Re-Index thành công! ${count} tài liệu đã sẵn sàng cho RAG Semantic Search.`, {
                 id: tId,
             });
             setSelectedFileIds([]);
@@ -1001,12 +992,10 @@ function FilesContent() {
             throw new Error(msg);
         }
 
-        setIsProcessing(true);
-        setProcessingText(`Đang đổi tên thư mục thành "${trimmedName}"...`);
-        const tId = toast.loading('Đang đổi tên thư mục...');
+        
         try {
             await forderService.renameFolder(renamingFolder.id, trimmedName);
-            toast.success(`Đã đổi tên thư mục thành "${trimmedName}"!`, { id: tId });
+            toast.success(`Đã đổi tên thư mục thành "${trimmedName}"!`);
             setRenamingFolder(null);
             if (selectedFolder === renamingFolder.id.toString()) {
                 setSelectedFolderName(trimmedName);
@@ -1014,20 +1003,16 @@ function FilesContent() {
             window.dispatchEvent(new CustomEvent('folder_tree_updated'));
             await loadData(true);
         } catch (err: any) {
-            toast.error(err?.message || `Đổi tên thư mục thất bại`, { id: tId });
+            toast.error(err?.message || `Đổi tên thư mục thất bại`);
             throw err;
-        } finally {
-            setIsProcessing(false);
-        }
+        } 
     };
 
     const handleRenameFileSubmit = async (newName: string) => {
         if (!renamingFile) return;
-        setIsProcessing(true);
-        const tId = toast.loading('Đang đổi tên tệp...');
-        try {
+                        try {
             const updated = await fileManagementService.renameFile(renamingFile.id, newName);
-            toast.success(`Đã đổi tên tệp thành "${newName}"`, { id: tId });
+            toast.success(`Đã đổi tên tệp thành "${newName}"`);
             setFiles((prev) => prev.map((f) => (f.id === renamingFile.id ? { ...f, name: newName } : f)));
             if (activeDetailFile?.id === renamingFile.id) {
                 setActiveDetailFile({ ...activeDetailFile, name: newName });
@@ -1035,10 +1020,8 @@ function FilesContent() {
             setRenamingFile(null);
             await loadData(true);
         } catch (err: any) {
-            toast.error(`Đổi tên tệp thất bại: ${err?.message || err}`, { id: tId });
-        } finally {
-            setIsProcessing(false);
-        }
+            toast.error(`Đổi tên tệp thất bại: ${err?.message || err}`);
+        } 
     };
 
     // Active detail target (either activeDetailFile or first selected file)
@@ -1052,7 +1035,7 @@ function FilesContent() {
 
     return (
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#F8FAFD] dark:bg-[#0B1120] text-gray-900 dark:text-slate-100">
-            <LoadingOverlay isLoading={isProcessing} text={processingText} />
+            
 
             {/* Main Content Area: Center Files Container + Right Slide-out Details Drawer + Far-Right Companion Dock */}
             <div className="flex-1 flex min-w-0 h-full p-3 pt-3 gap-3 overflow-hidden">
@@ -1875,12 +1858,29 @@ function FilesContent() {
 
                                                         {/* Owner */}
                                                         <td className="px-4 py-2 whitespace-nowrap w-36 text-[#444746] dark:text-[#C4C7C5] font-normal">
-                                                            <div className="flex items-center gap-1.5 min-w-0">
-                                                                <div className="w-5 h-5 rounded-full bg-blue-600 text-white font-medium text-[9px] flex items-center justify-center shrink-0 shadow-2xs">
-                                                                    {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'T'}
-                                                                </div>
-                                                                <span className="truncate text-[12px]">tôi</span>
-                                                            </div>
+                                                            {(() => {
+                                                                const isFolderOwner = Boolean(
+                                                                    (currentUser?.email && subFolder.ownerEmail && currentUser.email.toLowerCase() === subFolder.ownerEmail.toLowerCase()) ||
+                                                                    (currentUser?.name && subFolder.ownerName && (
+                                                                        currentUser.name.toLowerCase().includes(subFolder.ownerName.toLowerCase()) ||
+                                                                        subFolder.ownerName.toLowerCase().includes(currentUser.name.toLowerCase())
+                                                                    ))
+                                                                );
+                                                                const folderOwnerDisplayName = isFolderOwner ? 'tôi' : (subFolder.ownerName || 'Admin');
+                                                                const folderOwnerAvatarLetter = isFolderOwner
+                                                                    ? (currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : (subFolder.ownerName ? subFolder.ownerName.charAt(0).toUpperCase() : 'T'))
+                                                                    : folderOwnerDisplayName.charAt(0).toUpperCase();
+                                                                const folderAvatarColor = getAvatarColor(isFolderOwner ? (currentUser?.name || subFolder.ownerName || 'tôi') : folderOwnerDisplayName);
+
+                                                                return (
+                                                                    <div className="flex items-center gap-1.5 min-w-0" title={`Chủ sở hữu: ${subFolder.ownerName || folderOwnerDisplayName}`}>
+                                                                        <div className={`w-5 h-5 rounded-full text-white font-medium text-[9px] flex items-center justify-center shrink-0 shadow-2xs ${folderAvatarColor}`}>
+                                                                            {folderOwnerAvatarLetter}
+                                                                        </div>
+                                                                        <span className="truncate text-[12px] max-w-[120px]">{folderOwnerDisplayName}</span>
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </td>
 
                                                         {/* Date Modified */}
@@ -2011,22 +2011,23 @@ function FilesContent() {
                                             {/* Files List */}
                                             {filteredFiles.map((file) => {
                                                 const isSelected = selectedFileIds.includes(file.id.toString());
-                                                const isOwner = !!(
+                                                const isOwner = Boolean(
                                                     (currentUser?.email && file.uploadedByEmail && currentUser.email.toLowerCase() === file.uploadedByEmail.toLowerCase()) ||
                                                     (currentUser?.name && (
-                                                        file.owner?.toLowerCase() === currentUser.name.toLowerCase() ||
-                                                        file.uploadedByName?.toLowerCase() === currentUser.name.toLowerCase()
-                                                    )) ||
-                                                    file.owner === 'me'
+                                                        (file.owner && currentUser.name.toLowerCase().includes(file.owner.toLowerCase())) ||
+                                                        (file.uploadedByName && currentUser.name.toLowerCase().includes(file.uploadedByName.toLowerCase())) ||
+                                                        (file.owner && file.owner.toLowerCase().includes(currentUser.name.toLowerCase())) ||
+                                                        (file.uploadedByName && file.uploadedByName.toLowerCase().includes(currentUser.name.toLowerCase()))
+                                                    ))
                                                 );
                                                 const canMove = isAdmin || isOwner;
                                                 const isStarred = starredIds.includes(file.id.toString());
 
                                                 const ownerDisplayName = isOwner ? 'tôi' : (file.uploadedByName || file.owner || 'Admin');
                                                 const ownerAvatarLetter = isOwner
-                                                    ? (currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'T')
+                                                    ? (currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : (file.uploadedByName ? file.uploadedByName.charAt(0).toUpperCase() : 'T'))
                                                     : (ownerDisplayName.charAt(0).toUpperCase());
-                                                const avatarClass = getAvatarColor(ownerDisplayName);
+                                                const avatarClass = getAvatarColor(isOwner ? (currentUser?.name || file.uploadedByName || 'tôi') : ownerDisplayName);
 
                                                 const fileExt = file.fileType || file.name.split('.').pop() || '';
                                                 const typeConfig = getFileTypeConfig(fileExt);
@@ -2497,20 +2498,21 @@ function FilesContent() {
                             {filteredFiles.map((file) => {
                                 const isSelected = selectedFileIds.includes(file.id.toString());
                                 const isStarred = starredIds.includes(file.id.toString());
-                                const isOwner = !!(
+                                const isOwner = Boolean(
                                     (currentUser?.email && file.uploadedByEmail && currentUser.email.toLowerCase() === file.uploadedByEmail.toLowerCase()) ||
                                     (currentUser?.name && (
-                                        file.owner?.toLowerCase() === currentUser.name.toLowerCase() ||
-                                        file.uploadedByName?.toLowerCase() === currentUser.name.toLowerCase()
-                                    )) ||
-                                    file.owner === 'me'
+                                        (file.owner && currentUser.name.toLowerCase().includes(file.owner.toLowerCase())) ||
+                                        (file.uploadedByName && currentUser.name.toLowerCase().includes(file.uploadedByName.toLowerCase())) ||
+                                        (file.owner && file.owner.toLowerCase().includes(currentUser.name.toLowerCase())) ||
+                                        (file.uploadedByName && file.uploadedByName.toLowerCase().includes(currentUser.name.toLowerCase()))
+                                    ))
                                 );
 
                                 const ownerDisplayName = isOwner ? 'tôi' : (file.uploadedByName || file.owner || 'Admin');
                                 const ownerAvatarLetter = isOwner
-                                    ? (currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'T')
+                                    ? (currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : (file.uploadedByName ? file.uploadedByName.charAt(0).toUpperCase() : 'T'))
                                     : (ownerDisplayName.charAt(0).toUpperCase());
-                                const avatarClass = getAvatarColor(ownerDisplayName);
+                                const avatarClass = getAvatarColor(isOwner ? (currentUser?.name || file.uploadedByName || 'tôi') : ownerDisplayName);
 
                                 const fileExt = file.fileType || file.name.split('.').pop() || '';
                                 const typeConfig = getFileTypeConfig(fileExt);
@@ -2714,9 +2716,7 @@ function FilesContent() {
                                             (currentUser?.name && (
                                                 effectiveDetailFile?.owner?.toLowerCase() === currentUser.name.toLowerCase() ||
                                                 effectiveDetailFile?.uploadedByName?.toLowerCase() === currentUser.name.toLowerCase()
-                                            )) ||
-                                            effectiveDetailFile?.owner === 'me' ||
-                                            effectiveDetailFile?.owner === 'tôi'
+                                            ))
                                         );
 
                                         return (
@@ -2731,7 +2731,7 @@ function FilesContent() {
                                                         className={`w-6 h-6 rounded-full flex items-center justify-center font-medium text-[10px] text-white shrink-0 shadow-2xs ${getAvatarColor(
                                                             isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'Admin')
                                                         )}`}
-                                                        title={`Chủ sở hữu: ${isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'tôi')}`}
+                                                        title={`Chủ sở hữu: ${isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'Người dùng')}`}
                                                     >
                                                         {(isEffectiveOwner ? (currentUser?.name ? currentUser.name.charAt(0) : 'T') : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'A')[0]).toUpperCase()}
                                                     </div>
@@ -2790,9 +2790,7 @@ function FilesContent() {
                                             (currentUser?.name && (
                                                 effectiveDetailFile?.owner?.toLowerCase() === currentUser.name.toLowerCase() ||
                                                 effectiveDetailFile?.uploadedByName?.toLowerCase() === currentUser.name.toLowerCase()
-                                            )) ||
-                                            effectiveDetailFile?.owner === 'me' ||
-                                            effectiveDetailFile?.owner === 'tôi'
+                                            ))
                                         );
 
                                         return (
@@ -2848,7 +2846,7 @@ function FilesContent() {
                                                     <div>
                                                         <p className="text-[11px] text-[#444746] dark:text-slate-400 font-medium">Chủ sở hữu</p>
                                                         <p className="text-[12px] font-normal text-[#1F1F1F] dark:text-slate-200 mt-0.5">
-                                                            {isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'tôi')}
+                                                            {isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'Người dùng')}
                                                         </p>
                                                     </div>
 
@@ -2857,7 +2855,7 @@ function FilesContent() {
                                                         <p className="text-[11px] text-[#444746] dark:text-slate-400 font-medium">Lần sửa đổi gần đây nhất</p>
                                                         <div className="flex items-center gap-1 text-[12px] font-normal text-[#1F1F1F] dark:text-slate-200 mt-0.5">
                                                             <span>
-                                                                {formatGoogleDriveDetailDate(effectiveDetailFile?.updatedAt)} bởi {isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || 'tôi')}
+                                                                {formatGoogleDriveDetailDate(effectiveDetailFile?.updatedAt)} bởi {isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || 'Người dùng')}
                                                             </span>
                                                             <History className="w-3.5 h-3.5 text-[#444746] dark:text-slate-400 shrink-0" />
                                                         </div>
@@ -2867,7 +2865,7 @@ function FilesContent() {
                                                     <div>
                                                         <p className="text-[11px] text-[#444746] dark:text-slate-400 font-medium">Đã mở</p>
                                                         <p className="text-[12px] font-normal text-[#1F1F1F] dark:text-slate-200 mt-0.5">
-                                                            {formatGoogleDriveDetailDate(effectiveDetailFile?.updatedAt)}, do tôi thực hiện
+                                                            {formatGoogleDriveDetailDate(effectiveDetailFile?.updatedAt)}
                                                         </p>
                                                     </div>
 
@@ -2958,25 +2956,21 @@ function FilesContent() {
                             throw new Error(msg);
                         }
 
-                        setIsProcessing(true);
-                        setProcessingText(`Đang tạo thư mục "${trimmedName}"...`);
-                        const tId = toast.loading('Đang tạo thư mục...');
+                        
                         try {
                             const forderRequest: ForderCreateRequest = {
                                 name: trimmedName,
                                 parentId: selectedFolder === 'all' ? null : selectedFolder,
                             };
                             await forderService.createForder(forderRequest);
-                            toast.success('Tạo thư mục thành công!', { id: tId });
+                            toast.success('Tạo thư mục thành công!');
                             setShowCreateFolder(false);
                             window.dispatchEvent(new CustomEvent('folder_tree_updated'));
                             await loadData(true);
                         } catch (error: any) {
-                            toast.error(error?.message || 'Tạo thư mục thất bại', { id: tId });
+                            toast.error(error?.message || 'Tạo thư mục thất bại');
                             throw error;
-                        } finally {
-                            setIsProcessing(false);
-                        }
+                        } 
                     }}
                 />
             )}
@@ -2987,15 +2981,9 @@ function FilesContent() {
                     onClose={() => setShowUploadFile(false)}
                     onUpload={async (itemsToUpload) => {
                         if (itemsToUpload.length === 0) return;
-                        setIsProcessing(true);
-                        const count = itemsToUpload.length;
+                                                const count = itemsToUpload.length;
                         const firstName = itemsToUpload[0].file.name;
-                        const tId = toast.loading(
-                            count === 1
-                                ? `Đang tải lên tài liệu\nĐang upload "${firstName}" vào hệ thống...`
-                                : `Đang tải lên ${count} tài liệu\nĐang upload các tệp vào hệ thống...`
-                        );
-                        try {
+                                                try {
                             for (const item of itemsToUpload) {
                                 const fd = new FormData();
                                 fd.append('file', item.file);
@@ -3022,15 +3010,13 @@ function FilesContent() {
                                 count === 1
                                     ? `Tải lên tài liệu thành công\nĐã lưu "${firstName}" vào "${selectedFolderName}".`
                                     : `Tải lên tài liệu thành công\nĐã lưu ${count} tài liệu vào "${selectedFolderName}".`,
-                                { id: tId }
+
                             );
                             await loadData(true);
                         } catch (err: any) {
-                            toast.error(`Tải lên tài liệu thất bại\n${err?.message || err}`, { id: tId });
+                            toast.error(`Tải lên tài liệu thất bại\n${err?.message || err}`);
                             throw err;
-                        } finally {
-                            setIsProcessing(false);
-                        }
+                        } 
                     }}
                 />
             )}

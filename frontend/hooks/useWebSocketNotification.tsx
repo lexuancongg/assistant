@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { Client, IMessage } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import toast from 'react-hot-toast';
+import { API_ROOT } from '@/utils/api/apiClientFixed';
 
 export interface WsNotification {
     id: number | string;
@@ -36,7 +37,7 @@ export function useWebSocketNotification() {
         const companyId = user?.companyId || user?.company?.id;
 
         const stompClient = new Client({
-            webSocketFactory: () => new SockJS('http://localhost:8080/ws') as any,
+            webSocketFactory: () => new SockJS(`${API_ROOT}/ws`) as any,
             reconnectDelay: 5000,
             heartbeatIncoming: 4000,
             heartbeatOutgoing: 4000,

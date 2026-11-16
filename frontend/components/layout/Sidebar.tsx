@@ -634,10 +634,10 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                             <EnterpriseLogo className="w-7 h-7 shrink-0 drop-shadow-sm" />
                             <div className="min-w-0 flex flex-col">
                                 <span className="font-extrabold text-[13px] text-gray-900 dark:text-slate-100 tracking-tight truncate leading-tight">
-                                    Enterprise Docs
+                                    Enterprise AI
                                 </span>
                                 <span className="text-[9px] font-semibold tracking-wider text-blue-600 dark:text-blue-400 uppercase truncate">
-                                    Google Drive AI
+                                    Knowledge Hub
                                 </span>
                             </div>
                         </div>
@@ -729,16 +729,7 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                             }`}
                         >
                             <Bell className={`w-4 h-4 shrink-0 ${pathname === '/activity' ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
-                            {isOpen && (
-                                <div className="flex-1 flex items-center justify-between min-w-0">
-                                    <span className="truncate">Activity</span>
-                                    {pendingCount > 0 && (
-                                        <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[9.5px] font-medium shrink-0 bg-red-500 text-white font-bold animate-pulse">
-                                            {pendingCount > 9 ? '9+' : pendingCount}
-                                        </span>
-                                    )}
-                                </div>
-                            )}
+                            {isOpen && <span className="truncate">Activity</span>}
                         </Link>
 
                         {/* 5. Drive của tôi (Thay thế Kho File & Cây Thư mục) */}

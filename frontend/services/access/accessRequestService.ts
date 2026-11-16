@@ -1,4 +1,4 @@
-import apiClient from "@/utils/api/apiClientFixed";
+import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
 
 export interface AccessRequestCreateDto {
     folderId?: number | string;
@@ -27,7 +27,7 @@ export interface AccessRequestDto {
 }
 
 class AccessRequestService {
-    private baseUrl = "http://localhost:8080/api/v1/access-requests";
+    private baseUrl = `${API_ROOT}/api/v1/access-requests`;
 
     public async createRequest(payload: AccessRequestCreateDto): Promise<AccessRequestDto> {
         const response = await apiClient.post(this.baseUrl, payload);

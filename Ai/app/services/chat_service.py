@@ -77,6 +77,8 @@ class ChatService:
                 question=request.question,
                 document_id=request.documentId,
                 allowed_document_ids=request.allowedDocumentIds,
+                department_id=getattr(request, "departmentId", None),
+                company_id=getattr(request, "companyId", None),
                 history=request.history,
                 model_provider=request.modelProvider
             )
@@ -111,14 +113,16 @@ class ChatService:
         # =========================================================================
         # 2. CHẾ ĐỘ STANDARD ADVANCED RAG (VECTORD DB + HYBRID RERANKER + LLM)
         # =========================================================================
-        query_vector = self.embedding_service.embed([request.question])[0]
+        query_vector = self.embedding_service.embed([request.question], is_query=True)[0]
 
         # Lấy ứng viên rộng (top 25) từ Qdrant kèm bộ lọc phân quyền RBAC
         raw_hits = self.qdrant_service.search(
             query_vector=query_vector,
             document_id=request.documentId,
             top_k=25,
-            allowed_document_ids=request.allowedDocumentIds
+            allowed_document_ids=request.allowedDocumentIds,
+            department_id=getattr(request, "departmentId", None),
+            company_id=getattr(request, "companyId", None)
         )
 
         # Áp dụng Hybrid Cross-Scoring Reranker (Dense + Lexical BM25 + Exact Match)
@@ -219,7 +223,7 @@ class ChatService:
         )
 
     def search(self, request: SearchRequest) -> SearchResponse:
-        query_vector = self.embedding_service.embed([request.query])[0]
+        query_vector = self.embedding_service.embed([request.query], is_query=True)[0]
 
         hits = self.qdrant_service.search(
             query_vector=query_vector,

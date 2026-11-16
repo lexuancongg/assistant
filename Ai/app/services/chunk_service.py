@@ -29,7 +29,6 @@ class ChunkService:
                 continue
 
             if section_type == "DIAGRAM":
-                # Trích xuất image_path và page_number nếu có trong header
                 img_path, page_num = self._extract_diagram_metadata(content)
 
                 if len(content) <= max(self.size * 2, 2500):
@@ -63,19 +62,43 @@ class ChunkService:
     def _chunk_normal_text(self, text: str) -> List[str]:
         sentences = self._split_sentences(text)
         chunks = []
-        current = ""
+        current_sentences = []
+        current_len = 0
 
         for sentence in sentences:
-            if len(current) + len(sentence) <= self.size:
-                current += sentence
-            else:
-                if current.strip():
-                    chunks.append(current.strip())
-                overlap_text = current[-self.overlap:] if len(current) > self.overlap else current
-                current = overlap_text + sentence
+            s_clean = sentence.strip()
+            if not s_clean:
+                continue
 
-        if current.strip():
-            chunks.append(current.strip())
+            # Chiều dài dự kiến khi thêm câu mới (cộng thêm dấu cách nếu không phải câu đầu)
+            added_len = len(s_clean) + (1 if current_sentences else 0)
+
+            if current_len + added_len <= self.size:
+                current_sentences.append(s_clean)
+                current_len += added_len
+            else:
+                if current_sentences:
+                    chunk_text = " ".join(current_sentences).strip()
+                    if chunk_text:
+                        chunks.append(chunk_text)
+
+                # Overlap an toàn: lấy các câu cuối cùng có tổng chiều dài xấp xỉ self.overlap
+                overlap_sentences = []
+                overlap_accum = 0
+                for s in reversed(current_sentences):
+                    if overlap_accum + len(s) <= self.overlap or not overlap_sentences:
+                        overlap_sentences.insert(0, s)
+                        overlap_accum += len(s) + 1
+                    else:
+                        break
+
+                current_sentences = overlap_sentences + [s_clean]
+                current_len = sum(len(s) for s in current_sentences) + max(0, len(current_sentences) - 1)
+
+        if current_sentences:
+            final_text = " ".join(current_sentences).strip()
+            if final_text:
+                chunks.append(final_text)
 
         return chunks
 
@@ -103,10 +126,6 @@ class ChunkService:
         return sub_chunks if sub_chunks else [diagram_text.strip()]
 
     def _extract_atomic_sections(self, text: str) -> List[Tuple[str, str]]:
-        """
-        Nhận diện và phân tách các khối sơ đồ/ảnh (Atomic Diagram Blocks)
-        được bọc bởi '--- [DIỄN GIẢI...' hoặc '--- [NỘI DUNG...'
-        """
         pattern = re.compile(
             r'(--- \[(?:DIỄN GIẢI|NỘI DUNG)[^\]]+\] ---\n.*?\n-{30,})',
             re.DOTALL
@@ -135,17 +154,14 @@ class ChunkService:
 
     @staticmethod
     def _extract_diagram_metadata(diagram_text: str) -> Tuple[Optional[str], Optional[int]]:
-        """Bóc tách IMAGE_PATH và TRANG từ header của khối sơ đồ."""
         first_line = diagram_text.split("\n", 1)[0]
         img_path = None
         page_num = None
 
-        # Tìm IMAGE_PATH: /path/to/img.png
         img_match = re.search(r'IMAGE_PATH:\s*([^\s\]]+)', first_line)
         if img_match:
             img_path = img_match.group(1).strip()
 
-        # Tìm TRANG X
         page_match = re.search(r'TRANG\s+(\d+)', first_line, re.IGNORECASE)
         if page_match:
             try:
@@ -157,4 +173,7 @@ class ChunkService:
 
     @staticmethod
     def _split_sentences(text: str) -> List[str]:
-        return re.split(r'(?<=[.!?\n])\s+', text)
+        # Tách câu thông minh: chỉ tách khi gặp dấu chấm/chấm than/chấm hỏi và theo sau là khoảng trắng + chữ hoa hoặc xuống dòng
+        # Không ngắt nhầm các số dạng 1.850.000, 18.5%, Điều 1.2
+        splits = re.split(r'(?<=[.!?])\s+(?=[A-ZÀ-Ỹ0-9])|\n+', text)
+        return [s.strip() for s in splits if s and s.strip()]

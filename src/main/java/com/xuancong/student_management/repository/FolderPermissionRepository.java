@@ -13,6 +13,7 @@ import java.util.UUID;
 @Repository
 public interface FolderPermissionRepository extends JpaRepository<FolderPermission, Long> {
     List<FolderPermission> findByFolderId(Long folderId);
+    List<FolderPermission> findByFolderIdIn(List<Long> folderIds);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("DELETE FROM FolderPermission fp WHERE fp.folder.id = :folderId")

@@ -1,4 +1,4 @@
-import apiClient from "@/utils/api/apiClientFixed";
+import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
 
 export interface DepartmentMemberDto {
     userId: number | string;
@@ -17,7 +17,7 @@ class DepartmentService {
     private baseUrl: string;
 
     constructor() {
-        this.baseUrl = "http://localhost:8080/api/v1/departments";
+        this.baseUrl = `${API_ROOT}/api/v1/departments`;
     }
 
     public async getDepartments(): Promise<DepartmentDto[]> {

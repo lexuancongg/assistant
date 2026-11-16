@@ -36,6 +36,9 @@ def agent_chat_endpoint(request: RagRequest):
             allowed_document_ids=getattr(request, "allowedDocumentIds", None),
             department_id=getattr(request, "departmentId", None),
             company_id=getattr(request, "companyId", None),
+            persona=getattr(request, "persona", None),
+            history=getattr(request, "history", None),
+            model_provider=getattr(request, "modelProvider", "gemini"),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

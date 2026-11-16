@@ -33,6 +33,8 @@ class RagRequest(BaseModel):
     mode: Optional[str] = "AGENTIC_WORKFLOW"  # AGENTIC_WORKFLOW | STANDARD_RAG
     modelProvider: Optional[str] = "gemini"
     allowedDocumentIds: Optional[List[Union[str, int, UUID, Any]]] = None
+    departmentId: Optional[Union[str, int, Any]] = None
+    companyId: Optional[Union[str, int, Any]] = None
 
 
 class RagResponse(BaseModel):

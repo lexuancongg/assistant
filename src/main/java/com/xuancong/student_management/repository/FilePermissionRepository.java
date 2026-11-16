@@ -13,6 +13,7 @@ import java.util.UUID;
 @Repository
 public interface FilePermissionRepository extends JpaRepository<FilePermission, Long> {
     List<FilePermission> findByFileId(Long fileId);
+    List<FilePermission> findByFileIdIn(List<Long> fileIds);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("DELETE FROM FilePermission fp WHERE fp.file.id = :fileId")

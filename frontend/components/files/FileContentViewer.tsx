@@ -23,6 +23,7 @@ import ToughZebraLoader from '@/components/common/ToughZebraLoader';
 import WordDocumentEditor from '@/components/files/WordDocumentEditor';
 import ExcelSpreadsheetViewer from '@/components/files/ExcelSpreadsheetViewer';
 import toast from 'react-hot-toast';
+import { API_ROOT } from '@/utils/api/apiClientFixed';
 
 interface FileContentViewerProps {
     file: FileItemDto;
@@ -62,7 +63,7 @@ export default function FileContentViewer({
     const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext);
     const isCodeOrText = ['txt', 'md', 'json', 'sql', 'py', 'java', 'ts', 'tsx', 'html', 'css', 'xml', 'yml', 'yaml', 'sh', 'bat'].includes(ext);
 
-    const directStreamUrl = file?.id ? `http://localhost:8080/api/v1/files/${file.id}/stream` : null;
+    const directStreamUrl = file?.id ? `${API_ROOT}/api/v1/files/${file.id}/stream` : null;
 
     // Chế độ: 'view' (xem trước) hoặc 'edit' (chỉnh sửa trực tiếp)
     const [viewerMode, setViewerMode] = useState<'view' | 'edit'>('view');

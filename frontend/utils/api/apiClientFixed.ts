@@ -80,6 +80,28 @@ function redirectToLogin() {
     } catch (e) {}
 }
 
+function isTokenExpiringSoon(token: string | null): boolean {
+    if (!token) return false;
+    try {
+        const parts = token.split('.');
+        if (parts.length !== 3) return false;
+        if (typeof window === 'undefined') return false;
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+            window.atob(base64)
+                .split('')
+                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+        );
+        const payload = JSON.parse(jsonPayload);
+        if (!payload.exp) return false;
+        return Date.now() >= (payload.exp * 1000 - 60000);
+    } catch {
+        return false;
+    }
+}
+
 async function tryRefreshToken(): Promise<boolean> {
     if (refreshInProgress) return refreshInProgress;
     const refreshToken = getRefreshToken();
@@ -144,6 +166,19 @@ const callApi = async (
         'Content-type': contentType ?? contentTypeDefault,
     };
 
+    // Proactively refresh access token in background if expired or expiring within 60s
+    if (
+        !_retry &&
+        !targetUrl.includes('/auth/login') &&
+        !targetUrl.includes('/auth/register') &&
+        !targetUrl.includes('/auth/refresh')
+    ) {
+        const currentToken = getAccessToken();
+        if (currentToken && isTokenExpiringSoon(currentToken)) {
+            await tryRefreshToken();
+        }
+    }
+
     // Attach Authorization if accessToken exists
     const token = getAccessToken();
     if (token) {
@@ -177,16 +212,21 @@ const callApi = async (
         }
     }
 
+    // Standard UX: Normal queries & background fetches are completely quiet (non-intrusive).
+    // Individual UI components manage their own focused button/table spinners.
     const isQuiet = Boolean(
-        quiet ||
+        quiet !== false || // quiet by default
+        isGet ||
         targetUrl.includes('/rename') ||
         targetUrl.includes('/star') ||
         targetUrl.includes('silent=true') ||
-        targetUrl.includes('/access-requests/pending') || 
-        targetUrl.includes('/access-requests/count') ||
-        targetUrl.includes('/auth/me') ||
-        targetUrl.includes('/chat-sessions') ||
-        targetUrl.includes('/chat')
+        targetUrl.includes('/access-requests') || 
+        targetUrl.includes('/auth') ||
+        targetUrl.includes('/chat') ||
+        targetUrl.includes('/activity-logs') ||
+        targetUrl.includes('/dashboard') ||
+        targetUrl.includes('/files') ||
+        targetUrl.includes('/folders')
     );
 
     if (!isQuiet && !_retry) {
@@ -223,25 +263,28 @@ const callApi = async (
         }
     }
 
-    if ((response.status === 401 || response.status === 403) && !targetUrl.includes('/auth/login') && !targetUrl.includes('/auth/register')) {
+    // Handle 401 Unauthorized or 403 on expired token
+    if ((response.status === 401 || (response.status === 403 && token)) && !targetUrl.includes('/auth/login') && !targetUrl.includes('/auth/register')) {
         if (!_retry) {
             const refreshed = await tryRefreshToken();
             if (refreshed) {
                 return callApi(method, endPoint, data, contentType, true, quiet);
             }
         }
-        redirectToLogin();
+        if (response.status === 401) {
+            redirectToLogin();
+        }
     }
 
     return response;
 };
 
 const apiClient = {
-    get: (endPoint: string, quiet: boolean = false) => callApi('GET', endPoint, null, null, false, quiet),
-    post: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = false) => callApi('POST', endPoint, data, contentType, false, quiet),
-    put: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = false) => callApi('PUT', endPoint, data, contentType, false, quiet),
-    patch: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = false) => callApi('PATCH', endPoint, data, contentType, false, quiet),
-    delete: (endPoint: string, data: any = null, quiet: boolean = false) => callApi('DELETE', endPoint, data, null, false, quiet)
+    get: (endPoint: string, quiet: boolean = true) => callApi('GET', endPoint, null, null, false, quiet),
+    post: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = true) => callApi('POST', endPoint, data, contentType, false, quiet),
+    put: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = true) => callApi('PUT', endPoint, data, contentType, false, quiet),
+    patch: (endPoint: string, data: any = null, contentType: string | null = null, quiet: boolean = true) => callApi('PATCH', endPoint, data, contentType, false, quiet),
+    delete: (endPoint: string, data: any = null, quiet: boolean = true) => callApi('DELETE', endPoint, data, null, false, quiet)
 };
 
 export default apiClient;

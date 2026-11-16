@@ -1,4 +1,4 @@
-import apiClient from "@/utils/api/apiClientFixed";
+import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
 
 export interface FileItemDto {
     id: number | string;
@@ -59,7 +59,7 @@ class FileManagementService {
     private baseUrl: string;
 
     constructor() {
-        this.baseUrl = "http://localhost:8080/api/v1/files";
+        this.baseUrl = `${API_ROOT}/api/v1/files`;
     }
 
     public async getActiveFiles(): Promise<FileItemDto[]> {
@@ -75,7 +75,7 @@ class FileManagementService {
         if (response && response.ok) {
             return await response.json();
         }
-        return await this.getActiveFiles().catch(() => []);
+        return [];
     }
 
     public async getFileDetail(id: number | string): Promise<FileItemDto> {

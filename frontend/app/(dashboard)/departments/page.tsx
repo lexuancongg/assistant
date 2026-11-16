@@ -8,8 +8,6 @@ import departmentService, { DepartmentDto } from '@/services/department/departme
 import userService, { UserDto } from '@/services/user/userService';
 import type { DepartmentRole } from '@/lib/types';
 import toast from 'react-hot-toast';
-import { RefreshCw } from 'lucide-react';
-import LoadingOverlay from '@/components/common/LoadingOverlay';
 
 export default function DepartmentsPage() {
     usePageBreadcrumb(['Quản lý phòng ban']);
@@ -17,8 +15,6 @@ export default function DepartmentsPage() {
     const [selectedId, setSelectedId] = useState<string | number>('');
     const [allUsers, setAllUsers] = useState<UserDto[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [processingText, setProcessingText] = useState('Đang xử lý...');
 
     // Modals state
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -72,36 +68,26 @@ export default function DepartmentsPage() {
 
     async function handleAddMember(userId: string | number, role: DepartmentRole) {
         if (!selectedId) return;
-
-        setIsProcessing(true);
-        setProcessingText('Đang thêm thành viên vào phòng ban...');
-        const tId = toast.loading('Đang thêm thành viên...');
         try {
             await departmentService.addMember(selectedId, userId);
-            toast.success('Đã thêm thành viên vào phòng ban!', { id: tId });
+            toast.success('Đã thêm thành viên vào phòng ban!');
             await loadDepartments(true);
         } catch (err: any) {
-            toast.error('Thêm thành viên thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Thêm thành viên thất bại: ' + (err?.message || err));
             throw err;
-        } finally {
-            setIsProcessing(false);
         }
     }
 
     async function handleRemoveMemberConfirm() {
         if (!selectedId || !memberToDelete) return;
-        setIsProcessing(true);
-        setProcessingText('Đang xóa thành viên khỏi phòng ban...');
-        const tId = toast.loading('Đang xóa thành viên...');
         try {
             await departmentService.removeMember(selectedId, memberToDelete.userId);
-            toast.success('Đã xóa thành viên khỏi phòng ban!', { id: tId });
+            toast.success('Đã xóa thành viên khỏi phòng ban!');
             await loadDepartments(true);
         } catch (err: any) {
-            toast.error('Xóa thành viên thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Xóa thành viên thất bại: ' + (err?.message || err));
             throw err;
         } finally {
-            setIsProcessing(false);
             setMemberToDelete(null);
         }
     }
@@ -118,88 +104,66 @@ export default function DepartmentsPage() {
     }
 
     async function handleCreateDepartment(name: string) {
-        setIsProcessing(true);
-        setProcessingText('Đang tạo phòng ban mới...');
-        const tId = toast.loading('Đang tạo phòng ban...');
         try {
             const newDept = await departmentService.createDepartment(name);
-            toast.success('Tạo phòng ban thành công!', { id: tId });
+            toast.success('Tạo phòng ban thành công!');
             setSelectedId(newDept.id);
             await loadDepartments(true);
         } catch (err: any) {
-            toast.error('Tạo phòng ban thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Tạo phòng ban thất bại: ' + (err?.message || err));
             throw err;
-        } finally {
-            setIsProcessing(false);
         }
     }
 
     async function handleRenameDepartment(newName: string) {
         if (!departmentToRename) return;
-        setIsProcessing(true);
-        setProcessingText('Đang cập nhật tên phòng ban...');
-        const tId = toast.loading('Đang lưu tên phòng ban...');
         try {
             await departmentService.updateDepartmentName(departmentToRename.id, newName);
-            toast.success('Cập nhật tên phòng ban thành công!', { id: tId });
+            toast.success('Cập nhật tên phòng ban thành công!');
             await loadDepartments(true);
         } catch (err: any) {
-            toast.error('Cập nhật tên thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Cập nhật tên thất bại: ' + (err?.message || err));
             throw err;
         } finally {
-            setIsProcessing(false);
             setDepartmentToRename(null);
         }
     }
 
     async function handleDeleteDepartmentConfirm() {
         if (!departmentToDelete) return;
-        setIsProcessing(true);
-        setProcessingText('Đang xóa phòng ban...');
-        const tId = toast.loading('Đang xóa phòng ban...');
         try {
             await departmentService.deleteDepartment(departmentToDelete.id);
-            toast.success('Đã xóa phòng ban thành công!', { id: tId });
+            toast.success('Đã xóa phòng ban thành công!');
             const remaining = departments.filter((d) => d.id.toString() !== departmentToDelete.id.toString());
             if (selectedId.toString() === departmentToDelete.id.toString()) {
                 setSelectedId(remaining.length > 0 ? remaining[0].id : '');
             }
             await loadDepartments(true);
         } catch (err: any) {
-            toast.error('Xóa phòng ban thất bại: ' + (err?.message || err), { id: tId });
+            toast.error('Xóa phòng ban thất bại: ' + (err?.message || err));
             throw err;
         } finally {
-            setIsProcessing(false);
             setDepartmentToDelete(null);
         }
     }
 
     return (
-        <div className="px-6 pt-5 pb-6 relative min-h-[calc(100vh-64px)] flex flex-col">
-            <LoadingOverlay isLoading={isProcessing} text={processingText} />
+        <div className="px-6 pt-3 pb-6 relative min-h-[calc(100vh-64px)] flex flex-col">
 
-            <div className="flex items-center justify-between mb-4">
-                <div>
-                    <h1 className="text-xl font-bold text-gray-900">Quản lý phòng ban</h1>
-                    <p className="text-xs text-gray-500 mt-0.5">Tổ chức cơ cấu nhân sự và phân quyền theo từng đơn vị</p>
-                </div>
-                <button
-                    onClick={() => loadDepartments(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition"
-                    title="Làm mới dữ liệu"
-                >
-                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-600' : ''}`} />
-                    Làm mới
-                </button>
+            {/* Header chuẩn Google Drive */}
+            <div className="flex items-center justify-between pb-3 shrink-0 select-none">
+                <h1 className="text-[20px] font-normal text-[#1F1F1F] dark:text-slate-100 tracking-normal">
+                    Quản lý phòng ban
+                </h1>
             </div>
 
             {loading && departments.length === 0 ? (
-                <div className="flex gap-4 items-start animate-pulse flex-1">
-                    <div className="w-64 h-96 bg-gray-200 rounded-2xl"></div>
-                    <div className="flex-1 h-96 bg-gray-200 rounded-2xl"></div>
+                <div className="flex gap-5 items-start animate-pulse flex-1">
+                    <div className="w-80 h-[520px] bg-slate-200/60 rounded-2xl"></div>
+                    <div className="flex-1 h-[520px] bg-slate-200/60 rounded-2xl"></div>
                 </div>
             ) : (
-                <div className="flex gap-5 items-start flex-1 min-h-0">
+                <div className="flex gap-5 items-stretch flex-1 min-h-[520px]">
                     <DepartmentList
                         departments={departments}
                         selectedId={selectedDept?.id ?? ''}

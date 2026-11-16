@@ -15,22 +15,19 @@ public record ChatSessionResponse(
             Long id,
             Long messageId,
             String role,
-            String content,
-            String feedbackRating
+            String content
     ){
-
         public static Messages fromChatMessage(ChatMessage chatMessage) {
-            return fromChatMessage(chatMessage, null);
-        }
-
-        public static Messages fromChatMessage(ChatMessage chatMessage, String feedbackRating) {
             return Messages.builder()
                     .id(chatMessage.getId())
                     .messageId(chatMessage.getId())
                     .role(chatMessage.getRole() != null ? chatMessage.getRole().name() : "USER")
                     .content(chatMessage.getContent())
-                    .feedbackRating(feedbackRating)
                     .build();
+        }
+
+        public static Messages fromChatMessage(ChatMessage chatMessage, String feedbackRating) {
+            return fromChatMessage(chatMessage);
         }
     }
 }

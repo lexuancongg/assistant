@@ -38,19 +38,25 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
+    public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
+        // Nghiệp vụ Enterprise: Nếu hệ thống đã khởi tạo Admin thì vô hiệu hóa tự do đăng ký
+        if (userRepository.count() > 0) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "message", "Đăng ký công khai đã bị vô hiệu hóa. Tài khoản phải do Quản trị viên cấp trong hệ thống."
+            ));
+        }
         if (request.name() == null || request.name().isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", "Họ tên không được để trống."));
         }
         if (request.email() == null || request.email().isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", "Email không được để trống."));
         }
         if (request.password() == null || request.password().isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", "Mật khẩu không được để trống."));
         }
 
         if (userRepository.findByEmail(request.email().trim()).isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Email đã tồn tại trong hệ thống."));
         }
 
         // Đảm bảo có Company (nếu DB hoàn toàn trống thì tự tạo Company đầu tiên)
@@ -60,13 +66,12 @@ public class AuthController {
             return companyRepository.save(c);
         });
 
-        long totalUsers = userRepository.count();
         User user = new User();
         user.setName(request.name().trim());
         user.setEmail(request.email().trim().toLowerCase());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         // Người dùng đầu tiên đăng ký trên DB trống sẽ nhận quyền ADMIN
-        user.setRole(totalUsers == 0 ? UserRole.ADMIN : UserRole.USER);
+        user.setRole(UserRole.ADMIN);
         user.setStatus(UserStatus.ACTIVE);
         user.setCompany(company);
 
@@ -82,10 +87,10 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         String identifier = request.getLoginIdentifier();
         if (identifier == null || request.password() == null || request.password().isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("message", "Vui lòng nhập tài khoản và mật khẩu."));
         }
 
         try {
@@ -99,6 +104,12 @@ public class AuthController {
 
             User user = ((CustomUserDetails) authentication.getPrincipal()).getUser();
 
+            if (user.getStatus() == UserStatus.LOCKED) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                        "message", "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Quản trị viên để được hỗ trợ."
+                ));
+            }
+
             String accessToken = jwtService.createAccessToken(user);
             var refreshToken = refreshTokenService.createRefreshToken(user, jwtService.calculateRefreshTokenExpiry());
 
@@ -108,15 +119,19 @@ public class AuthController {
                     "ROLE_" + user.getRole().name()));
 
         } catch (AuthenticationException ex) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                    "message", "Tài khoản hoặc mật khẩu không chính xác."
+            ));
         }
     }
+
+    private static final org.springframework.web.client.RestTemplate GOOGLE_REST_TEMPLATE = new org.springframework.web.client.RestTemplate();
 
     @org.springframework.beans.factory.annotation.Value("${google.client-id:328719666150-q2jcea6fk54u1q71soo2puql4lgvbs8i.apps.googleusercontent.com}")
     private String googleClientId;
 
     @PostMapping("/google-login")
-    public ResponseEntity<AuthResponse> googleLogin(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> googleLogin(@RequestBody Map<String, String> body) {
         String idToken = body.get("idToken");
         if (idToken == null || idToken.isBlank()) {
             idToken = body.get("credential");
@@ -129,24 +144,24 @@ public class AuthController {
 
         if (idToken != null && !idToken.isBlank()) {
             try {
-                org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
                 String url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken.trim();
-                Map<?, ?> googleUser = restTemplate.getForObject(url, Map.class);
+                Map<?, ?> googleUser = GOOGLE_REST_TEMPLATE.getForObject(url, Map.class);
                 if (googleUser != null && googleUser.get("email") != null) {
                     email = (String) googleUser.get("email");
                     name = (String) googleUser.get("name");
                     avatarUrl = (String) googleUser.get("picture");
                 }
             } catch (Exception e) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                        "message", "Xác thực token Google không thành công hoặc phiên đăng nhập đã hết hạn."
+                ));
             }
         } else if (googleAccessToken != null && !googleAccessToken.isBlank()) {
             try {
-                org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
                 org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
                 headers.setBearerAuth(googleAccessToken.trim());
                 org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(headers);
-                ResponseEntity<Map> response = restTemplate.exchange(
+                ResponseEntity<Map> response = GOOGLE_REST_TEMPLATE.exchange(
                         "https://www.googleapis.com/oauth2/v3/userinfo",
                         org.springframework.http.HttpMethod.GET,
                         entity,
@@ -159,44 +174,70 @@ public class AuthController {
                     avatarUrl = (String) googleUser.get("picture");
                 }
             } catch (Exception e) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                        "message", "Không thể lấy thông tin người dùng từ Google API."
+                ));
             }
         } else {
-            email = body.get("email");
-            name = body.getOrDefault("name", "");
-            avatarUrl = body.getOrDefault("avatarUrl", "");
+            // Không chấp nhận request nếu không có token xác thực từ Google
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "message", "Thiếu Google Token để xác thực danh tính."
+            ));
         }
 
         if (email == null || email.isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "Không tìm thấy thông tin email từ Google."
+            ));
         }
 
         String normalizedEmail = email.trim().toLowerCase();
         final String resolvedName = (name != null && !name.isBlank()) ? name.trim() : normalizedEmail.split("@")[0];
         final String resolvedAvatarUrl = avatarUrl;
 
-        User user = userRepository.findByEmail(normalizedEmail).orElseGet(() -> {
-            Company company = companyRepository.findAll().stream().findFirst().orElseGet(() -> {
-                Company c = new Company();
-                c.setName("Enterprise AI Assistant");
-                return companyRepository.save(c);
-            });
+        java.util.Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
 
-            User newUser = new User();
-            newUser.setEmail(normalizedEmail);
-            newUser.setName(resolvedName);
-            newUser.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
-            newUser.setRole(userRepository.count() == 0 ? UserRole.ADMIN : UserRole.USER);
-            newUser.setStatus(UserStatus.ACTIVE);
-            newUser.setCompany(company);
-            if (resolvedAvatarUrl != null && !resolvedAvatarUrl.isBlank()) {
-                newUser.setAvatarUrl(resolvedAvatarUrl);
+        User user;
+        if (userOpt.isPresent()) {
+            user = userOpt.get();
+            // Nếu có avatar từ Google và hồ sơ hiện tại chưa có thì cập nhật
+            if (resolvedAvatarUrl != null && !resolvedAvatarUrl.isBlank() &&
+                    (user.getAvatarUrl() == null || user.getAvatarUrl().isBlank())) {
+                user.setAvatarUrl(resolvedAvatarUrl);
+                user = userRepository.save(user);
             }
-            return userRepository.save(newUser);
-        });
+        } else {
+            // Trường hợp DB hoàn toàn trống (setup lần đầu): Cho phép tài khoản Google đầu tiên làm ADMIN khởi tạo
+            if (userRepository.count() == 0) {
+                Company company = companyRepository.findAll().stream().findFirst().orElseGet(() -> {
+                    Company c = new Company();
+                    c.setName("Enterprise AI Assistant");
+                    return companyRepository.save(c);
+                });
+
+                User newUser = new User();
+                newUser.setEmail(normalizedEmail);
+                newUser.setName(resolvedName);
+                newUser.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
+                newUser.setRole(UserRole.ADMIN);
+                newUser.setStatus(UserStatus.ACTIVE);
+                newUser.setCompany(company);
+                if (resolvedAvatarUrl != null && !resolvedAvatarUrl.isBlank()) {
+                    newUser.setAvatarUrl(resolvedAvatarUrl);
+                }
+                user = userRepository.save(newUser);
+            } else {
+                // CHUẨN NGHIỆP VỤ DOANH NGHIỆP: Email chưa được Quản trị viên cấp trong hệ thống -> Từ chối 403
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                        "message", "Tài khoản Google (" + normalizedEmail + ") chưa được Quản trị viên cấp quyền trong hệ thống. Vui lòng liên hệ Admin để được cấp tài khoản."
+                ));
+            }
+        }
 
         if (user.getStatus() == UserStatus.LOCKED) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "message", "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Quản trị viên để được hỗ trợ."
+            ));
         }
 
         String accessToken = jwtService.createAccessToken(user);

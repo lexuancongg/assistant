@@ -31,10 +31,8 @@ public class CustomUserDetailsService implements UserDetailsService {
             }
         }
         if (userOpt.isEmpty()) {
-            // Also match by username if email format not provided
-            userOpt = userRepository.findAll().stream()
-                    .filter(u -> u.getEmail().toLowerCase().startsWith(clean + "@"))
-                    .findFirst();
+            // Also match by username if email format not provided using direct DB query instead of loading entire DB into memory
+            userOpt = userRepository.findFirstByEmailStartingWith(clean + "@");
         }
 
         var user = userOpt.orElseThrow(() -> new UsernameNotFoundException("User not found: " + identifier));

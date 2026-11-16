@@ -34,6 +34,18 @@ public class UserManagementService {
     private final PasswordEncoder passwordEncoder;
     private final S3FileService s3FileService;
 
+    private Company resolveCurrentCompany() {
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)) {
+            User currentUser = userRepository.findByEmail(auth.getName()).orElse(null);
+            if (currentUser != null && currentUser.getCompany() != null) {
+                return currentUser.getCompany();
+            }
+        }
+        return companyRepository.findAll().stream().findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy công ty"));
+    }
+
     public List<UserResponse> getAll() {
         return userRepository.findAll().stream()
                 .map(this::toResponse)
@@ -45,8 +57,7 @@ public class UserManagementService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email đã tồn tại");
         }
 
-        Company company = companyRepository.findById(DEFAULT_COMPANY_ID)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found"));
+        Company company = resolveCurrentCompany();
 
         User user = new User();
         user.setName(request.name().trim());

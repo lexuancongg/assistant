@@ -116,12 +116,10 @@ export default function DashboardPage() {
                     totalStorageGb={stats?.storageQuotaGb ?? 100}
                     totalFolders={stats?.totalFolders ?? 0}
                     totalStorageText={stats?.totalStorage ?? '0 B'}
-                    userSatisfactionRate={stats?.userSatisfactionRate ?? null}
                     totalUsers={stats?.totalUsers ?? 0}
                     totalDepartments={stats?.totalDepartments ?? 0}
                     totalAiQueries={stats?.totalAiQueries ?? 0}
                     totalChunksIndexed={stats?.totalChunksIndexed ?? 0}
-                    monthlyTokensUsed={stats?.monthlyTokensUsed ?? 0}
                 />
 
                 {/* 3. Performance Latency Chart & Format Distribution Donut */}

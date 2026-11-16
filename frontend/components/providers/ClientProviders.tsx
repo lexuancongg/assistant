@@ -5,7 +5,6 @@ import { AppProvider } from "@/context/appContext";
 import { ThemeProvider } from "@/context/themeContext";
 import { Toaster } from "react-hot-toast";
 import { useWebSocketNotification } from "@/hooks/useWebSocketNotification";
-import GlobalApiLoading from "@/components/common/GlobalApiLoading";
 import ModernToast from "@/components/common/ModernToast";
 
 function WebSocketListener() {
@@ -18,7 +17,6 @@ export default function ClientProviders({ children }: { children: React.ReactNod
         <ThemeProvider>
             <AppProvider>
                 <WebSocketListener />
-                <GlobalApiLoading />
                 {children}
                 <Toaster
                     position="bottom-left"

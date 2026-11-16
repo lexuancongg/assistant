@@ -99,6 +99,23 @@ public class S3FileService {
         return key;
     }
 
+    public software.amazon.awssdk.core.ResponseInputStream<software.amazon.awssdk.services.s3.model.GetObjectResponse> downloadFileInputStream(String keyOrUrl) {
+        if (keyOrUrl == null || keyOrUrl.isBlank()) {
+            throw new IllegalArgumentException("Key or URL cannot be empty");
+        }
+        String key = keyOrUrl;
+        if (keyOrUrl.contains("docs/")) {
+            key = keyOrUrl.substring(keyOrUrl.indexOf("docs/"));
+        } else if (keyOrUrl.contains("thumbnails/")) {
+            key = keyOrUrl.substring(keyOrUrl.indexOf("thumbnails/"));
+        }
+        var getObjectRequest = software.amazon.awssdk.services.s3.model.GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .build();
+        return s3Client.getObject(getObjectRequest);
+    }
+
     public byte[] downloadFile(String keyOrUrl) {
         if (keyOrUrl == null || keyOrUrl.isBlank()) {
             throw new IllegalArgumentException("Key or URL cannot be empty");
