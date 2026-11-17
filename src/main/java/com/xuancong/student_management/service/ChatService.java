@@ -91,13 +91,18 @@ public class ChatService {
         return sessions.stream()
                 .map(session -> {
                     int messageCount = chatMessageRepository.findBySession_IdOrderByCreatedAtAsc(session.getId()).size();
-                    String docName = null;
-                    try {
-                        List<String> citationFileNames = chatCitationRepository.findCitationFileNamesBySessionId(session.getId());
-                        if (citationFileNames != null && !citationFileNames.isEmpty()) {
-                            docName = citationFileNames.get(0);
-                        }
-                    } catch (Exception ignored) {}
+                    String docName = session.getDocumentName();
+                    if (docName == null || docName.isBlank()) {
+                        try {
+                            List<String> citationFileNames = chatCitationRepository.findCitationFileNamesBySessionId(session.getId());
+                            if (citationFileNames != null && !citationFileNames.isEmpty()) {
+                                docName = citationFileNames.get(0);
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                    if (docName == null || docName.isBlank()) {
+                        docName = "Toàn bộ Drive";
+                    }
 
                     return ChatSessionSummaryResponse.builder()
                             .id(session.getId().toString())
@@ -195,16 +200,51 @@ public class ChatService {
                 try {
                     Long folderLong = Long.parseLong(targetFolderId);
                     Set<Long> targetFolderIds = getFolderAndSubFolderIds(folderLong);
-                    allowedDocumentIds = activeFiles.stream()
+                    List<FileItem> scopedFiles = activeFiles.stream()
                             .filter(f -> f.getFolder() != null && targetFolderIds.contains(f.getFolder().getId()))
+                            .toList();
+
+                    allowedDocumentIds = scopedFiles.stream()
                             .map(FileItem::getId)
                             .filter(Objects::nonNull)
                             .map(String::valueOf)
                             .distinct()
                             .toList();
+
                     if (sourceName == null || sourceName.isBlank()) {
                         Folder fld = folderRepository.findById(folderLong).orElse(null);
                         if (fld != null) sourceName = fld.getName();
+                    }
+
+                    // Thu thập các đoạn trích nội dung THỰC TẾ từ nhiều tài liệu khác nhau trong thư mục (Diversity Content Sampling)
+                    List<String> contentSamples = new ArrayList<>();
+                    for (FileItem file : scopedFiles) {
+                        try {
+                            List<com.xuancong.student_management.entity.DocumentChunk> chunks = 
+                                    documentChunkRepository.findByFile_IdOrderByChunkIndexAsc(file.getId());
+                            if (chunks != null && !chunks.isEmpty()) {
+                                String sample = chunks.stream()
+                                        .limit(2)
+                                        .map(com.xuancong.student_management.entity.DocumentChunk::getContent)
+                                        .filter(Objects::nonNull)
+                                        .map(String::trim)
+                                        .filter(s -> !s.isBlank())
+                                        .collect(Collectors.joining(" "));
+                                if (!sample.isBlank()) {
+                                    if (sample.length() > 500) {
+                                        sample = sample.substring(0, 500) + "...";
+                                    }
+                                    contentSamples.add("[Nội dung thực tế từ tài liệu: " + file.getName() + "]:\n" + sample);
+                                }
+                            }
+                        } catch (Exception ex) {
+                            log.debug("Skip chunk sample for file {}: {}", file.getId(), ex.getMessage());
+                        }
+                        if (contentSamples.size() >= 8) break; // Lấy mẫu nội dung từ tối đa 8 tài liệu khác nhau
+                    }
+
+                    if (!contentSamples.isEmpty()) {
+                        request.setContextText(String.join("\n\n---\n\n", contentSamples));
                     }
                 } catch (Exception ignored) {}
             } else {
@@ -423,6 +463,13 @@ public class ChatService {
         } catch (Exception e) {
             log.warn("Error resolving active files for chat: {}", e.getMessage());
         }
+
+        // Lưu nguồn chính xác (Tên thư mục, tên tệp hoặc Toàn bộ Drive) vào chatSession
+        String sessionSource = (folderName != null && !folderName.isBlank())
+                ? folderName
+                : (!availableFiles.isEmpty() ? availableFiles.get(0) : "Toàn bộ Drive");
+        chatSession.setDocumentName(sessionSource);
+        chatSession = chatSessionRepository.save(chatSession);
 
         String mode = (chatRequest.mode() != null && chatRequest.mode().toUpperCase().contains("STANDARD"))
                 ? "STANDARD_RAG"

@@ -270,7 +270,7 @@ class ChatService:
 
         context_text = ""
         if request.contextText and request.contextText.strip():
-            context_text = request.contextText.strip()[:4000]
+            context_text = request.contextText.strip()[:8000]
 
         if not context_text:
             candidate_chunks = []
@@ -280,7 +280,7 @@ class ChatService:
                 candidate_chunks = self.qdrant_service.search(
                     query_vector=summary_query_vec,
                     document_id=target_doc_id,
-                    top_k=8,
+                    top_k=15,
                     allowed_document_ids=request.allowedDocumentIds,
                     department_id=None,
                     company_id=None,
@@ -289,7 +289,14 @@ class ChatService:
                 logger.warning(f"Failed to query Qdrant for overview: {q_err}")
 
             if candidate_chunks:
-                context_text = "\n\n".join([f"- Đoạn {i+1}: {c['text'][:600]}" for i, c in enumerate(candidate_chunks[:6])])
+                seen_docs = {}
+                diverse_chunks = []
+                for c in candidate_chunks:
+                    doc_id = str(c.get("document_id", "0"))
+                    seen_docs[doc_id] = seen_docs.get(doc_id, 0) + 1
+                    if seen_docs[doc_id] <= 2:
+                        diverse_chunks.append(c)
+                context_text = "\n\n".join([f"- Đoạn {i+1} (Tài liệu #{c.get('document_id', '')}): {c['text'][:600]}" for i, c in enumerate(diverse_chunks[:8])])
 
         if not context_text:
             return OverviewResponse(
@@ -302,11 +309,14 @@ class ChatService:
             )
 
         system_instruction = (
-            "Bạn là Trợ lý AI Thông minh trong hệ thống Google Drive AI Assistant.\n"
-            "Nhiệm vụ: Phân tích các đoạn trích nội dung của tài liệu/thư mục và tạo ra một bản tóm tắt tổng quan súc tích cùng 3 câu hỏi gợi ý thông minh bám sát nội dung thực tế.\n\n"
+            "Bạn là Trợ lý AI Thông minh trong hệ thống Enterprise Google Drive AI Assistant.\n"
+            "Nhiệm vụ: Phân tích các đoạn trích nội dung thực tế của tài liệu/thư mục và tạo ra một bản tóm tắt tổng quan súc tích cùng 3 câu hỏi gợi ý thông minh bám sát nội dung thực tế.\n\n"
             "QUY TẮC BẮT BUỘC:\n"
-            "1. 'summary': Viết một đoạn tóm tắt tổng quan 2 đến 4 câu mô tả chính xác nội dung tài liệu nói về ai/vấn đề/kỹ thuật/quy trình/hồ sơ gì cụ thể (tương tự Google Drive AI). Bắt đầu trực tiếp, tuyệt đối không dùng lời mở đầu sáo rỗng như 'Tài liệu này nói về...', 'Dưới đây là...'.\n"
-            "2. 'suggestedQuestions': Tạo đúng 3 câu hỏi gợi ý thông minh, sâu sắc, bám sát trực tiếp vào các tên riêng, công nghệ, số liệu, quy trình hoặc quyết định có trong nội dung (ví dụ: 'Tóm tắt kinh nghiệm chuyên môn và kỹ năng...', 'Giải thích vai trò của...', 'Phân tích các giải pháp...').\n\n"
+            "1. 'summary': Viết một đoạn tóm tắt tổng quan 2 đến 4 câu mô tả CHÍNH XÁC NỘI DUNG VĂN BẢN THỰC TẾ của tài liệu/thư mục. "
+            "BẮT BUỘC DỰA TRÊN NỘI DUNG VĂN BẢN ĐƯỢC TRÍCH XUẤT, TUYỆT ĐỐI KHÔNG ĐƯỢC ĐOÁN DỰA TRÊN TÊN FILE (vì tên file có thể đặt tùy ý). "
+            "Nếu nguồn là THƯ MỤC gồm nhiều tài liệu: Hãy tổng hợp bao quát các chủ đề/nghiệp vụ chính từ các đoạn trích của các tài liệu khác nhau trong thư mục (bao gồm các nội dung về quy trình, kỹ thuật, dữ liệu, biểu mẫu...), tuyệt đối không được chỉ tóm tắt thiên lệch vào duy nhất một tài liệu đơn lẻ. "
+            "Bắt đầu trực tiếp ngay từ dòng đầu tiên, tuyệt đối không dùng lời mở đầu sáo rỗng như 'Tài liệu này nói về...', 'Dưới đây là...', 'Thư mục này gồm...'.\n"
+            "2. 'suggestedQuestions': Tạo đúng 3 câu hỏi gợi ý thông minh, sâu sắc, bám sát trực tiếp vào các tên riêng, công nghệ, số liệu, quy trình hoặc quyết định có trong nội dung thực tế.\n\n"
             "BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON:\n"
             "{\n"
             '  "summary": "<nội dung tóm tắt>",\n'

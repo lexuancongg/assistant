@@ -819,7 +819,7 @@ function DriveAiContent() {
                                                     <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700/70 text-[10.5px] text-gray-600 dark:text-slate-300 font-medium truncate max-w-[160px]">
                                                         {session.sourceSummary.includes('Toàn bộ Drive') ? (
                                                             <span className="text-[#0b57d0] font-bold text-[9px]">▲</span>
-                                                        ) : session.sourceSummary.includes('cv') || session.sourceSummary.toLowerCase().includes('thư mục') ? (
+                                                        ) : session.sourceSummary.includes('cv') || session.sourceSummary.toLowerCase().includes('thư mục') || allFolders.some(f => f.name.toLowerCase() === session.sourceSummary.toLowerCase()) || !session.sourceSummary.includes('.') ? (
                                                             <Folder className="w-3 h-3 text-blue-500 shrink-0" />
                                                         ) : (
                                                             <FileText className="w-3 h-3 text-blue-600 shrink-0" />
