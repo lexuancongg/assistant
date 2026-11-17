@@ -1,4 +1,4 @@
 @echo off
-cd /d "d:\Java\project\Enterprise AI Assistant"
-"C:\apache-maven-3.9.9\bin\mvn.cmd" spring-boot:run > backend.log 2>&1
-
+cd /d "%~dp0"
+set GOOGLE_CLIENT_ID=328719666150-q2jcea6fk54u1q71soo2puql4lgvbs8i.apps.googleusercontent.com
+call .\mvnw.cmd spring-boot:run

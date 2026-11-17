@@ -23,3 +23,17 @@ services:
       - ./Ai/qdrant_storage:/qdrant/storage
     environment:
       - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: onlyoffice_documentserver
+    restart: unless-stopped
+    ports:
+      - "8083:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=onlyoffice_jwt_secret_key_2026_assistant
+      - JWT_HEADER=Authorization
+      - JWT_IN_BODY=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -46,6 +46,7 @@ import fileManagementService, { FileItemDto } from '@/services/files/fileManagem
 import forderService from '@/services/forder/forderService';
 import chatService, { ChatAskRequest, ChatMessageDto } from '@/services/chat/chatService';
 import { useSidebar } from '@/lib/sidebar-context';
+import OnlyOfficeEditorModal from '@/components/files/OnlyOfficeEditorModal';
 
 export interface SourceItem {
     id: string | number;
@@ -63,6 +64,7 @@ export interface ChatHistorySession {
     timestamp: number;
     sourceSummary: string;
     messages: ChatMessageDto[];
+    messageCount?: number;
 }
 
 function formatSessionTimestamp(timestamp?: number | string | Date): string {
@@ -121,6 +123,14 @@ function formatMarkdownContent(raw: string): string {
     return formatted;
 }
 
+function GeminiDiamondIcon({ className = 'w-4 h-4 text-gray-500' }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+            <path d="M12 2C12 7.52285 7.52285 12 2 12C7.52285 12 12 16.4772 12 22C12 16.4772 16.4772 12 22 12C16.4772 12 12 7.52285 12 2Z" />
+        </svg>
+    );
+}
+
 const DEFAULT_SAMPLE_SESSIONS: ChatHistorySession[] = [];
 
 function DriveAiContent() {
@@ -157,9 +167,13 @@ function DriveAiContent() {
     const [isSuggestedOpen, setIsSuggestedOpen] = useState(true);
     const [showAddSourceModal, setShowAddSourceModal] = useState(false);
 
+    // Preview file state
+    const [previewFile, setPreviewFile] = useState<{ id: string | number; name: string; fileType?: string } | null>(null);
+
     // AI Overview & Chat states
     const [executionMode, setExecutionMode] = useState<'AGENTIC_WORKFLOW' | 'STANDARD_RAG'>('AGENTIC_WORKFLOW');
     const [overviewSummary, setOverviewSummary] = useState<string>('');
+    const [isLoadingOverview, setIsLoadingOverview] = useState<boolean>(false);
     const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
     const [messages, setMessages] = useState<ChatMessageDto[]>([]);
     const [inputPrompt, setInputPrompt] = useState('');
@@ -173,6 +187,7 @@ function DriveAiContent() {
     // Chat scroll ref
     const chatEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const lastOverviewKeyRef = useRef<string>('');
 
     // Load global chat history sessions on mount
     useEffect(() => {
@@ -187,6 +202,7 @@ function DriveAiContent() {
                         timestamp: s.createdAt ? new Date(s.createdAt).getTime() : Date.now(),
                         sourceSummary: s.documentName || 'Toàn bộ Drive',
                         messages: [],
+                        messageCount: s.messageCount || 0,
                     }));
                     setChatSessions(mapped);
                     return;
@@ -280,38 +296,67 @@ function DriveAiContent() {
 
     // Generate intelligent AI Overview for the selected source(s)
     useEffect(() => {
+        if (!sources || sources.length === 0) return;
         const activeSources = sources.filter((s) => s.checked);
+        if (activeSources.length === 0) return;
+
+        let isCurrent = true;
         const hasDrive = activeSources.some((s) => s.type === 'drive' || s.id === 'all');
         const sourceName = activeSources.map((s) => s.name).join(', ') || 'Toàn bộ Drive';
 
-        if (hasDrive || sourceName === 'Toàn bộ Drive') {
-            setOverviewSummary(
-                'Không gian làm việc Gemini đang kết nối trực tiếp với **Toàn bộ Drive** của bạn. Hệ thống tuân thủ nghiêm ngặt cơ chế bảo mật và phân quyền tài liệu (RBAC) — chỉ những tài liệu và thư mục bạn có quyền truy cập hợp lệ (Chủ sở hữu hoặc Được chia sẻ) mới được phân tích, tìm kiếm ngữ nghĩa và trích xuất để giải đáp.'
-            );
-            setSuggestedPrompts([
-                'Tóm tắt các tài liệu và hoạt động quan trọng nhất trong Drive của tôi.',
-                'Tìm kiếm các tài liệu liên quan đến tuyển dụng, hồ sơ kỹ sư hoặc CV.',
-                'Tôi có những tài liệu dự án nào mới cập nhật gần đây?',
-            ]);
-        } else if (sourceName.toLowerCase().includes('cv') || sourceName.toLowerCase().includes('lê') || sourceName.toLowerCase().includes('công')) {
-            setOverviewSummary(
-                'Các tài liệu bao gồm sơ yếu lý lịch của Lê Công, một nhà phát triển Full-stack chuyên về Java và Spring Boot. Hồ sơ tập trung vào kỹ năng phát triển ứng dụng web, bao gồm kiến trúc microservices, tích hợp cơ sở dữ liệu (PostgreSQL, Redis, Elasticsearch) và các dự án cá nhân về thương mại điện tử, quản lý nhân sự và trò chuyện thời gian thực.'
-            );
-            setSuggestedPrompts([
-                'Hãy tóm tắt các kỹ năng kỹ thuật chính của Lê Công qua tài liệu.',
-                'So sánh các dự án cá nhân được đề cập trong các tài liệu này.',
-                'Các dự án của Lê Công đã áp dụng công nghệ gì để tối ưu hóa?',
-            ]);
-        } else {
-            setOverviewSummary(
-                `Nguồn được chọn bao gồm các tài liệu thuộc mục "${sourceName}". Hệ thống đã trích xuất và lập chỉ mục ngữ nghĩa toàn bộ nội dung, sẵn sàng hỗ trợ bạn tóm tắt, đối chiếu thông tin hoặc trích xuất số liệu quan trọng theo đúng quyền truy cập của bạn.`
-            );
-            setSuggestedPrompts([
-                `Tóm tắt những điểm trọng tâm nhất trong ${sourceName}.`,
-                `Liệt kê các số liệu hoặc quyết định quan trọng được ghi nhận.`,
-                `Đưa ra các câu hỏi thường gặp liên quan đến tài liệu này.`,
-            ]);
+        const fileSource = activeSources.find((s) => s.type === 'file');
+        const folderSource = activeSources.find((s) => s.type === 'folder');
+
+        const req: any = {
+            sourceName: hasDrive ? 'Toàn bộ Drive' : sourceName,
+        };
+        if (!hasDrive) {
+            if (fileSource) req.fileId = fileSource.id;
+            if (folderSource) req.folderId = folderSource.id;
         }
+
+        const sourceKey = `${req.sourceName}_${req.fileId || ''}_${req.folderId || ''}`;
+        if (lastOverviewKeyRef.current === sourceKey && overviewSummary) {
+            return;
+        }
+        lastOverviewKeyRef.current = sourceKey;
+
+        const fetchAiOverview = async () => {
+            setIsLoadingOverview(true);
+            try {
+                const res = await chatService.getOverview(req);
+                if (!isCurrent) return;
+                setOverviewSummary(res.summary);
+                setSuggestedPrompts(
+                    res.suggestedQuestions && res.suggestedQuestions.length > 0
+                        ? res.suggestedQuestions
+                        : [
+                              `Tóm tắt những điểm trọng tâm nhất trong ${req.sourceName}.`,
+                              `Liệt kê các số liệu hoặc quyết định quan trọng được ghi nhận.`,
+                              `Đưa ra các câu hỏi thường gặp liên quan đến tài liệu này.`,
+                          ]
+                );
+            } catch (err) {
+                console.warn('Failed to fetch real AI overview:', err);
+                if (!isCurrent) return;
+                setOverviewSummary(
+                    `Nguồn được chọn bao gồm các tài liệu thuộc mục "${req.sourceName}". Hệ thống đã kết nối và sẵn sàng hỗ trợ bạn tra cứu, tóm tắt chi tiết hoặc trích xuất số liệu quan trọng.`
+                );
+                setSuggestedPrompts([
+                    `Tóm tắt những điểm trọng tâm nhất trong ${req.sourceName}.`,
+                    `Liệt kê các số liệu hoặc quyết định quan trọng được ghi nhận.`,
+                    `Đưa ra các câu hỏi thường gặp liên quan đến tài liệu này.`,
+                ]);
+            } finally {
+                if (isCurrent) setIsLoadingOverview(false);
+            }
+        };
+
+        fetchAiOverview();
+
+        return () => {
+            isCurrent = false;
+        };
     }, [sources]);
 
     // Auto-scroll chat
@@ -408,10 +453,30 @@ function DriveAiContent() {
     };
 
     // Load an existing session from history
-    const handleSelectHistorySession = (session: ChatHistorySession) => {
+    const handleSelectHistorySession = async (session: ChatHistorySession) => {
         setSessionId(session.id);
-        setMessages(session.messages);
-        toast.success(`Đã mở: "${session.title}"`);
+        if (session.messages && session.messages.length > 0) {
+            setMessages(session.messages);
+        } else {
+            setMessages([]);
+        }
+
+        try {
+            const detail = await chatService.getChatSession(session.id);
+            if (detail && Array.isArray(detail.messages)) {
+                const mapped: ChatMessageDto[] = detail.messages.map((m: any) => ({
+                    id: m.id,
+                    role: (m.role ? m.role.toUpperCase() : 'USER') as any,
+                    content: m.content || '',
+                }));
+                setMessages(mapped);
+                setChatSessions((prev) =>
+                    prev.map((s) => (s.id === session.id ? { ...s, messages: mapped, messageCount: mapped.length } : s))
+                );
+            }
+        } catch (err) {
+            console.warn('Failed to load session messages from API:', err);
+        }
     };
 
     // Delete a session from history
@@ -561,36 +626,6 @@ function DriveAiContent() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {/* Mode Selector Toggle */}
-                    <div className="flex items-center bg-gray-100 dark:bg-slate-800 p-0.5 rounded-xl border border-gray-200 dark:border-slate-700">
-                        <button
-                            type="button"
-                            onClick={() => setExecutionMode('AGENTIC_WORKFLOW')}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
-                                executionMode === 'AGENTIC_WORKFLOW'
-                                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                                    : 'text-gray-500 hover:text-gray-700 dark:text-slate-400'
-                            }`}
-                            title="Kích hoạt luồng Multi-Agent: Router -> RBAC Retrieval -> Hybrid Rerank -> Fact-Checker"
-                        >
-                            <Workflow className="w-3.5 h-3.5 text-indigo-500" />
-                            <span>Multi-Agent (Mặc định)</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setExecutionMode('STANDARD_RAG')}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
-                                executionMode === 'STANDARD_RAG'
-                                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
-                                    : 'text-gray-500 hover:text-gray-700 dark:text-slate-400'
-                            }`}
-                            title="Truy xuất RAG Tiêu chuẩn tốc độ cao"
-                        >
-                            <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                            <span>RAG Thường</span>
-                        </button>
-                    </div>
-
                     {/* Close 'X' button */}
                     <button
                         type="button"
@@ -751,20 +786,15 @@ function DriveAiContent() {
                                             <div
                                                 key={session.id}
                                                 onClick={() => handleSelectHistorySession(session)}
-                                                className={`relative p-3 rounded-2xl border text-xs transition-all duration-150 cursor-pointer group overflow-hidden ${
+                                                className={`p-3 rounded-xl border text-xs transition-colors cursor-pointer group ${
                                                     isCurrent
-                                                        ? 'bg-[#e8f0fe] border-[#4285f4] shadow-xs dark:bg-blue-950/50 dark:border-blue-500'
-                                                        : 'bg-white hover:bg-[#f8fafd] hover:border-gray-300 dark:bg-slate-800/60 dark:hover:bg-slate-800 border-gray-200/90 dark:border-slate-700/70 shadow-2xs'
+                                                        ? 'bg-[#f0f4f9] dark:bg-slate-800/90 border-gray-300 dark:border-slate-600'
+                                                        : 'bg-white hover:bg-gray-50 dark:bg-slate-900 dark:hover:bg-slate-800/50 border-gray-200/90 dark:border-slate-800'
                                                 }`}
                                             >
-                                                {/* Active Indicator Bar on left */}
-                                                {isCurrent && (
-                                                    <div className="absolute left-0 top-2 bottom-2 w-1.5 bg-[#1a73e8] rounded-r-full" />
-                                                )}
-
                                                 {/* Top Row: Time & Delete */}
-                                                <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-slate-400 mb-1.5 pl-0.5">
-                                                    <div className="flex items-center gap-1.5 font-medium truncate">
+                                                <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-slate-400 mb-1.5">
+                                                    <div className="flex items-center gap-1.5 truncate">
                                                         <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                                                         <span>{displayTime}</span>
                                                     </div>
@@ -772,19 +802,15 @@ function DriveAiContent() {
                                                     <button
                                                         type="button"
                                                         onClick={(e) => handleDeleteHistorySession(session.id, e)}
-                                                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 rounded-lg text-gray-400 transition-all cursor-pointer"
+                                                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 rounded-lg text-gray-400 transition-colors cursor-pointer"
                                                         title="Xóa phiên này"
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
                                                 </div>
 
-                                                {/* Title */}
-                                                <p className={`text-[12.5px] leading-snug line-clamp-2 transition-colors ${
-                                                    isCurrent
-                                                        ? 'text-[#1a73e8] dark:text-blue-300 font-semibold'
-                                                        : 'text-gray-800 dark:text-slate-100 font-medium group-hover:text-[#1a73e8]'
-                                                }`}>
+                                                {/* Title - Đơn giản, không màu mè, không in đậm */}
+                                                <p className="text-[12.5px] leading-snug line-clamp-2 text-gray-800 dark:text-slate-200 font-normal">
                                                     {session.title}
                                                 </p>
 
@@ -802,7 +828,9 @@ function DriveAiContent() {
                                                     </div>
 
                                                     <span className="text-[10px] font-medium text-gray-400 dark:text-slate-400 shrink-0">
-                                                        {session.messages.length} tin
+                                                        {typeof session.messageCount === 'number'
+                                                            ? `${session.messageCount} tin`
+                                                            : `${session.messages?.length || 0} tin`}
                                                     </span>
                                                 </div>
                                             </div>
@@ -816,16 +844,15 @@ function DriveAiContent() {
 
                 {/* ── RIGHT / CENTER PANEL: AI OVERVIEW & CONVERSATION ── */}
                 <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900 relative">
-                    {/* Scrollable conversation / overview area */}
-                    <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 max-w-4xl w-full mx-auto">
+                    {/* Scrollable conversation / overview area - scrollbar on outer full width */}
+                    <div className="flex-1 overflow-y-auto w-full">
+                        <div className="max-w-4xl w-full mx-auto p-4 md:p-8 space-y-6">
                         {/* 1. THÔNG TIN TỔNG QUAN DO AI TẠO (Card matching screenshot) */}
                         <div className="bg-[#f0f4f9] dark:bg-slate-800/60 rounded-3xl p-6 border border-gray-200/60 dark:border-slate-800 shadow-2xs">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
-                                    <div className="w-5 h-5 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                                        <Sparkles className="w-4 h-4 fill-blue-500/20" />
-                                    </div>
-                                    <h2 className="text-sm font-semibold text-gray-800 dark:text-slate-100">
+                                    <GeminiDiamondIcon className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" />
+                                    <h2 className="text-[13.5px] font-medium text-gray-700 dark:text-slate-200">
                                         Thông tin tổng quan do AI tạo
                                     </h2>
                                 </div>
@@ -844,9 +871,17 @@ function DriveAiContent() {
                                 </button>
                             </div>
 
-                            <p className="text-[13px] text-gray-700 dark:text-slate-200 leading-relaxed font-normal">
-                                {overviewSummary}
-                            </p>
+                            {isLoadingOverview ? (
+                                <div className="space-y-2.5 animate-pulse pt-1">
+                                    <div className="h-3.5 bg-gray-200/90 dark:bg-slate-700/80 rounded-md w-full"></div>
+                                    <div className="h-3.5 bg-gray-200/90 dark:bg-slate-700/80 rounded-md w-11/12"></div>
+                                    <div className="h-3.5 bg-gray-200/90 dark:bg-slate-700/80 rounded-md w-4/5"></div>
+                                </div>
+                            ) : (
+                                <p className="text-[13px] text-gray-700 dark:text-slate-200 leading-relaxed font-normal">
+                                    {overviewSummary}
+                                </p>
+                            )}
                         </div>
 
                         {/* 2. SUGGESTED ACTION QUESTIONS (with curved arrow ↳) */}
@@ -877,16 +912,16 @@ function DriveAiContent() {
                                             className={`flex gap-3.5 ${isUser ? 'justify-end' : 'justify-start'}`}
                                         >
                                             {!isUser && (
-                                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-xs">
-                                                    <Sparkles className="w-4 h-4" />
+                                                <div className="w-5 h-5 flex items-center justify-center shrink-0 mt-4 sm:mt-5">
+                                                    <GeminiDiamondIcon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                                                 </div>
                                             )}
 
                                             <div
-                                                className={`max-w-[85%] select-text ${
+                                                className={`select-text ${
                                                     isUser
-                                                        ? 'bg-[#c2e7ff] text-[#001d35] font-medium rounded-2xl rounded-br-xs px-4 py-2.5 text-[13.5px] leading-relaxed shadow-3xs'
-                                                        : 'w-full bg-[#f8fafd] dark:bg-slate-800/85 border border-gray-200/90 dark:border-slate-700/80 rounded-2xl rounded-tl-xs p-4 sm:p-5 text-[13.5px] leading-relaxed shadow-xs text-gray-800 dark:text-slate-100'
+                                                        ? 'bg-[#f0f4f9] dark:bg-slate-800 text-[#1f1f1f] dark:text-slate-100 rounded-[20px] px-5 py-3.5 text-[14px] leading-relaxed max-w-[85%] font-normal'
+                                                        : 'w-full max-w-[85%] bg-[#f8fafd] dark:bg-slate-800/85 border border-gray-200/90 dark:border-slate-700/80 rounded-2xl rounded-tl-xs p-4 sm:p-5 text-[13.5px] leading-relaxed shadow-xs text-gray-800 dark:text-slate-100'
                                                 }`}
                                             >
                                                 {isUser ? (
@@ -896,42 +931,107 @@ function DriveAiContent() {
                                                         <ReactMarkdown
                                                             remarkPlugins={[remarkGfm]}
                                                             components={{
+                                                                a: ({ node, href, children, ...props }: any) => {
+                                                                    const isFileLink = href && (href.includes('fileId=') || href.startsWith('/files'));
+                                                                    const fileIdMatch = href ? href.match(/fileId=(\d+)/) : null;
+                                                                    const fileId = fileIdMatch ? fileIdMatch[1] : null;
+
+                                                                    if (isFileLink && fileId) {
+                                                                        const rawName = typeof children === 'string' ? children : (Array.isArray(children) ? children.join('') : 'Tài liệu');
+                                                                        const fileName = rawName.replace(/^[📄\s]+/, '').trim();
+                                                                        return (
+                                                                            <span className="inline-flex items-center gap-1 mx-1 my-0.5 align-middle">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        const ext = fileName.split('.').pop() || 'docx';
+                                                                                        setPreviewFile({
+                                                                                            id: fileId,
+                                                                                            name: fileName,
+                                                                                            fileType: ext,
+                                                                                        });
+                                                                                    }}
+                                                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-[#0b57d0] dark:text-[#a8c7fa] font-medium text-[13px] border border-blue-200/80 dark:border-blue-800/80 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                                                                                    title={`Nhấp để mở tài liệu "${fileName}"`}
+                                                                                >
+                                                                                    <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0 group-hover:scale-110 transition-transform" />
+                                                                                    <span className="font-semibold underline underline-offset-2 truncate max-w-[280px]">
+                                                                                        {fileName}
+                                                                                    </span>
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        router.push(`/files?fileId=${fileId}&fileName=${encodeURIComponent(fileName)}`);
+                                                                                    }}
+                                                                                    className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
+                                                                                    title="Chuyển đến vị trí tệp trong Drive"
+                                                                                >
+                                                                                    <ExternalLink className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            </span>
+                                                                        );
+                                                                    }
+
+                                                                    return (
+                                                                        <a
+                                                                            href={href}
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            className="text-[#0b57d0] dark:text-[#a8c7fa] hover:underline font-medium inline-flex items-center gap-1"
+                                                                            {...props}
+                                                                        >
+                                                                            {children}
+                                                                        </a>
+                                                                    );
+                                                                },
                                                                 p: ({ node, ...props }) => (
                                                                     <p className="my-2 leading-relaxed text-gray-800 dark:text-slate-100 text-[13.5px]" {...props} />
                                                                 ),
                                                                 strong: ({ node, ...props }) => (
-                                                                    <strong className="font-semibold text-gray-900 dark:text-white" {...props} />
+                                                                    <strong className="font-medium text-gray-800 dark:text-slate-100" {...props} />
                                                                 ),
                                                                 ul: ({ node, ...props }) => (
-                                                                    <ul className="my-2.5 ml-4 list-disc space-y-1.5 text-[13.5px] marker:text-blue-500" {...props} />
+                                                                    <ul className="my-2.5 ml-4 list-disc space-y-1.5 text-[13.5px] marker:text-gray-400" {...props} />
                                                                 ),
                                                                 ol: ({ node, ...props }) => (
-                                                                    <ol className="my-2.5 ml-4 list-decimal space-y-1.5 text-[13.5px] marker:text-blue-600 font-medium" {...props} />
+                                                                    <ol className="my-2.5 ml-4 list-decimal space-y-1.5 text-[13.5px] marker:text-gray-500 font-normal" {...props} />
                                                                 ),
                                                                 li: ({ node, ...props }) => (
                                                                     <li className="leading-relaxed pl-1" {...props} />
                                                                 ),
                                                                 h1: ({ node, ...props }) => (
-                                                                    <h1 className="text-base font-bold text-gray-900 dark:text-white mt-4 mb-2 pb-1 border-b border-gray-100 dark:border-slate-800" {...props} />
+                                                                    <h1 className="text-base font-medium text-gray-800 dark:text-white mt-4 mb-2 pb-1 border-b border-gray-100 dark:border-slate-800" {...props} />
                                                                 ),
                                                                 h2: ({ node, ...props }) => (
-                                                                    <h2 className="text-[14.5px] font-bold text-gray-900 dark:text-white mt-3.5 mb-1.5" {...props} />
+                                                                    <h2 className="text-[14px] font-medium text-gray-800 dark:text-white mt-3.5 mb-1.5" {...props} />
                                                                 ),
                                                                 h3: ({ node, ...props }) => (
-                                                                    <h3 className="text-[13.5px] font-semibold text-gray-900 dark:text-white mt-2.5 mb-1" {...props} />
+                                                                    <h3 className="text-[13.5px] font-medium text-gray-800 dark:text-white mt-2.5 mb-1" {...props} />
                                                                 ),
                                                                 blockquote: ({ node, ...props }) => (
                                                                     <blockquote className="my-2.5 pl-3 py-1.5 border-l-3 border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 text-gray-700 dark:text-slate-300 italic text-[13px] rounded-r-lg" {...props} />
                                                                 ),
-                                                                code: ({ inline, className, children, ...props }: any) => {
-                                                                    return inline ? (
+                                                                pre: ({ node, ...props }) => (
+                                                                    <div className="my-3 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 bg-slate-900 text-slate-100 p-3.5 font-mono text-xs overflow-x-auto shadow-inner">
+                                                                        <pre className="overflow-x-auto" {...props} />
+                                                                    </div>
+                                                                ),
+                                                                code: ({ node, className, children, ...props }: any) => {
+                                                                    const isCodeBlock = /language-(\w+)/.test(className || '') || (typeof children === 'string' && children.includes('\n'));
+                                                                    if (isCodeBlock) {
+                                                                        return (
+                                                                            <code className={className} {...props}>
+                                                                                {children}
+                                                                            </code>
+                                                                        );
+                                                                    }
+                                                                    return (
                                                                         <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-gray-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-mono text-[12px] border border-gray-200/70 dark:border-slate-700/70" {...props}>
                                                                             {children}
                                                                         </code>
-                                                                    ) : (
-                                                                        <div className="my-3 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 bg-slate-900 text-slate-100 p-3.5 font-mono text-xs overflow-x-auto shadow-inner">
-                                                                            <code {...props}>{children}</code>
-                                                                        </div>
                                                                     );
                                                                 },
                                                                 table: ({ node, ...props }) => (
@@ -976,26 +1076,18 @@ function DriveAiContent() {
                                 })}
 
                                 {isGenerating && (
-                                    <div className="flex gap-3 items-center pt-2 pl-1 animate-in fade-in duration-200">
-                                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#8ab4f8] to-[#c2e7ff] flex items-center justify-center text-white shadow-sm ring-2 ring-blue-100 dark:ring-blue-900/40 animate-pulse shrink-0">
-                                            <Sparkles className="w-4 h-4 fill-white" />
-                                        </div>
-                                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#f0f4f9] dark:bg-slate-800/80 border border-gray-200/60 dark:border-slate-700/60 shadow-2xs">
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.3s]"></span>
-                                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce [animation-delay:-0.15s]"></span>
-                                                <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-bounce"></span>
-                                            </div>
-                                            <span className="text-[12.5px] font-medium text-gray-600 dark:text-slate-300">
-                                                Gemini đang xử lý câu trả lời...
-                                            </span>
+                                    <div className="flex items-center gap-3 pt-3 pl-1 animate-in fade-in duration-200">
+                                        <div className="relative w-7 h-7 flex items-center justify-center shrink-0">
+                                            <div className="absolute inset-0 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                                            <GeminiDiamondIcon className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
                                         </div>
                                     </div>
                                 )}
                             </div>
                         )}
 
-                        <div ref={chatEndRef} />
+                            <div ref={chatEndRef} />
+                        </div>
                     </div>
 
                     {/* ── FLOATING BOTTOM INPUT BOX ── */}
@@ -1191,6 +1283,14 @@ function DriveAiContent() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* ONLYOFFICE / Document Preview Modal */}
+            {previewFile && (
+                <OnlyOfficeEditorModal
+                    file={previewFile}
+                    onClose={() => setPreviewFile(null)}
+                />
             )}
         </div>
     );

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from app.schemas.chat.chat import RagRequest, RagResponse
+from app.schemas.chat.chat import RagRequest, RagResponse, OverviewRequest, OverviewResponse
 from app.schemas.chat.search import SearchRequest, SearchResponse
 from app.services.chat_service import ChatService
 from app.services.agent_service import EnterpriseAgentEngine, AgentWorkflowResult
@@ -40,6 +40,18 @@ def agent_chat_endpoint(request: RagRequest):
             history=getattr(request, "history", None),
             model_provider=getattr(request, "modelProvider", "gemini"),
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/overview", response_model=OverviewResponse)
+def overview_endpoint(request: OverviewRequest):
+    """
+    Dynamic AI Overview & Suggested Questions Endpoint (Google Drive AI Style):
+    Trích xuất ngữ cảnh cốt lõi từ Qdrant -> Gemini sinh tóm tắt 2-4 câu & 3 câu hỏi gợi ý cụ thể.
+    """
+    try:
+        return chat_service.get_overview(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

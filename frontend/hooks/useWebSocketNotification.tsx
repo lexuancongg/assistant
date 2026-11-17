@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Client, IMessage } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import toast from 'react-hot-toast';
@@ -24,12 +25,15 @@ export interface WsNotification {
 
 export function useWebSocketNotification() {
     const clientRef = useRef<Client | null>(null);
+    const router = useRouter();
 
     useEffect(() => {
         let user: any = null;
+        let token: string | null = null;
         try {
             const stored = localStorage.getItem('user');
             if (stored) user = JSON.parse(stored);
+            token = localStorage.getItem('accessToken');
         } catch (e) {}
 
         const userId = user?.id;
@@ -38,6 +42,7 @@ export function useWebSocketNotification() {
 
         const stompClient = new Client({
             webSocketFactory: () => new SockJS(`${API_ROOT}/ws`) as any,
+            connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
             reconnectDelay: 5000,
             heartbeatIncoming: 4000,
             heartbeatOutgoing: 4000,
@@ -90,7 +95,9 @@ export function useWebSocketNotification() {
 
     const playNotificationSound = () => {
         try {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioCtxClass) return;
+            const ctx = new AudioCtxClass();
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.type = 'sine';
@@ -102,6 +109,12 @@ export function useWebSocketNotification() {
             gain.connect(ctx.destination);
             osc.start();
             osc.stop(ctx.currentTime + 0.4);
+            // Clean up AudioContext to prevent memory leaks in Chrome/Edge
+            setTimeout(() => {
+                try {
+                    ctx.close();
+                } catch {}
+            }, 600);
         } catch (e) {
             // Audio context not allowed before user gesture
         }
@@ -110,6 +123,22 @@ export function useWebSocketNotification() {
     const handleIncomingMessage = (message: IMessage) => {
         try {
             const notif: WsNotification = JSON.parse(message.body);
+
+            // Bỏ qua nếu người dùng hiện tại chính là người tải file lên
+            let currentUserId: any = null;
+            try {
+                const stored = localStorage.getItem('user');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    currentUserId = parsed?.id;
+                }
+            } catch (e) {}
+
+            if (notif.uploaderId != null && currentUserId != null && String(notif.uploaderId) === String(currentUserId)) {
+                // Không hiển thị pop-up và không phát âm thanh cho chính người tải lên
+                return;
+            }
+
             playNotificationSound();
 
             // Dispatch global event for NotificationDropdown to add item and increase badge
@@ -150,11 +179,7 @@ export function useWebSocketNotification() {
                             <button
                                 onClick={() => {
                                     toast.dismiss(t.id);
-                                    if (notif.fileId) {
-                                        window.location.href = `/files`;
-                                    } else {
-                                        window.location.href = `/files`;
-                                    }
+                                    router.push('/files');
                                 }}
                                 className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition"
                             >

@@ -14,7 +14,7 @@ def main():
         "app.main:app",
         host="0.0.0.0",
         port=int(os.getenv("PORT", "8000")),
-        reload=os.getenv("DEV", "false").lower() in {"1", "true", "yes"},
+        reload=True,
     )
 
 

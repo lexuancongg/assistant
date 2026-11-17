@@ -8,10 +8,17 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Entity
-@Table(name = "files")
+@Table(
+    name = "files",
+    indexes = {
+        @Index(name = "idx_files_company_deleted", columnList = "company_id, deleted_at"),
+        @Index(name = "idx_files_folder", columnList = "folder_id"),
+        @Index(name = "idx_files_owner_dept", columnList = "owner_department_id"),
+        @Index(name = "idx_files_uploaded_by", columnList = "uploaded_by")
+    }
+)
 @Getter
 @Setter
 @NoArgsConstructor

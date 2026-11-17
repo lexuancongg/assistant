@@ -1,4 +1,5 @@
 import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
+import { extractApiError } from "@/utils/api/errorHelper";
 
 export interface DepartmentMemberDto {
     userId: number | string;
@@ -25,7 +26,7 @@ class DepartmentService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Yêu cầu thất bại");
     }
 
     public async createDepartment(name: string): Promise<DepartmentDto> {
@@ -33,7 +34,7 @@ class DepartmentService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Yêu cầu thất bại");
     }
 
     public async updateDepartmentName(deptId: number | string, name: string): Promise<DepartmentDto> {
@@ -41,7 +42,7 @@ class DepartmentService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Yêu cầu thất bại");
     }
 
     public async addMember(deptId: number | string, userId: number | string): Promise<DepartmentDto> {
@@ -49,20 +50,20 @@ class DepartmentService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Yêu cầu thất bại");
     }
 
     public async removeMember(deptId: number | string, userId: number | string): Promise<void> {
         const response = await apiClient.delete(`${this.baseUrl}/${deptId}/members/${userId}`);
         if (!response.ok) {
-            throw response;
+            throw await extractApiError(response, "Yêu cầu thất bại");
         }
     }
 
     public async deleteDepartment(deptId: number | string): Promise<void> {
         const response = await apiClient.delete(`${this.baseUrl}/${deptId}`);
         if (!response.ok) {
-            throw response;
+            throw await extractApiError(response, "Yêu cầu thất bại");
         }
     }
 }

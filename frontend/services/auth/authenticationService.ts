@@ -1,6 +1,7 @@
 import { LoginResponse } from "@/models/auth/loginResponse";
 import { AuthRequest } from "@/models/auth/authRequest";
     import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
+import { extractApiError } from "@/utils/api/errorHelper";
 import { AuthStateResponse } from "@/models/auth/AuthStateResponse";
 
 class AuthenticationService{
@@ -32,7 +33,7 @@ class AuthenticationService{
             }
             return json;
         }
-        throw response;
+        throw await extractApiError(response, "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin tài khoản.");
     }
 
     public async loginWithGoogle(
@@ -63,7 +64,7 @@ class AuthenticationService{
             }
             return json;
         }
-        throw response;
+        throw await extractApiError(response, "Đăng nhập Google thất bại.");
     }
 
     public async register(request: { username: string; password: string; email?: string }): Promise<LoginResponse> {
@@ -73,7 +74,7 @@ class AuthenticationService{
             // register returns AuthResponse without tokens; do not store tokens automatically
             return json;
         }
-        throw response;
+        throw await extractApiError(response, "Đăng ký tài khoản thất bại.");
     }
 
     public  async checkAuthenticated():Promise<AuthStateResponse>{

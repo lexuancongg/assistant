@@ -35,6 +35,10 @@ class RagRequest(BaseModel):
     allowedDocumentIds: Optional[List[Union[str, int, UUID, Any]]] = None
     departmentId: Optional[Union[str, int, Any]] = None
     companyId: Optional[Union[str, int, Any]] = None
+    contextText: Optional[str] = None
+    folderName: Optional[str] = None
+    subFolderNames: Optional[List[str]] = None
+    availableFiles: Optional[List[str]] = None
 
 
 class RagResponse(BaseModel):
@@ -47,3 +51,21 @@ class RagResponse(BaseModel):
     promptTokens: Optional[int] = None
     completionTokens: Optional[int] = None
     totalTokens: Optional[int] = None
+
+
+class OverviewRequest(BaseModel):
+    documentId: Optional[Union[str, int, UUID, Any]] = None
+    fileId: Optional[Union[str, int, UUID, Any]] = None
+    allowedDocumentIds: Optional[List[Union[str, int, UUID, Any]]] = None
+    sourceName: Optional[str] = None
+    departmentId: Optional[Union[str, int, Any]] = None
+    companyId: Optional[Union[str, int, Any]] = None
+    contextText: Optional[str] = None
+    folderName: Optional[str] = None
+    subFolderNames: Optional[List[str]] = None
+    availableFiles: Optional[List[str]] = None
+
+
+class OverviewResponse(BaseModel):
+    summary: str
+    suggestedQuestions: List[str] = Field(default_factory=list)

@@ -44,6 +44,13 @@ class ExtractService:
         # 5. Embedding
         vectors = self.embedding_service.embed(chunks)
 
+        # Xóa tri thức vector cũ của tài liệu (nếu có) trước khi upsert phiên bản mới
+        if request.documentId:
+            try:
+                self.qdrant_service.delete_by_document(request.documentId)
+            except Exception as e:
+                pass
+
         point_ids = self.qdrant_service.upsert(
             chunks=chunks,
             vectors=vectors,

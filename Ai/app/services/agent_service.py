@@ -322,9 +322,36 @@ class EnterpriseAgentEngine:
         persona: Optional[str] = None,
         available_files: Optional[List[str]] = None,
         history: Optional[List[Any]] = None,
-        model_provider: Optional[str] = "gemini"
+        model_provider: Optional[str] = "gemini",
+        folder_name: Optional[str] = None,
+        sub_folder_names: Optional[List[str]] = None,
+        context_text: Optional[str] = None
     ) -> AgentWorkflowResult:
         traces: List[AgentTraceStep] = []
+
+        # -------------------------------------------------------------
+        # 0. METADATA CATALOG AGENT: Cấu trúc thư mục & danh mục tệp thực tế
+        # -------------------------------------------------------------
+        metadata_lines = []
+        if folder_name:
+            metadata_lines.append(f"- Phạm vi / Thư mục hiện tại: **{folder_name}**")
+        if sub_folder_names and len(sub_folder_names) > 0:
+            metadata_lines.append(f"- Thư mục con trực thuộc ({len(sub_folder_names)} thư mục): {', '.join(sub_folder_names)}")
+        if available_files and len(available_files) > 0:
+            metadata_lines.append(f"- Tổng số lượng tài liệu/tệp trong phạm vi: **{len(available_files)} tệp**")
+            metadata_lines.append("- Danh sách tất cả các tệp hiện có trong phạm vi truy vấn:")
+            for idx, fn in enumerate(available_files, 1):
+                metadata_lines.append(f"  {idx}. {fn}")
+        elif allowed_document_ids is not None and len(allowed_document_ids) == 0:
+            metadata_lines.append("- Phạm vi / thư mục này hiện tại chưa có tệp tài liệu nào.")
+
+        metadata_context_str = "\n".join(metadata_lines)
+        if metadata_context_str:
+            traces.append(AgentTraceStep(
+                agentName="MetadataCatalogAgent",
+                action="Nạp danh mục tệp và cấu trúc thư mục thực tế từ Drive",
+                outputSummary=f"Đã nạp metadata: {folder_name or 'Drive'} ({len(available_files or [])} tệp, {len(sub_folder_names or [])} thư mục con)."
+            ))
 
         # -------------------------------------------------------------
         # 1. ROUTER AGENT: Phân loại ý định thông minh bằng LLM Structured Output
@@ -405,8 +432,15 @@ class EnterpriseAgentEngine:
    - Khi câu hỏi về bảng biểu, số liệu: Trình bày số liệu đối chiếu chuẩn xác dưới dạng bảng hoặc gạch đầu dòng chi tiết.
 4. **ĐỊNH DẠNG**: Trình bày Markdown ngắn gọn, in đậm các từ khóa, con số, điều khoản quan trọng."""
 
+        metadata_section = ""
+        if metadata_context_str:
+            metadata_section = f"""### CẤU TRÚC THƯ MỤC & DANH MỤC TÀI LIỆU HIỆN CÓ CỦA HỆ THỐNG:
+{metadata_context_str}
+
+"""
+
         user_content = f"""Ý định truy vấn: {detected_intent}
-{history_text}### NGỮ CẢNH TRÍCH XUẤT XÁC THỰC:
+{history_text}{metadata_section}### NGỮ CẢNH TRÍCH XUẤT XÁC THỰC TỪ NỘI DUNG TÀI LIỆU:
 {context_str if context_str else "(Không có đoạn trích nào)"}
 
 ---
@@ -415,6 +449,8 @@ class EnterpriseAgentEngine:
 
 ---
 ### YÊU CẦU:
+- Khi người dùng hỏi về danh sách file, số lượng file, thư mục con hoặc cấu trúc thư mục: Bắt buộc dựa vào mục [CẤU TRÚC THƯ MỤC & DANH MỤC TÀI LIỆU HIỆN CÓ CỦA HỆ THỐNG] để trả lời chính xác số lượng và liệt kê đầy đủ tên các tệp/thư mục. TUYỆT ĐỐI KHÔNG dùng các đoạn trích nội dung tài liệu để bịa đặt hoặc nhầm lẫn số lượng file.
+- Khi người dùng hỏi về nội dung, dữ kiện, điều khoản bên trong tài liệu: Dựa vào [NGỮ CẢNH TRÍCH XUẤT XÁC THỰC TỪ NỘI DUNG TÀI LIỆU] để trả lời và trích dẫn chuẩn xác.
 - Trả lời trực diện, đúng trọng tâm, không chào hỏi, không kết luận thừa."""
 
         # Chuẩn bị contents gửi sang Gemini (Hỗ trợ Multimodal Visual Grounding)
@@ -458,8 +494,9 @@ class EnterpriseAgentEngine:
         # 5. DYNAMIC FACT-CHECKING GUARDRAIL (Kiểm chứng ảo giác thực tế)
         # -------------------------------------------------------------
         # Áp dụng CÁCH 1 (LLM-as-a-Judge) để thẩm định độ xác thực và phát hiện ảo giác
+        eval_context = f"{metadata_context_str}\n\n---\n\n{context_str}" if metadata_context_str else context_str
         judge_eval = self._evaluate_groundedness_llm_judge(
-            context_str=context_str,
+            context_str=eval_context,
             answer=final_answer
         )
         groundedness = judge_eval["groundednessScore"]

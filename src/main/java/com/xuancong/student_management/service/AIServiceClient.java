@@ -27,8 +27,14 @@ public class AIServiceClient {
     @Value("${ai.service.url:http://127.0.0.1:8000}")
     private String aiServiceUrl;
 
+    @Value("${ai.service.secret:enterprise-ai-secret-key-2026}")
+    private String internalAiSecret;
+
     @Value("${qdrant.url:http://localhost:6333}")
     private String qdrantBaseUrl;
+
+    @Value("${qdrant.api-key:}")
+    private String qdrantApiKey;
 
     public ExtractResponse extract(ExtractRequest request) {
         try {
@@ -39,6 +45,7 @@ public class AIServiceClient {
         try {
             return restClient.post()
                     .uri(aiServiceUrl + "/api/v1/extract")
+                    .header("X-Internal-Secret", internalAiSecret)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(request)
@@ -59,6 +66,7 @@ public class AIServiceClient {
         try {
             return restClient.post()
                     .uri(aiServiceUrl + "/api/v1/chat")
+                    .header("X-Internal-Secret", internalAiSecret)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(request)
@@ -78,6 +86,7 @@ public class AIServiceClient {
         try {
             return restClient.post()
                     .uri(aiServiceUrl + "/api/v1/search")
+                    .header("X-Internal-Secret", internalAiSecret)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(request)
@@ -90,12 +99,10 @@ public class AIServiceClient {
 
     public com.xuancong.student_management.dto.docs.ForecastResponse forecastSeries(java.util.List<com.xuancong.student_management.dto.docs.MonthlyTotalResponse> history, int horizonMonths) {
         try {
-            // build request payload
             java.util.Map<String, Object> payload = new java.util.HashMap<>();
             java.util.List<java.util.Map<String, Object>> series = new java.util.ArrayList<>();
             for (com.xuancong.student_management.dto.docs.MonthlyTotalResponse m : history) {
                 java.util.Map<String, Object> row = new java.util.HashMap<>();
-                // convert period YYYY-MM to ds YYYY-MM-01
                 String ds = m.getPeriod() + "-01";
                 row.put("ds", ds);
                 row.put("y", m.getTotalValue() != null ? m.getTotalValue().doubleValue() : 0.0);
@@ -106,6 +113,7 @@ public class AIServiceClient {
 
             return restClient.post()
                     .uri(aiServiceUrl + "/api/v1/ml/forecast")
+                    .header("X-Internal-Secret", internalAiSecret)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(payload)
@@ -116,15 +124,30 @@ public class AIServiceClient {
         }
     }
 
+    public com.xuancong.student_management.dto.chat.OverviewResponse getOverview(com.xuancong.student_management.dto.chat.OverviewRequest request) {
+        try {
+            return restClient.post()
+                    .uri(aiServiceUrl + "/api/v1/overview")
+                    .header("X-Internal-Secret", internalAiSecret)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .body(com.xuancong.student_management.dto.chat.OverviewResponse.class);
+        } catch (RestClientException e) {
+            log.error("Call AI overview service failed: {}", e.getMessage());
+            throw new RuntimeException("Call AI overview service failed: " + e.getMessage(), e);
+        }
+    }
+
     public void deleteDocument(Long documentId) {
         if (documentId == null) return;
-        boolean deletedViaAiService = false;
         try {
             restClient.delete()
                     .uri(aiServiceUrl + "/api/v1/documents/" + documentId)
+                    .header("X-Internal-Secret", internalAiSecret)
                     .retrieve()
                     .toBodilessEntity();
-            deletedViaAiService = true;
             log.info("AI service successfully deleted Qdrant vectors for document {}", documentId);
         } catch (Exception e) {
             log.warn("Calling AI service to delete document {} failed: {}", documentId, e.getMessage());
@@ -144,13 +167,17 @@ public class AIServiceClient {
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
                     .connectTimeout(java.time.Duration.ofMillis(1000))
                     .build();
-            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+            var requestBuilder = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create(qdrantUrl))
                     .header("Content-Type", "application/json")
                     .timeout(java.time.Duration.ofMillis(2000))
-                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload))
-                    .build();
-            java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload));
+
+            if (qdrantApiKey != null && !qdrantApiKey.isBlank()) {
+                requestBuilder.header("api-key", qdrantApiKey);
+            }
+
+            java.net.http.HttpResponse<String> response = client.send(requestBuilder.build(), java.net.http.HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 log.info("Directly deleted Qdrant vectors for document {}: {}", documentId, response.body());
             } else {

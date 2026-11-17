@@ -55,6 +55,7 @@ public class ChatService {
     private final FileManagementService fileManagementService;
     private final ActivityLogManagementService activityLogManagementService;
     private final AgentExecutionTraceRepository agentExecutionTraceRepository;
+    private final com.xuancong.student_management.repository.DocumentChunkRepository documentChunkRepository;
 
     @Transactional
     public ChatSessionResponse getChatSession(Long sessionId) {
@@ -65,7 +66,12 @@ public class ChatService {
                             .session(session.getId().toString())
                             .messages(
                                     messages.stream()
-                                            .map(ChatSessionResponse.Messages::fromChatMessage)
+                                            .map(msg -> ChatSessionResponse.Messages.builder()
+                                                    .id(msg.getId())
+                                                    .messageId(msg.getId())
+                                                    .role(msg.getRole() != null ? msg.getRole().name() : "USER")
+                                                    .content(resolveDocumentLinks(msg.getContent()))
+                                                    .build())
                                             .toList()
                             )
                             .build();
@@ -85,12 +91,21 @@ public class ChatService {
         return sessions.stream()
                 .map(session -> {
                     int messageCount = chatMessageRepository.findBySession_IdOrderByCreatedAtAsc(session.getId()).size();
+                    String docName = null;
+                    try {
+                        List<String> citationFileNames = chatCitationRepository.findCitationFileNamesBySessionId(session.getId());
+                        if (citationFileNames != null && !citationFileNames.isEmpty()) {
+                            docName = citationFileNames.get(0);
+                        }
+                    } catch (Exception ignored) {}
+
                     return ChatSessionSummaryResponse.builder()
                             .id(session.getId().toString())
                             .sessionId(session.getId())
                             .title(session.getTitle())
                             .assistantPersona("Trợ lý AI")
                             .favorite(false)
+                            .documentName(docName)
                             .messageCount(messageCount)
                             .createdAt(session.getCreatedAt())
                             .build();
@@ -132,6 +147,103 @@ public class ChatService {
     }
 
     @Transactional
+    public OverviewResponse getOverview(OverviewRequest request) {
+        User currentUser = getAuthenticatedUser();
+        List<String> allowedDocumentIds = new ArrayList<>();
+        String sourceName = request.getSourceName();
+
+        try {
+            List<FileItem> allActiveFiles = fileItemRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
+            final User finalUser = currentUser;
+
+            List<FileItem> activeFiles = allActiveFiles.stream()
+                    .filter(f -> fileManagementService.hasFileAccess(f, finalUser, PermissionLevel.VIEWER))
+                    .toList();
+
+            String targetFileId = request.getFileId();
+            if ((targetFileId == null || targetFileId.isBlank()) && request.getDocumentId() != null && request.getDocumentId() > 0) {
+                targetFileId = String.valueOf(request.getDocumentId());
+            }
+            String targetFolderId = request.getFolderId();
+
+            if (targetFileId != null && !targetFileId.isBlank()) {
+                try {
+                    Long targetLong = Long.parseLong(targetFileId);
+                    FileItem targetFile = fileItemRepository.findById(targetLong).orElse(null);
+                    if (targetFile != null && fileManagementService.hasFileAccess(targetFile, finalUser, PermissionLevel.VIEWER)) {
+                        allowedDocumentIds = List.of(targetFileId);
+                        request.setDocumentId(targetLong);
+                        try {
+                            List<com.xuancong.student_management.entity.DocumentChunk> dbChunks = documentChunkRepository.findByFile_IdOrderByChunkIndexAsc(targetLong);
+                            if (dbChunks != null && !dbChunks.isEmpty()) {
+                                String combinedText = dbChunks.stream()
+                                        .limit(8)
+                                        .map(com.xuancong.student_management.entity.DocumentChunk::getContent)
+                                        .filter(Objects::nonNull)
+                                        .collect(Collectors.joining("\n\n---\n\n"));
+                                request.setContextText(combinedText);
+                            }
+                        } catch (Exception ex) {
+                            log.warn("Could not load db chunks for overview file {}: {}", targetLong, ex.getMessage());
+                        }
+                        if (sourceName == null || sourceName.isBlank()) {
+                            sourceName = targetFile.getName();
+                        }
+                    }
+                } catch (Exception ignored) {}
+            } else if (targetFolderId != null && !targetFolderId.isBlank() && !"all".equalsIgnoreCase(targetFolderId)) {
+                try {
+                    Long folderLong = Long.parseLong(targetFolderId);
+                    Set<Long> targetFolderIds = getFolderAndSubFolderIds(folderLong);
+                    allowedDocumentIds = activeFiles.stream()
+                            .filter(f -> f.getFolder() != null && targetFolderIds.contains(f.getFolder().getId()))
+                            .map(FileItem::getId)
+                            .filter(Objects::nonNull)
+                            .map(String::valueOf)
+                            .distinct()
+                            .toList();
+                    if (sourceName == null || sourceName.isBlank()) {
+                        Folder fld = folderRepository.findById(folderLong).orElse(null);
+                        if (fld != null) sourceName = fld.getName();
+                    }
+                } catch (Exception ignored) {}
+            } else {
+                allowedDocumentIds = activeFiles.stream()
+                        .map(FileItem::getId)
+                        .filter(Objects::nonNull)
+                        .map(String::valueOf)
+                        .distinct()
+                        .toList();
+                if (sourceName == null || sourceName.isBlank()) {
+                    sourceName = "Toàn bộ Drive";
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error resolving active files for overview: {}", e.getMessage());
+        }
+
+        request.setAllowedDocumentIds(allowedDocumentIds);
+        request.setSourceName(sourceName != null ? sourceName : "Tài liệu");
+        if (currentUser != null) {
+            if (currentUser.getDepartment() != null) request.setDepartmentId(currentUser.getDepartment().getId());
+            if (currentUser.getCompany() != null) request.setCompanyId(currentUser.getCompany().getId());
+        }
+
+        try {
+            return aiService.getOverview(request);
+        } catch (Exception e) {
+            log.error("AI service getOverview failed: {}", e.getMessage());
+            return OverviewResponse.builder()
+                    .summary("Các tài liệu thuộc mục \"" + (sourceName != null ? sourceName : "Tài liệu") + "\" đã sẵn sàng hỗ trợ bạn tra cứu, tóm tắt và đối chiếu số liệu.")
+                    .suggestedQuestions(List.of(
+                            "Tóm tắt các điểm trọng tâm nhất trong " + (sourceName != null ? sourceName : "tài liệu") + ".",
+                            "Liệt kê các số liệu hoặc quyết định quan trọng được ghi nhận.",
+                            "Đưa ra các câu hỏi thường gặp liên quan đến tài liệu này."
+                    ))
+                    .build();
+        }
+    }
+
     public MessageAnswerResponse questionAnswer(ChatRequest chatRequest) {
         String question = chatRequest.question();
         if (question == null || question.isBlank()) {
@@ -194,6 +306,10 @@ public class ChatService {
         }
 
         List<String> allowedDocumentIds = new ArrayList<>();
+        String folderName = null;
+        List<String> subFolderNames = new ArrayList<>();
+        List<String> availableFiles = new ArrayList<>();
+
         try {
             List<FileItem> allActiveFiles = fileItemRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
             final User finalUser = currentUser;
@@ -229,6 +345,10 @@ public class ChatService {
                         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền tra cứu nội dung từ tài liệu này qua AI");
                     }
                     allowedDocumentIds = List.of(targetFileId);
+                    availableFiles.add(targetFile.getName());
+                    if (targetFile.getFolder() != null) {
+                        folderName = targetFile.getFolder().getName();
+                    }
                 } catch (ResponseStatusException rse) {
                     throw rse;
                 } catch (NumberFormatException nfe) {
@@ -241,19 +361,40 @@ public class ChatService {
                 // =========================================================================
                 try {
                     Long folderLong = Long.parseLong(targetFolderId);
+                    Folder targetFolder = folderRepository.findById(folderLong).orElse(null);
+                    if (targetFolder != null) {
+                        folderName = targetFolder.getName();
+                    }
+
                     Set<Long> targetFolderIds = getFolderAndSubFolderIds(folderLong);
 
+                    // Lấy danh sách thư mục con trực tiếp
+                    List<Folder> allFolders = folderRepository.findAll();
+                    subFolderNames = allFolders.stream()
+                            .filter(f -> f.getParent() != null && f.getParent().getId().equals(folderLong))
+                            .map(Folder::getName)
+                            .toList();
+
                     // CHỈ LỌC các file nằm trong thư mục này VÀ user phải có quyền VIEWER
-                    allowedDocumentIds = activeFiles.stream()
+                    List<FileItem> scopedFiles = activeFiles.stream()
                             .filter(f -> f.getFolder() != null && targetFolderIds.contains(f.getFolder().getId()))
+                            .toList();
+
+                    allowedDocumentIds = scopedFiles.stream()
                             .map(FileItem::getId)
                             .filter(Objects::nonNull)
                             .map(String::valueOf)
                             .distinct()
                             .toList();
 
-                    log.info("Chat scoped to folder ID {}: Found {} permitted files for user {}", 
-                            folderLong, allowedDocumentIds.size(), finalUser != null ? finalUser.getEmail() : "anonymous");
+                    availableFiles = scopedFiles.stream()
+                            .map(FileItem::getName)
+                            .filter(Objects::nonNull)
+                            .distinct()
+                            .toList();
+
+                    log.info("Chat scoped to folder ID {} ({}): Found {} permitted files for user {}", 
+                            folderLong, folderName, allowedDocumentIds.size(), finalUser != null ? finalUser.getEmail() : "anonymous");
                 } catch (NumberFormatException nfe) {
                     log.warn("Invalid folderId format: {}", targetFolderId);
                     allowedDocumentIds = List.of();
@@ -263,10 +404,17 @@ public class ChatService {
                 // =========================================================================
                 // TRƯỜNG HỢP 3: Hỏi trên TOÀN BỘ DRIVE
                 // =========================================================================
+                folderName = "Toàn bộ Drive";
                 allowedDocumentIds = activeFiles.stream()
                         .map(FileItem::getId)
                         .filter(Objects::nonNull)
                         .map(String::valueOf)
+                        .distinct()
+                        .toList();
+
+                availableFiles = activeFiles.stream()
+                        .map(FileItem::getName)
+                        .filter(Objects::nonNull)
                         .distinct()
                         .toList();
             }
@@ -292,6 +440,9 @@ public class ChatService {
                             .mode(mode)
                             .modelProvider(modelProvider)
                             .allowedDocumentIds(allowedDocumentIds)
+                            .folderName(folderName)
+                            .subFolderNames(subFolderNames)
+                            .availableFiles(availableFiles)
                             .build()
             );
         } catch (Exception e) {
@@ -302,6 +453,7 @@ public class ChatService {
         String answerText = ragResponse != null && ragResponse.answer() != null
                 ? ragResponse.answer()
                 : "Hệ thống AI đã nhận được câu hỏi của bạn: \"" + question + "\". Dữ liệu đang được phân tích.";
+        answerText = resolveDocumentLinks(answerText);
 
         ChatMessage assistantMessage = new ChatMessage();
         assistantMessage.setSession(chatSession);
@@ -465,4 +617,33 @@ public class ChatService {
         }
         return result;
     }
+
+    public String resolveDocumentLinks(String text) {
+        if (text == null || text.isBlank() || !text.toLowerCase().contains("tài liệu")) {
+            return text;
+        }
+        try {
+            java.util.regex.Pattern docPattern = java.util.regex.Pattern.compile("(?i)(?:\\*\\*)?Tài liệu\\s*#?(\\d+)(?:\\*\\*)?");
+            java.util.regex.Matcher matcher = docPattern.matcher(text);
+            StringBuilder sb = new StringBuilder();
+            while (matcher.find()) {
+                try {
+                    Long docId = Long.parseLong(matcher.group(1));
+                    FileItem fi = fileItemRepository.findById(docId).orElse(null);
+                    if (fi != null) {
+                        matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement("[" + fi.getName() + "](/files?fileId=" + docId + ")"));
+                    } else {
+                        matcher.appendReplacement(sb, matcher.group(0));
+                    }
+                } catch (Exception ex) {
+                    matcher.appendReplacement(sb, matcher.group(0));
+                }
+            }
+            matcher.appendTail(sb);
+            return sb.toString();
+        } catch (Exception e) {
+            return text;
+        }
+    }
+
 }

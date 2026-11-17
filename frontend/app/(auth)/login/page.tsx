@@ -83,6 +83,10 @@ export default function LoginPage() {
 
     const handleGoogleSignInClick = () => {
         const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "328719666150-q2jcea6fk54u1q71soo2puql4lgvbs8i.apps.googleusercontent.com";
+        if (!clientId) {
+            toast.error("Google Client ID chưa được cấu hình trong biến môi trường (NEXT_PUBLIC_GOOGLE_CLIENT_ID).");
+            return;
+        }
 
         if (typeof window !== "undefined" && (window as any).google?.accounts?.oauth2) {
             try {

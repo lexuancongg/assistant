@@ -127,7 +127,7 @@ public class AuthController {
 
     private static final org.springframework.web.client.RestTemplate GOOGLE_REST_TEMPLATE = new org.springframework.web.client.RestTemplate();
 
-    @org.springframework.beans.factory.annotation.Value("${google.client-id:328719666150-q2jcea6fk54u1q71soo2puql4lgvbs8i.apps.googleusercontent.com}")
+    @org.springframework.beans.factory.annotation.Value("${google.client-id:}")
     private String googleClientId;
 
     @PostMapping("/google-login")
@@ -147,6 +147,12 @@ public class AuthController {
                 String url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken.trim();
                 Map<?, ?> googleUser = GOOGLE_REST_TEMPLATE.getForObject(url, Map.class);
                 if (googleUser != null && googleUser.get("email") != null) {
+                    String aud = (String) googleUser.get("aud");
+                    if (googleClientId != null && !googleClientId.isBlank() && !googleClientId.equals(aud)) {
+                        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                                "message", "Token Google không hợp lệ: Client ID (Audience) không khớp."
+                        ));
+                    }
                     email = (String) googleUser.get("email");
                     name = (String) googleUser.get("name");
                     avatarUrl = (String) googleUser.get("picture");

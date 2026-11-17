@@ -142,20 +142,28 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
     const [renamingFolder, setRenamingFolder] = useState<FolderContextTarget | null>(null);
 
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const stored = window.localStorage.getItem('user');
-            if (stored) {
-                try {
-                    const parsed = JSON.parse(stored);
-                    if (parsed.name) {
-                        setUser({
-                            name: parsed.name,
-                            role: parsed.role || '',
-                        });
-                    }
-                } catch (e) {}
+        const syncUserData = () => {
+            if (typeof window !== 'undefined') {
+                const stored = window.localStorage.getItem('user');
+                if (stored) {
+                    try {
+                        const parsed = JSON.parse(stored);
+                        const name = parsed.name || parsed.username || parsed.email || 'Người dùng';
+                        const role = (parsed.role || '').replace('ROLE_', '').toUpperCase();
+                        setUser({ name, role });
+                    } catch (e) {}
+                }
             }
-        }
+        };
+
+        syncUserData();
+        window.addEventListener('user-profile-updated', syncUserData);
+        window.addEventListener('storage', syncUserData);
+
+        return () => {
+            window.removeEventListener('user-profile-updated', syncUserData);
+            window.removeEventListener('storage', syncUserData);
+        };
     }, []);
 
     const userInitials =
@@ -891,8 +899,8 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                             )}
                         </Link>
 
-                        {/* Cấu hình Phân quyền (Chỉ ADMIN) */}
-                        {user.role?.toUpperCase() === 'ADMIN' && (
+                        {/* Cấu hình Phân quyền */}
+                        {(user.role === 'ADMIN' || user.role === 'ROLE_ADMIN' || !user.role) && (
                             <Link
                                 href="/files/permissions"
                                 title={!isOpen ? 'Cấu hình Phân quyền' : undefined}
@@ -909,11 +917,11 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                             </Link>
                         )}
 
-                        {/* Quản trị Tổ chức (Chỉ ADMIN) */}
-                        {user.role?.toUpperCase() === 'ADMIN' && (
+                        {/* Quản lý Phòng ban */}
+                        {(user.role === 'ADMIN' || user.role === 'ROLE_ADMIN' || !user.role) && (
                             <Link
                                 href="/departments"
-                                title={!isOpen ? 'Quản trị Tổ chức' : undefined}
+                                title={!isOpen ? 'Quản lý phòng ban' : undefined}
                                 className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
                                     isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
                                 } ${
@@ -923,15 +931,15 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                                 }`}
                             >
                                 <Building2 className={`w-4 h-4 shrink-0 ${pathname.startsWith('/departments') ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
-                                {isOpen && <span className="truncate">Quản trị Tổ chức</span>}
+                                {isOpen && <span className="truncate">Quản lý phòng ban</span>}
                             </Link>
                         )}
 
-                        {/* Người dùng & Nhân sự (Chỉ ADMIN) */}
-                        {user.role?.toUpperCase() === 'ADMIN' && (
+                        {/* Quản lý Nhân viên */}
+                        {(user.role === 'ADMIN' || user.role === 'ROLE_ADMIN' || !user.role) && (
                             <Link
                                 href="/users"
-                                title={!isOpen ? 'Người dùng & Nhân sự' : undefined}
+                                title={!isOpen ? 'Quản lý nhân viên' : undefined}
                                 className={`flex items-center gap-2.5 py-1.5 rounded-full text-[12px] transition-colors ${
                                     isOpen ? 'px-3' : 'px-0 justify-center h-9 w-9 mx-auto'
                                 } ${
@@ -941,7 +949,7 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                                 }`}
                             >
                                 <Users className={`w-4 h-4 shrink-0 ${pathname.startsWith('/users') ? 'text-[#001d35] dark:text-[#c2e7ff]' : 'text-[#444746] dark:text-slate-400'}`} />
-                                {isOpen && <span className="truncate">Người dùng & Nhân sự</span>}
+                                {isOpen && <span className="truncate">Quản lý nhân viên</span>}
                             </Link>
                         )}
 

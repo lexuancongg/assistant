@@ -5,7 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
-import java.util.UUID;
 
 public interface FileItemRepository extends JpaRepository<FileItem, Long> {
 
@@ -21,6 +20,12 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
     List<FileItem> findByFolderId(Long folderId);
 
     long countByAiIndexedTrue();
+
+    /** Kiểm tra trùng tên file trong cùng thư mục (chưa bị xóa) */
+    boolean existsByCompanyIdAndFolderIdAndNameIgnoreCaseAndDeletedAtIsNull(Long companyId, Long folderId, String name);
+
+    /** Kiểm tra trùng tên file tại thư mục gốc (folder == null, chưa bị xóa) */
+    boolean existsByCompanyIdAndFolderIsNullAndNameIgnoreCaseAndDeletedAtIsNull(Long companyId, String name);
 
     /** File active (chưa bị xóa mềm) */
     List<FileItem> findByCompanyIdAndDeletedAtIsNull(Long companyId);

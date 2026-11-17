@@ -24,11 +24,23 @@ logger = logging.getLogger(__name__)
 class DocumentReader:
     """
     Đọc nội dung text từ nhiều loại file khác nhau.
-    Hỗ trợ: PDF (text + scanned), IMAGE, DOCX, EMAIL (.eml / .msg)
+    Hỗ trợ: PDF (text + scanned), IMAGE, DOCX, XLSX/XLS, EMAIL (.eml / .msg),
+    TEXT & CODE (.md, .txt, .json, .csv, .yaml, .xml, .sql, v.v.), HTML.
     Hỗ trợ nguồn: local path, S3 URI (s3://bucket/key), HTTP(S) URL
     """
 
-    SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".docx", ".xlsx", ".xls", ".eml", ".msg"}
+    TEXT_EXTENSIONS = {
+        ".md", ".markdown", ".txt", ".json", ".csv", ".tsv",
+        ".yaml", ".yml", ".xml", ".log", ".sql", ".py", ".java",
+        ".js", ".ts", ".jsx", ".tsx", ".css"
+    }
+    HTML_EXTENSIONS = {".html", ".htm"}
+
+    SUPPORTED_EXTENSIONS = {
+        ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tiff",
+        ".docx", ".xlsx", ".xls", ".eml", ".msg",
+        *TEXT_EXTENSIONS, *HTML_EXTENSIONS
+    }
 
     def __init__(self):
         self.pdf_service = PdfService()
@@ -75,6 +87,10 @@ class DocumentReader:
             return self._read_excel(file_path)
         if ext in {".eml", ".msg"}:
             return self._read_email(file_path)
+        if ext in self.TEXT_EXTENSIONS:
+            return self._read_text(file_path)
+        if ext in self.HTML_EXTENSIONS:
+            return self._read_html(file_path)
 
         raise ValueError(f"Unsupported file type: {ext}")
 
@@ -255,25 +271,84 @@ class DocumentReader:
         return "\n".join(parts)
 
     # =========================================================
+    # PLAIN TEXT & CODE (.md, .txt, .json, .csv, .yaml, v.v.)
+    # =========================================================
+
+    def _read_text(self, file_path: str) -> str:
+        """Đọc file text / markdown / code với nhiều bộ mã hóa khác nhau."""
+        for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252", "shift_jis"):
+            try:
+                with open(file_path, "r", encoding=enc) as f:
+                    content = f.read()
+                    if content:
+                        return content
+            except UnicodeDecodeError:
+                continue
+            except Exception as e:
+                logger.error("Lỗi khi đọc file text %s với encoding %s: %s", file_path, enc, e)
+                break
+
+        # Fallback với errors='replace'
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except Exception as e:
+            logger.error("Không thể đọc file text %s: %s", file_path, e)
+            raise
+
+    # =========================================================
+    # HTML
+    # =========================================================
+
+    def _read_html(self, file_path: str) -> str:
+        """Đọc và bóc tách nội dung text từ file HTML/HTM."""
+        raw_text = self._read_text(file_path)
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(raw_text, "html.parser")
+            for tag in soup(["script", "style", "head", "title", "meta"]):
+                tag.decompose()
+            text = soup.get_text(separator="\n")
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            return "\n".join(chunk for chunk in chunks if chunk)
+        except Exception:
+            import re
+            cleaned = re.sub(r'<script[^>]*>([\S\s]*?)</script>', '', raw_text, flags=re.IGNORECASE)
+            cleaned = re.sub(r'<style[^>]*>([\S\s]*?)</style>', '', cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r'<[^>]+>', ' ', cleaned)
+            return re.sub(r'\s+', ' ', cleaned).strip()
+
+    # =========================================================
     # FILE RESOLUTION (local / S3 / HTTP)
     # =========================================================
 
     def _resolve_file(self, file_path: str) -> str:
         """
-        - Local path → nếu tồn tại trên đĩa thì trả về nguyên bản.
         - S3 URI (s3://bucket/key) hoặc S3 Key (docs/...) → download về temp file qua boto3.
-        - HTTP(S) URL → download về temp file qua requests.
+        - HTTP(S) URL → download về temp file qua requests (chặn SSRF).
+        - Local path → kiểm tra an toàn (chống Path Traversal).
         """
         if file_path.startswith("s3://"):
             return self._download_from_s3(file_path)
 
         if file_path.startswith(("http://", "https://")):
+            parsed = urlparse(file_path)
+            host = (parsed.hostname or "").lower()
+            if host in ["169.254.169.254", "metadata.google.internal", "localhost", "127.0.0.1", "0.0.0.0"]:
+                raise ValueError("Yêu cầu URL không hợp lệ hoặc bị chặn vì lý do bảo mật SSRF.")
             return self._download_from_url(file_path)
 
         if not os.path.exists(file_path):
             return self._download_from_s3(file_path)
 
-        return file_path
+        resolved_local = os.path.abspath(file_path)
+        temp_dir = os.path.abspath(tempfile.gettempdir())
+        curr_dir = os.path.abspath(os.getcwd())
+        if not (resolved_local.startswith(temp_dir) or resolved_local.startswith(curr_dir)):
+            return self._download_from_s3(file_path)
+
+        return resolved_local
 
     def _download_from_s3(self, file_path: str) -> str:
         if file_path.startswith("s3://"):

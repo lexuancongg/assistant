@@ -77,6 +77,13 @@ public class ChatController {
         return ResponseEntity.ok(this.chatService.getChatStats());
     }
 
+    @PostMapping("/overview")
+    public ResponseEntity<com.xuancong.student_management.dto.chat.OverviewResponse> getOverview(
+            @RequestBody com.xuancong.student_management.dto.chat.OverviewRequest request
+    ) {
+        return ResponseEntity.ok(this.chatService.getOverview(request));
+    }
+
     @PostMapping("/ask")
     public ResponseEntity<MessageAnswerResponse> questionAnswer(
             @RequestBody ChatRequest chatRequest

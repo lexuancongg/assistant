@@ -30,6 +30,11 @@ public class NotificationWebSocketService {
     private final UserRepository userRepository;
 
     public void sendToUser(Long userId, NotificationMessage notification) {
+        if (userId == null) return;
+        if (notification != null && notification.getUploaderId() != null && notification.getUploaderId().equals(userId)) {
+            // Không gửi thông báo tải tệp lại cho chính người tải lên
+            return;
+        }
         log.info("WebSocket sending notification to user {}: {}", userId, notification.getTitle());
         messagingTemplate.convertAndSend("/topic/user/" + userId, notification);
     }
@@ -82,11 +87,14 @@ public class NotificationWebSocketService {
                 .timestamp(Instant.now().toString())
                 .build();
 
-        // Broadcast to general channel
-        broadcast(notif);
+        Long uploaderId = uploader != null ? uploader.getId() : null;
+        Set<Long> notifiedUsers = new HashSet<>();
+        if (uploaderId != null) {
+            notifiedUsers.add(uploaderId);
+        }
 
         if (folderId == null) {
-            // Root file: Gửi cho phòng ban của uploader hoặc toàn công ty
+            // Root file: Gửi cho công ty
             if (fileItem.getCompany() != null && fileItem.getCompany().getId() != null) {
                 sendToCompany(fileItem.getCompany().getId(), notif);
             }
@@ -108,8 +116,6 @@ public class NotificationWebSocketService {
             }
             return;
         }
-
-        Set<Long> notifiedUsers = new HashSet<>();
 
         for (FolderPermission p : permissions) {
             if (p.getSubjectType() == PermissionSubjectType.DEPARTMENT && p.getSubjectId() != null) {

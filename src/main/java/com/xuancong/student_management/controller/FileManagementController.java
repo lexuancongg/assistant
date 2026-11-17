@@ -243,4 +243,41 @@ public class FileManagementController {
         String name = body != null ? body.get("name") : null;
         return ResponseEntity.ok(fileManagementService.renameFile(id, name));
     }
+
+    @PostMapping("/{id}/download-token")
+    public ResponseEntity<?> createDownloadToken(@PathVariable Long id) {
+        return ResponseEntity.ok(fileManagementService.createDownloadToken(id));
+    }
+
+    @GetMapping("/download")
+    public ResponseEntity<?> downloadFileByToken(@RequestParam String token) {
+        return fileManagementService.downloadByToken(token);
+    }
+
+
+    @PostMapping("/{id}/copy")
+    public ResponseEntity<?> copyFile(@PathVariable Long id) {
+        return ResponseEntity.ok(fileManagementService.copyFile(id));
+    }
+
+
+    @GetMapping("/{id}/onlyoffice-config")
+    public ResponseEntity<?> getOnlyOfficeConfig(@PathVariable Long id) {
+        return ResponseEntity.ok(fileManagementService.getOnlyOfficeConfig(id));
+    }
+
+    @PostMapping("/{id}/onlyoffice-save-options")
+    public ResponseEntity<?> setOnlyOfficeSaveOptions(
+            @PathVariable Long id,
+            @RequestBody com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest request
+    ) {
+        fileManagementService.setOnlyOfficeSaveOptions(id, request);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    @PostMapping("/{id}/onlyoffice-callback")
+    public ResponseEntity<?> onlyOfficeCallback(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        return ResponseEntity.ok(fileManagementService.handleOnlyOfficeCallback(id, body));
+    }
+
 }

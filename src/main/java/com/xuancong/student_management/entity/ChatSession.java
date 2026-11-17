@@ -7,7 +7,6 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Entity
 @Table(name = "chat_sessions")
@@ -26,6 +25,12 @@ public class ChatSession {
 
     @Column(length = 255)
     private String title;
+
+    @Column(name = "document_id")
+    private Long documentId;
+
+    @Column(name = "document_name", length = 255)
+    private String documentName;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

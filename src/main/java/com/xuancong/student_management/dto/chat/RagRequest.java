@@ -11,7 +11,11 @@ public record RagRequest(
         List<ChatHistoryMessage> history,
         String mode,
         String modelProvider,
-        List<String> allowedDocumentIds
+        List<String> allowedDocumentIds,
+        String folderName,
+        List<String> subFolderNames,
+        List<String> availableFiles,
+        String contextText
 ) {
     public record ChatHistoryMessage(
             String role,

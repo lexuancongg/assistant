@@ -1,4 +1,5 @@
 'use client';
+import DOMPurify from 'dompurify';
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -24,6 +25,7 @@ import WordDocumentEditor from '@/components/files/WordDocumentEditor';
 import ExcelSpreadsheetViewer from '@/components/files/ExcelSpreadsheetViewer';
 import toast from 'react-hot-toast';
 import { API_ROOT } from '@/utils/api/apiClientFixed';
+import { recordFileOpened } from '@/utils/fileOpenedTracker';
 
 interface FileContentViewerProps {
     file: FileItemDto;
@@ -67,6 +69,12 @@ export default function FileContentViewer({
 
     // Chế độ: 'view' (xem trước) hoặc 'edit' (chỉnh sửa trực tiếp)
     const [viewerMode, setViewerMode] = useState<'view' | 'edit'>('view');
+
+    useEffect(() => {
+        if (file?.id) {
+            recordFileOpened(file.id);
+        }
+    }, [file?.id]);
 
     // State chỉnh sửa văn bản trực tiếp
     const [editorContent, setEditorContent] = useState<string>('');
@@ -658,7 +666,7 @@ export default function FileContentViewer({
                                 <div className="max-w-4xl mx-auto bg-white rounded-2xl p-8 sm:p-12 border border-slate-200 shadow-xs">
                                     <div
                                         className="prose prose-slate max-w-none text-slate-800 text-sm leading-relaxed"
-                                        dangerouslySetInnerHTML={{ __html: docxHtml }}
+                                        dangerouslySetInnerHTML={{ __html: typeof window !== "undefined" ? DOMPurify.sanitize(docxHtml) : docxHtml }}
                                     />
                                 </div>
                             ) : readerText ? (

@@ -134,6 +134,14 @@ public class S3FileService {
     }
 
     public String generatePresignedUrl(String keyOrUrl, Duration expiration) {
+        return generatePresignedUrl(keyOrUrl, expiration, null);
+    }
+
+    public String generatePresignedUrl(String keyOrUrl, Duration expiration, String responseContentType) {
+        return generatePresignedUrl(keyOrUrl, expiration, responseContentType, null);
+    }
+
+    public String generatePresignedUrl(String keyOrUrl, Duration expiration, String responseContentType, String responseContentDisposition) {
         if (keyOrUrl == null || keyOrUrl.isBlank() || s3Presigner == null) {
             return null;
         }
@@ -147,7 +155,15 @@ public class S3FileService {
             final String finalKey = key;
             GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
                     .signatureDuration(expiration != null ? expiration : Duration.ofMinutes(30))
-                    .getObjectRequest(b -> b.bucket(bucketName).key(finalKey))
+                    .getObjectRequest(b -> {
+                        b.bucket(bucketName).key(finalKey);
+                        if (responseContentType != null && !responseContentType.isBlank()) {
+                            b.responseContentType(responseContentType);
+                        }
+                        if (responseContentDisposition != null && !responseContentDisposition.isBlank()) {
+                            b.responseContentDisposition(responseContentDisposition);
+                        }
+                    })
                     .build();
             return s3Presigner.presignGetObject(presignRequest).url().toString();
         } catch (Exception e) {
@@ -177,4 +193,51 @@ public class S3FileService {
             log.error("Failed to delete S3 object key={}: {}", key, e.getMessage());
         }
     }
+
+    public String copyFile(String sourceKeyOrUrl, String newKey) {
+        if (sourceKeyOrUrl == null || sourceKeyOrUrl.isBlank() || newKey == null || newKey.isBlank()) {
+            return null;
+        }
+        String sourceKey = sourceKeyOrUrl;
+        if (sourceKeyOrUrl.contains("docs/")) {
+            sourceKey = sourceKeyOrUrl.substring(sourceKeyOrUrl.indexOf("docs/"));
+        } else if (sourceKeyOrUrl.contains("thumbnails/")) {
+            sourceKey = sourceKeyOrUrl.substring(sourceKeyOrUrl.indexOf("thumbnails/"));
+        }
+        try {
+            software.amazon.awssdk.services.s3.model.CopyObjectRequest copyRequest =
+                    software.amazon.awssdk.services.s3.model.CopyObjectRequest.builder()
+                            .sourceBucket(bucketName)
+                            .sourceKey(sourceKey)
+                            .destinationBucket(bucketName)
+                            .destinationKey(newKey)
+                            .build();
+            s3Client.copyObject(copyRequest);
+            log.info("Copied S3 object successfully from {} to {}", sourceKey, newKey);
+            return s3Client.utilities().getUrl(builder -> builder.bucket(bucketName).key(newKey)).toExternalForm();
+        } catch (Exception e) {
+            log.error("Failed to copy S3 object from {} to {}: {}", sourceKey, newKey, e.getMessage(), e);
+            throw new RuntimeException("Lỗi sao chép file trên storage", e);
+        }
+    }
+
+
+    public String uploadBytes(String key, byte[] bytes, String contentType) {
+        if (key == null || bytes == null) return null;
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .contentType(contentType != null ? contentType : "application/octet-stream")
+                .build();
+
+        s3Client.putObject(
+                request,
+                RequestBody.fromBytes(bytes)
+        );
+
+        return s3Client.utilities()
+                .getUrl(builder -> builder.bucket(bucketName).key(key))
+                .toExternalForm();
+    }
+
 }

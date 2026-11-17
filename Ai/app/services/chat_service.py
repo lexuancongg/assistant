@@ -10,7 +10,7 @@ from app.services.embedding_service import EmbeddingService
 from app.services.qdrant_service import QdrantService
 from app.services.reranker_service import RerankerService
 from app.services.agent_service import EnterpriseAgentEngine
-from app.schemas.chat.chat import RagRequest, RagResponse, SourceChunk, AgentTraceStep
+from app.schemas.chat.chat import RagRequest, RagResponse, SourceChunk, AgentTraceStep, OverviewRequest, OverviewResponse
 from app.schemas.chat.search import SearchRequest, SearchResponse, SearchSourceChunk
 from app.utils.retry import retry
 
@@ -80,7 +80,11 @@ class ChatService:
                 department_id=getattr(request, "departmentId", None),
                 company_id=getattr(request, "companyId", None),
                 history=request.history,
-                model_provider=request.modelProvider
+                model_provider=request.modelProvider,
+                folder_name=getattr(request, "folderName", None),
+                sub_folder_names=getattr(request, "subFolderNames", None),
+                available_files=getattr(request, "availableFiles", None),
+                context_text=getattr(request, "contextText", None),
             )
             return RagResponse(
                 answer=workflow_res.answer,
@@ -157,7 +161,23 @@ class ChatService:
                 history_lines.append(f"**{role}:** {message.content}")
             history_text = "### LỊCH SỬ CUỘC TRÒ CHUYỆN GẦN ĐÂY:\n" + "\n".join(history_lines) + "\n\n"
 
-        user_content = f"""{history_text}### NGỮ CẢNH TRÍCH XUẤT TỪ NỘI DUNG TÀI LIỆU (HYBRID RAG):
+        metadata_lines = []
+        folder_name = getattr(request, "folderName", None)
+        sub_folder_names = getattr(request, "subFolderNames", None)
+        available_files = getattr(request, "availableFiles", None)
+        if folder_name:
+            metadata_lines.append(f"- Phạm vi / Thư mục hiện tại: **{folder_name}**")
+        if sub_folder_names and len(sub_folder_names) > 0:
+            metadata_lines.append(f"- Thư mục con trực thuộc ({len(sub_folder_names)} thư mục): {', '.join(sub_folder_names)}")
+        if available_files and len(available_files) > 0:
+            metadata_lines.append(f"- Tổng số lượng tài liệu/tệp trong phạm vi: **{len(available_files)} tệp**")
+            metadata_lines.append("- Danh sách tất cả các tệp hiện có trong phạm vi truy vấn:")
+            for idx, fn in enumerate(available_files, 1):
+                metadata_lines.append(f"  {idx}. {fn}")
+        metadata_str = "\n".join(metadata_lines)
+        metadata_sec = f"### CẤU TRÚC THƯ MỤC & DANH MỤC TÀI LIỆU HIỆN CÓ CỦA HỆ THỐNG:\n{metadata_str}\n\n" if metadata_str else ""
+
+        user_content = f"""{history_text}{metadata_sec}### NGỮ CẢNH TRÍCH XUẤT TỪ NỘI DUNG TÀI LIỆU (HYBRID RAG):
 {context if context else "(Không có đoạn trích nào từ tài liệu)"}
 
 ---
@@ -243,3 +263,107 @@ class ChatService:
         ]
 
         return SearchResponse(sources=sources)
+
+
+    def get_overview(self, request: OverviewRequest) -> OverviewResponse:
+        source_name = request.sourceName or "Tài liệu"
+
+        context_text = ""
+        if request.contextText and request.contextText.strip():
+            context_text = request.contextText.strip()[:4000]
+
+        if not context_text:
+            candidate_chunks = []
+            try:
+                summary_query_vec = self.embedding_service.embed(["Tóm tắt tổng quan nội dung chính và các chủ đề cốt lõi của tài liệu"], is_query=True)[0]
+                target_doc_id = request.documentId if request.documentId is not None else request.fileId
+                candidate_chunks = self.qdrant_service.search(
+                    query_vector=summary_query_vec,
+                    document_id=target_doc_id,
+                    top_k=8,
+                    allowed_document_ids=request.allowedDocumentIds,
+                    department_id=None,
+                    company_id=None,
+                )
+            except Exception as q_err:
+                logger.warning(f"Failed to query Qdrant for overview: {q_err}")
+
+            if candidate_chunks:
+                context_text = "\n\n".join([f"- Đoạn {i+1}: {c['text'][:600]}" for i, c in enumerate(candidate_chunks[:6])])
+
+        if not context_text:
+            return OverviewResponse(
+                summary=f"Nguồn được chọn bao gồm các tài liệu thuộc mục \"{source_name}\". Hệ thống đã kết nối và sẵn sàng hỗ trợ bạn tra cứu, tóm tắt chi tiết hoặc trích xuất số liệu quan trọng.",
+                suggestedQuestions=[
+                    f"Tóm tắt các điểm trọng tâm nhất trong {source_name}.",
+                    f"Liệt kê các số liệu hoặc quyết định quan trọng được ghi nhận.",
+                    f"Đưa ra các câu hỏi thường gặp liên quan đến {source_name}."
+                ]
+            )
+
+        system_instruction = (
+            "Bạn là Trợ lý AI Thông minh trong hệ thống Google Drive AI Assistant.\n"
+            "Nhiệm vụ: Phân tích các đoạn trích nội dung của tài liệu/thư mục và tạo ra một bản tóm tắt tổng quan súc tích cùng 3 câu hỏi gợi ý thông minh bám sát nội dung thực tế.\n\n"
+            "QUY TẮC BẮT BUỘC:\n"
+            "1. 'summary': Viết một đoạn tóm tắt tổng quan 2 đến 4 câu mô tả chính xác nội dung tài liệu nói về ai/vấn đề/kỹ thuật/quy trình/hồ sơ gì cụ thể (tương tự Google Drive AI). Bắt đầu trực tiếp, tuyệt đối không dùng lời mở đầu sáo rỗng như 'Tài liệu này nói về...', 'Dưới đây là...'.\n"
+            "2. 'suggestedQuestions': Tạo đúng 3 câu hỏi gợi ý thông minh, sâu sắc, bám sát trực tiếp vào các tên riêng, công nghệ, số liệu, quy trình hoặc quyết định có trong nội dung (ví dụ: 'Tóm tắt kinh nghiệm chuyên môn và kỹ năng...', 'Giải thích vai trò của...', 'Phân tích các giải pháp...').\n\n"
+            "BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON:\n"
+            "{\n"
+            '  "summary": "<nội dung tóm tắt>",\n'
+            '  "suggestedQuestions": [\n'
+            '    "<câu hỏi gợi ý 1>",\n'
+            '    "<câu hỏi gợi ý 2>",\n'
+            '    "<câu hỏi gợi ý 3>"\n'
+            '  ]\n'
+            "}"
+        )
+
+        user_content = f"Nguồn tài liệu: {source_name}\n\n### NỘI DUNG TRÍCH XUẤT:\n{context_text}"
+
+        try:
+            import json
+            response = retry(
+                lambda: self.client.models.generate_content(
+                    model=self.model,
+                    contents=user_content,
+                    config={
+                        "system_instruction": system_instruction,
+                        "response_mime_type": "application/json",
+                        "temperature": 0.2,
+                    },
+                )
+            )
+            raw_text = response.text.strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+            data = json.loads(raw_text.strip())
+
+            summary = data.get("summary", "").strip()
+            suggested = data.get("suggestedQuestions", [])
+            if not summary:
+                summary = f"Các tài liệu thuộc mục \"{source_name}\" đã được phân tích ngữ nghĩa, sẵn sàng hỗ trợ bạn tra cứu và đối soát dữ liệu."
+            if not isinstance(suggested, list) or len(suggested) < 3:
+                suggested = [
+                    f"Tóm tắt các điểm trọng tâm nhất trong {source_name}.",
+                    f"Liệt kê các số liệu hoặc quyết định quan trọng được ghi nhận.",
+                    f"Đưa ra các câu hỏi thường gặp liên quan đến {source_name}."
+                ]
+
+            return OverviewResponse(
+                summary=summary,
+                suggestedQuestions=suggested[:3]
+            )
+        except Exception as e:
+            logger.error(f"Error generating AI overview: {e}")
+            return OverviewResponse(
+                summary=f"Các tài liệu thuộc mục \"{source_name}\" đã được phân tích ngữ nghĩa, sẵn sàng hỗ trợ bạn tra cứu và đối soát dữ liệu.",
+                suggestedQuestions=[
+                    f"Tóm tắt những điểm trọng tâm nhất trong {source_name}.",
+                    f"Liệt kê các số liệu hoặc quyết định quan trọng được ghi nhận.",
+                    f"Đưa ra các câu hỏi thường gặp liên quan đến tài liệu này."
+                ]
+            )

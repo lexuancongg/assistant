@@ -350,25 +350,26 @@ public class FolderService {
         Folder current = folder;
         while (current != null) {
             List<FolderPermission> permissions = folderPermissionRepository.findByFolderId(current.getId());
-            // Nếu bị DENY -> từ chối ngay
-            boolean isExplicitlyDenied = permissions.stream().anyMatch(p ->
-                    p.getSubjectType() == PermissionSubjectType.USER
-                    && user.getId().equals(p.getSubjectId())
-                    && p.getLevel() == PermissionLevel.DENY
-            );
-            if (isExplicitlyDenied) {
-                return false;
+            // 1. Quyền cấp riêng cho User luôn có độ ưu tiên cao nhất ghi đè phòng ban
+            java.util.Optional<FolderPermission> userPerm = permissions.stream()
+                    .filter(p -> p.getSubjectType() == PermissionSubjectType.USER && user.getId().equals(p.getSubjectId()))
+                    .findFirst();
+
+            if (userPerm.isPresent()) {
+                PermissionLevel level = userPerm.get().getLevel();
+                if (level == PermissionLevel.DENY) {
+                    return false; // Bị chặn trực tiếp
+                }
+                if (level == PermissionLevel.EDITOR) {
+                    return true; // Được cấp quyền sửa riêng
+                }
+                if (level == PermissionLevel.VIEWER) {
+                    // Được chỉ định rõ ràng chỉ XEM -> Không lấy quyền EDITOR của phòng ban
+                    return false;
+                }
             }
 
-            // Kiểm tra quyền EDITOR trên User
-            boolean hasUserEditor = permissions.stream().anyMatch(p ->
-                    p.getSubjectType() == PermissionSubjectType.USER
-                    && user.getId().equals(p.getSubjectId())
-                    && p.getLevel() == PermissionLevel.EDITOR
-            );
-            if (hasUserEditor) return true;
-
-            // Kiểm tra quyền EDITOR trên Phòng ban của User
+            // 2. Nếu User không có cấu hình riêng, mới xét quyền của Phòng ban (DEPARTMENT)
             if (user.getDepartment() != null) {
                 boolean hasDeptEditor = permissions.stream().anyMatch(p ->
                         p.getSubjectType() == PermissionSubjectType.DEPARTMENT
@@ -396,28 +397,22 @@ public class FolderService {
             return false;
         }
 
-        // Nếu User bị loại trừ (DENY) tại thư mục này -> Từ chối ngay
-        boolean isExplicitlyDenied = permissions.stream().anyMatch(p ->
-                p.getSubjectType() == PermissionSubjectType.USER
-                && user.getId().equals(p.getSubjectId())
-                && p.getLevel() == PermissionLevel.DENY
-        );
-        if (isExplicitlyDenied) {
-            return false;
+        // 1. Quyền cấp riêng cho User
+        java.util.Optional<FolderPermission> userPerm = permissions.stream()
+                .filter(p -> p.getSubjectType() == PermissionSubjectType.USER && user.getId().equals(p.getSubjectId()))
+                .findFirst();
+
+        if (userPerm.isPresent()) {
+            return userPerm.get().getLevel() != PermissionLevel.DENY;
         }
 
-        for (FolderPermission p : permissions) {
-            if (p.getLevel() == PermissionLevel.DENY) continue;
-            // 1. Quyền được cấp trực tiếp cho User
-            if (p.getSubjectType() == PermissionSubjectType.USER && user.getId().equals(p.getSubjectId())) {
-                return true;
-            }
-            // 2. Quyền được cấp cho Phòng ban mà User đang trực thuộc
-            if (p.getSubjectType() == PermissionSubjectType.DEPARTMENT
-                    && user.getDepartment() != null
-                    && user.getDepartment().getId().equals(p.getSubjectId())) {
-                return true;
-            }
+        // 2. Nếu User không có cấu hình riêng, xét theo Phòng ban
+        if (user.getDepartment() != null) {
+            return permissions.stream().anyMatch(p ->
+                    p.getSubjectType() == PermissionSubjectType.DEPARTMENT
+                    && user.getDepartment().getId().equals(p.getSubjectId())
+                    && p.getLevel() != PermissionLevel.DENY
+            );
         }
 
         return false;

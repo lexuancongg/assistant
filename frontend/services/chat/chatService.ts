@@ -1,3 +1,15 @@
+export interface OverviewRequestDto {
+    fileId?: string | number;
+    folderId?: string | number;
+    documentId?: string | number;
+    sourceName?: string;
+}
+
+export interface OverviewResponseDto {
+    summary: string;
+    suggestedQuestions: string[];
+}
+
 import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
 
 export interface ChatSessionSummaryDto {
@@ -80,6 +92,14 @@ class ChatService {
         const qs = favorite === undefined ? '' : `?favorite=${favorite}`;
         const response = await apiClient.get(`${this.managementUrl}${qs}`);
         if (response.ok) return await response.json();
+        throw response;
+    }
+
+    public async getOverview(request: OverviewRequestDto): Promise<OverviewResponseDto> {
+        const response = await apiClient.post(`${this.managementUrl}/overview`, JSON.stringify(request));
+        if (response.ok) {
+            return await response.json();
+        }
         throw response;
     }
 

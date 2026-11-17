@@ -79,8 +79,13 @@ import forderService from '@/services/forder/forderService';
 import fileManagementService, { FileItemDto } from '@/services/files/fileManagementService';
 import { ForderCreateRequest } from '@/models/forder/forder';
 import toast from 'react-hot-toast';
+import ShareModal from '@/components/files/permissions/ShareModal';
+import FolderActionMenu, { calculateFolderMenuPosition, FolderMenuData } from '@/components/files/FolderActionMenu';
+import FileContextMenu, { calculateMenuPosition, FileContextMenuData } from '@/components/files/FileContextMenu';
+import VersionManagementModal from '@/components/files/VersionManagementModal';
+import OnlyOfficeEditorModal from '@/components/files/OnlyOfficeEditorModal';
 
-import apiClient from '@/utils/api/apiClient';
+import apiClient, { API_ROOT, normalizeUrl } from '@/utils/api/apiClientFixed';
 
 // Visual configuration helper for file types (Identical to Home page)
 function getFileTypeConfig(extOrType: string) {
@@ -270,6 +275,157 @@ function FilesContent() {
 
     // Row Action Menu (3-dot)
     const [activeRowMenuId, setActiveRowMenuId] = useState<string | number | null>(null);
+    const [folderActionMenu, setFolderActionMenu] = useState<FolderMenuData | null>(null);
+
+    const handleOpenFolderContextMenu = (subFolder: any, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveRowMenuId(null);
+        setContextMenu(null);
+        if (folderActionMenu && folderActionMenu.folder.id === subFolder.id) {
+            setFolderActionMenu(null);
+            return;
+        }
+        const pos = calculateFolderMenuPosition(e);
+        setFolderActionMenu({ x: pos.x, y: pos.y, folder: subFolder });
+    };
+    const [contextMenu, setContextMenu] = useState<FileContextMenuData | null>(null);
+    const [versionModalFile, setVersionModalFile] = useState<any | null>(null);
+    const [onlyOfficeModalFile, setOnlyOfficeModalFile] = useState<any | null>(null);
+    const [dragOverFolderId, setDragOverFolderId] = useState<string | number | null>(null);
+
+    // Google Drive style snackbar toast for file move: Đã di chuyển “...” vào “...”
+    const [moveToast, setMoveToast] = useState<{
+        message: string;
+        fileIds: (string | number)[];
+        oldFolderId: number | string | null;
+    } | null>(null);
+    const moveToastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const triggerMoveToast = (info: {
+        message: string;
+        fileIds: (string | number)[];
+        oldFolderId: number | string | null;
+    }) => {
+        if (moveToastTimerRef.current) {
+            clearTimeout(moveToastTimerRef.current);
+        }
+        setMoveToast(info);
+        moveToastTimerRef.current = setTimeout(() => {
+            setMoveToast(null);
+        }, 8000);
+    };
+
+    const handleUndoMove = async () => {
+        if (!moveToast) return;
+        const { fileIds, oldFolderId } = moveToast;
+        setMoveToast(null);
+        try {
+            if (fileIds.length > 1) {
+                await fileManagementService.moveFilesBatch(fileIds, oldFolderId);
+            } else {
+                await fileManagementService.moveFile(fileIds[0], oldFolderId);
+            }
+            await loadData(false);
+            window.dispatchEvent(new CustomEvent('folder_tree_updated'));
+        } catch (err: any) {
+            console.error('Failed to undo move:', err);
+            toast.error('Không thể hoàn tác di chuyển tệp');
+        }
+    };
+
+    // Google Drive context menu handler
+    const handleContextMenu = (file: any, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveDetailFile(file);
+        setActiveRowMenuId(null);
+        const idStr = file.id.toString();
+        if (!selectedFileIds.includes(idStr)) {
+            setSelectedFileIds([idStr]);
+        }
+        if (contextMenu && contextMenu.file.id === file.id) {
+            setContextMenu(null);
+            return;
+        }
+        const pos = calculateMenuPosition(e);
+        setContextMenu({ x: pos.x, y: pos.y, file });
+    };
+
+    // Google Drive file drag start with payload and floating drag badge
+    const handleFileDragStart = (file: any, e: React.DragEvent) => {
+        const isSelected = selectedFileIds.includes(file.id.toString());
+        const idsToMove = isSelected && selectedFileIds.length > 1
+            ? selectedFileIds
+            : [file.id.toString()];
+
+        const payload = {
+            fileIds: idsToMove,
+            sourceName: file.name,
+            count: idsToMove.length,
+            oldFolderId: file.folderId || (selectedFolder !== 'all' ? selectedFolder : null),
+        };
+
+        e.dataTransfer.setData('application/json', JSON.stringify(payload));
+        e.dataTransfer.setData('text/plain', file.id.toString());
+        e.dataTransfer.effectAllowed = 'move';
+
+        const dragBadge = document.createElement('div');
+        dragBadge.className = 'fixed -top-96 left-0 bg-[#0b57d0] text-white px-3.5 py-1.5 rounded-full shadow-2xl text-[12px] font-medium flex items-center gap-2 pointer-events-none z-[99999]';
+        dragBadge.innerHTML = `<span>📁</span> <span>Di chuyển ${idsToMove.length > 1 ? idsToMove.length + ' tệp' : file.name}</span>`;
+        document.body.appendChild(dragBadge);
+        e.dataTransfer.setDragImage(dragBadge, 15, 15);
+        setTimeout(() => {
+            if (document.body.contains(dragBadge)) {
+                document.body.removeChild(dragBadge);
+            }
+        }, 0);
+    };
+
+    // Open file in Google Docs Viewer or new tab
+    const handleOpenInGoogleDocs = async (file: any) => {
+        try {
+            const previewData = await fileManagementService.getPreviewUrl(file.id);
+            const targetUrl = previewData?.url;
+            if (!targetUrl) {
+                toast.error('Không tìm thấy đường dẫn tệp để mở!');
+                return;
+            }
+            const ext = (previewData?.fileType || file.fileType || '').toLowerCase();
+            const isDirectBrowserView = ['md', 'markdown', 'txt', 'json', 'log', 'sql', 'py', 'java', 'ts', 'tsx', 'html', 'css', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext);
+            if (isDirectBrowserView) {
+                window.open(targetUrl, '_blank', 'noopener,noreferrer');
+                toast.success('Đã mở tệp ' + file.name);
+                return;
+            }
+            if (targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1')) {
+                toast.error('Tệp đang lưu trên Localhost máy cá nhân (Google Docs cần link internet để nạp). Đang mở bản xem trước...');
+                handleRowClick(file);
+                setShowDetailsDrawer(true);
+                return;
+            }
+            const gDocsUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(targetUrl)}`;
+            window.open(gDocsUrl, '_blank', 'noopener,noreferrer');
+            toast.success('Đã mở tài liệu trên Google Docs!');
+        } catch (err) {
+            console.error('Lỗi khi mở tài liệu:', err);
+            handleRowClick(file);
+            setShowDetailsDrawer(true);
+        }
+    };
+
+    // Duplicate/Copy file
+    const handleCopyFile = async (file: any) => {
+        try {
+            toast.loading(`Đang tạo bản sao của "${file.name}"...`, { id: `copy-${file.id}` });
+            const newFile = await fileManagementService.copyFile(file.id);
+            toast.success(`Đã tạo bản sao: "${newFile.name}"`, { id: `copy-${file.id}` });
+            await loadData(false);
+        } catch (err: any) {
+            console.error('Error copying file:', err);
+            toast.error('Lỗi khi tạo bản sao: ' + (err?.message || 'Không thể tạo bản sao'), { id: `copy-${file.id}` });
+        }
+    };
 
     // Starred Files (persistent in localStorage)
     const [starredIds, setStarredIds] = useState<string[]>([]);
@@ -288,6 +444,38 @@ function FilesContent() {
     const [editingTagsFile, setEditingTagsFile] = useState<FileItemDto | null>(null);
     const [renamingFolder, setRenamingFolder] = useState<{ id: string | number; name: string } | null>(null);
     const [renamingFile, setRenamingFile] = useState<FileItemDto | null>(null);
+    const [shareTarget, setShareTarget] = useState<{
+        isOpen: boolean;
+        folderId?: string | number;
+        folderName?: string;
+        fileId?: string | number;
+        fileName?: string;
+    }>({ isOpen: false });
+
+    // Tự động mở ShareModal nếu URL có param share=true
+    useEffect(() => {
+        const isShare = searchParams.get('share') === 'true';
+        const sFolderId = searchParams.get('folderId');
+        const sFolderName = searchParams.get('name');
+        const sFileId = searchParams.get('fileId');
+        const sFileName = searchParams.get('fileName');
+
+        if (isShare) {
+            if (sFileId) {
+                setShareTarget({
+                    isOpen: true,
+                    fileId: sFileId,
+                    fileName: sFileName || undefined,
+                });
+            } else if (sFolderId) {
+                setShareTarget({
+                    isOpen: true,
+                    folderId: sFolderId,
+                    folderName: sFolderName || undefined,
+                });
+            }
+        }
+    }, [searchParams]);
     const [movingFile, setMovingFile] = useState<FileItemDto | null>(null);
     const [folderContextMenu, setFolderContextMenu] = useState<{
         isOpen: boolean;
@@ -376,7 +564,27 @@ function FilesContent() {
             loadData(true);
         };
         window.addEventListener('folder_tree_updated', handleTreeUpdated);
-        return () => window.removeEventListener('folder_tree_updated', handleTreeUpdated);
+
+        const handleFileMoved = (e: any) => {
+            loadData(false);
+            if (e.detail?.targetFolderName) {
+                const { fileIds, sourceName, targetFolderName, oldFolderId } = e.detail;
+                const count = fileIds?.length || 1;
+                const msg = count > 1
+                    ? `Đã di chuyển ${count} tệp vào “${targetFolderName}”`
+                    : `Đã di chuyển “${sourceName || 'tệp'}” vào “${targetFolderName}”`;
+                triggerMoveToast({
+                    message: msg,
+                    fileIds: fileIds || [],
+                    oldFolderId: oldFolderId ?? null,
+                });
+            }
+        };
+        window.addEventListener('file_moved', handleFileMoved);
+        return () => {
+            window.removeEventListener('folder_tree_updated', handleTreeUpdated);
+            window.removeEventListener('file_moved', handleFileMoved);
+        };
     }, []);
 
     const navigateToFolder = (folderId: string | number, folderName: string) => {
@@ -650,13 +858,32 @@ function FilesContent() {
         if (filterType !== 'all' && filterType !== 'folder') {
             return [];
         }
+        let list = currentSubFolders;
         if (searchTerm.trim()) {
-            return currentSubFolders.filter((f: any) =>
+            list = list.filter((f: any) =>
                 f.name.toLowerCase().includes(searchTerm.toLowerCase().trim())
             );
         }
-        return currentSubFolders;
-    }, [currentSubFolders, filterType, searchTerm]);
+        return [...list].sort((a: any, b: any) => {
+            let comp = 0;
+            if (sortBy === 'name') {
+                comp = a.name.localeCompare(b.name, 'vi', { numeric: true, sensitivity: 'base' });
+            } else if (sortBy === 'updatedAt') {
+                const parseFolderDate = (d?: string) => {
+                    if (!d) return 0;
+                    const vnMatch = d.match(/^(\d{1,2})\s*thg\s*(\d{1,2})(?:,\s*(\d{4}))?/i);
+                    if (vnMatch) {
+                        const year = vnMatch[3] ? parseInt(vnMatch[3], 10) : new Date().getFullYear();
+                        return new Date(year, parseInt(vnMatch[2], 10) - 1, parseInt(vnMatch[1], 10)).getTime();
+                    }
+                    const parsed = new Date(d).getTime();
+                    return isNaN(parsed) ? 0 : parsed;
+                };
+                comp = parseFolderDate(a.updatedAt) - parseFolderDate(b.updatedAt);
+            }
+            return sortDirection === 'asc' ? comp : -comp;
+        });
+    }, [currentSubFolders, filterType, searchTerm, sortBy, sortDirection]);
 
     const countFilesInSubtree = (folderId: string): number => {
         const ids: string[] = [folderId.toString()];
@@ -721,7 +948,36 @@ function FilesContent() {
             if (ddmmyyyyMatch) {
                 return new Date(parseInt(ddmmyyyyMatch[3], 10), parseInt(ddmmyyyyMatch[2], 10) - 1, parseInt(ddmmyyyyMatch[1], 10)).getTime();
             }
-            return new Date(d).getTime() || 0;
+            const vnMatch = d.match(/^(\d{1,2})\s*thg\s*(\d{1,2})(?:,\s*(\d{4}))?/i);
+            if (vnMatch) {
+                const year = vnMatch[3] ? parseInt(vnMatch[3], 10) : new Date().getFullYear();
+                return new Date(year, parseInt(vnMatch[2], 10) - 1, parseInt(vnMatch[1], 10)).getTime();
+            }
+            const timeMatch = d.match(/^(\d{1,2}):(\d{2})$/);
+            if (timeMatch) {
+                const now = new Date();
+                now.setHours(parseInt(timeMatch[1], 10), parseInt(timeMatch[2], 10), 0, 0);
+                return now.getTime();
+            }
+            const parsed = new Date(d).getTime();
+            return isNaN(parsed) ? 0 : parsed;
+        };
+
+        const parseSizeToBytes = (sizeStr?: string): number => {
+            if (!sizeStr || sizeStr === '—' || sizeStr === '-') return -1;
+            const clean = sizeStr.trim().toUpperCase();
+            const match = clean.match(/^([\d.,]+)\s*(B|KB|MB|GB|TB)?$/);
+            if (!match) return 0;
+            const val = parseFloat(match[1].replace(/,/g, ''));
+            const unit = match[2] || 'B';
+            const mult: Record<string, number> = {
+                'B': 1,
+                'KB': 1024,
+                'MB': 1024 * 1024,
+                'GB': 1024 * 1024 * 1024,
+                'TB': 1024 * 1024 * 1024 * 1024,
+            };
+            return val * (mult[unit] || 1);
         };
 
         let result = filesInFolder.filter((file) => {
@@ -810,11 +1066,13 @@ function FilesContent() {
         result.sort((a, b) => {
             let comp = 0;
             if (sortBy === 'name') {
-                comp = a.name.localeCompare(b.name);
+                comp = a.name.localeCompare(b.name, 'vi', { numeric: true, sensitivity: 'base' });
             } else if (sortBy === 'updatedAt') {
                 comp = parseDate(a.updatedAt) - parseDate(b.updatedAt);
             } else if (sortBy === 'size') {
-                comp = (a.size || '').localeCompare(b.size || '');
+                const bytesA = parseSizeToBytes(a.size);
+                const bytesB = parseSizeToBytes(b.size);
+                comp = bytesA - bytesB;
             }
             return sortDirection === 'asc' ? comp : -comp;
         });
@@ -872,7 +1130,7 @@ function FilesContent() {
             }
             await loadData(true);
         } catch (err: any) {
-            toast.error('Lỗi khi xóa file: ' + (err?.message || err));
+            toast.error('Lỗi khi xóa file: ' + (err?.message || 'Thao tác không thành công'));
         } finally {
             setDeletingId(null);
         }
@@ -892,20 +1150,27 @@ function FilesContent() {
             setActiveDetailFile(null);
             await loadData(true);
         } catch (err: any) {
-            toast.error('Lỗi khi xóa tài liệu: ' + (err?.message || err));
+            toast.error('Lỗi khi xóa tài liệu: ' + (err?.message || 'Thao tác không thành công'));
         } 
     };
 
-    const handleDownloadFile = (fileId: string | number, fileName: string) => {
-        const url = `http://localhost:8080/api/v1/files/${fileId}/stream`;
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        a.target = '_blank';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        toast.success(`Đang tải xuống "${fileName}"`);
+    const handleDownloadFile = async (fileId: string | number, fileName: string) => {
+        try {
+            toast.loading('Đang chuẩn bị tải xuống...', { id: `dl-${fileId}` });
+            const tokenRes = await fileManagementService.createDownloadToken(fileId);
+            const targetUrl = tokenRes.directUrl || normalizeUrl(tokenRes.downloadUrl);
+            const a = document.createElement('a');
+            a.href = targetUrl;
+            a.download = tokenRes.fileName || fileName;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            toast.success(`Đang tải xuống "${tokenRes.fileName || fileName}"`, { id: `dl-${fileId}` });
+        } catch (err: any) {
+            console.error('Download error:', err);
+            toast.error('Lỗi khi tải tài liệu: ' + (err?.message || 'Không thể tạo liên kết tải xuống'), { id: `dl-${fileId}` });
+        }
     };
 
     const handleCopyLink = (fileId: string | number) => {
@@ -942,15 +1207,18 @@ function FilesContent() {
                 await fileManagementService.moveFilesBatch(validFileIds, targetFolderId);
             }
 
-            const successTitle = 'Di chuyển tài liệu thành công';
-            const successDesc =
-                count === 1 && firstFileName !== 'tài liệu'
-                    ? `Đã chuyển "${firstFileName}" vào thư mục "${targetFolderName}".`
-                    : `Đã chuyển thành công ${count} tài liệu vào thư mục "${targetFolderName}".`;
+            const msg = count > 1
+                ? `Đã di chuyển ${count} tệp vào “${targetFolderName}”`
+                : `Đã di chuyển “${firstFileName}” vào “${targetFolderName}”`;
 
-            toast.success(`${successTitle}\n${successDesc}`);
+            triggerMoveToast({
+                message: msg,
+                fileIds: validFileIds,
+                oldFolderId: firstFile?.folderId || (selectedFolder !== 'all' ? selectedFolder : null),
+            });
             setSelectedFileIds([]);
-            await loadData(true);
+            await loadData(false);
+            window.dispatchEvent(new CustomEvent('folder_tree_updated'));
         } catch (err: any) {
             let errorTitle = 'Di chuyển tài liệu thất bại';
             let errorMsg = `Không thể di chuyển vào thư mục "${targetFolderName}".`;
@@ -1020,7 +1288,7 @@ function FilesContent() {
             setRenamingFile(null);
             await loadData(true);
         } catch (err: any) {
-            toast.error(`Đổi tên tệp thất bại: ${err?.message || err}`);
+            toast.error(`Đổi tên tệp thất bại: ${err?.message || 'Tên tệp không hợp lệ hoặc đã tồn tại'}`);
         } 
     };
 
@@ -1145,11 +1413,11 @@ function FilesContent() {
                                                         <button
                                                             onClick={() => {
                                                                 setShowFolderMenu(false);
-                                                                router.push(
-                                                                    `/files/permissions?folderId=${selectedFolder}&name=${encodeURIComponent(
-                                                                        selectedFolderName
-                                                                    )}`
-                                                                );
+                                                                setShareTarget({
+                                                                    isOpen: true,
+                                                                    folderId: selectedFolder,
+                                                                    folderName: selectedFolderName,
+                                                                });
                                                             }}
                                                             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-gray-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
                                                         >
@@ -1578,9 +1846,11 @@ function FilesContent() {
                                         if (selectedFileIds.length === 1) {
                                             const f = files.find((x) => x.id.toString() === selectedFileIds[0]);
                                             if (isAdmin) {
-                                                router.push(
-                                                    `/files/${f?.id}/permissions`
-                                                );
+                                                setShareTarget({
+                                                    isOpen: true,
+                                                    fileId: f?.id,
+                                                    fileName: f?.name,
+                                                });
                                             } else {
                                                 setShowRequestAccessModal(true);
                                             }
@@ -1735,7 +2005,7 @@ function FilesContent() {
                                                 )}
                                             </div>
                                         </th>
-                                        <th className="px-4 py-2 whitespace-nowrap w-28 text-right">
+                                        <th className="px-4 py-2 whitespace-nowrap w-28 text-right font-normal">
                                             <div className="relative inline-block text-left sort-menu-container">
                                                 <button
                                                     type="button"
@@ -1747,17 +2017,17 @@ function FilesContent() {
                                                     <span>Sắp xếp</span>
                                                 </button>
                                                 {showSortMenu && (
-                                                    <div className="absolute right-0 mt-1.5 w-44 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-gray-100 dark:border-slate-800 py-1 z-40 text-xs animate-in fade-in">
+                                                    <div className="absolute right-0 mt-1.5 w-44 bg-white dark:bg-[#1E1F20] rounded-xl shadow-lg border border-[#E0E2E0] dark:border-slate-800 py-1.5 z-40 text-[13px] font-normal animate-in fade-in select-none">
                                                         <button
                                                             onClick={() => {
                                                                 setSortBy('name');
                                                                 setSortDirection(sortBy === 'name' && sortDirection === 'asc' ? 'desc' : 'asc');
                                                                 setShowSortMenu(false);
                                                             }}
-                                                            className="w-full px-3 py-2 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 cursor-pointer"
+                                                            className="w-full px-3.5 py-2 flex items-center justify-between text-left font-normal text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-[#F0F4F9] dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
                                                         >
-                                                            <span>Tên tài liệu</span>
-                                                            {sortBy === 'name' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                                                            <span className="font-normal text-[13px]">Tên tài liệu</span>
+                                                            {sortBy === 'name' && <Check className="w-4 h-4 text-[#0B57D0] dark:text-[#A8C7FA]" />}
                                                         </button>
                                                         <button
                                                             onClick={() => {
@@ -1765,10 +2035,10 @@ function FilesContent() {
                                                                 setSortDirection(sortBy === 'updatedAt' && sortDirection === 'desc' ? 'asc' : 'desc');
                                                                 setShowSortMenu(false);
                                                             }}
-                                                            className="w-full px-3 py-2 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 cursor-pointer"
+                                                            className="w-full px-3.5 py-2 flex items-center justify-between text-left font-normal text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-[#F0F4F9] dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
                                                         >
-                                                            <span>Ngày sửa đổi</span>
-                                                            {sortBy === 'updatedAt' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                                                            <span className="font-normal text-[13px]">Ngày sửa đổi</span>
+                                                            {sortBy === 'updatedAt' && <Check className="w-4 h-4 text-[#0B57D0] dark:text-[#A8C7FA]" />}
                                                         </button>
                                                         <button
                                                             onClick={() => {
@@ -1776,10 +2046,10 @@ function FilesContent() {
                                                                 setSortDirection(sortBy === 'size' && sortDirection === 'asc' ? 'desc' : 'asc');
                                                                 setShowSortMenu(false);
                                                             }}
-                                                            className="w-full px-3 py-2 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 cursor-pointer"
+                                                            className="w-full px-3.5 py-2 flex items-center justify-between text-left font-normal text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-[#F0F4F9] dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
                                                         >
-                                                            <span>Kích thước tệp</span>
-                                                            {sortBy === 'size' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                                                            <span className="font-normal text-[13px]">Kích thước tệp</span>
+                                                            {sortBy === 'size' && <Check className="w-4 h-4 text-[#0B57D0] dark:text-[#A8C7FA]" />}
                                                         </button>
                                                     </div>
                                                 )}
@@ -1821,16 +2091,41 @@ function FilesContent() {
                                                     <tr
                                                         key={`folder_${subFolder.id}`}
                                                         onClick={() => navigateToFolder(subFolder.id, subFolder.name)}
-                                                        onContextMenu={(e) => {
+                                                        onContextMenu={(e) => handleOpenFolderContextMenu(subFolder, e)}
+                                                        onDragOver={(e) => {
                                                             e.preventDefault();
-                                                            e.stopPropagation();
-                                                            setFolderContextMenu({
-                                                                isOpen: true,
-                                                                position: { x: e.clientX, y: e.clientY },
-                                                                folder: { id: subFolder.id, name: subFolder.name },
-                                                            });
+                                                            e.dataTransfer.dropEffect = 'move';
+                                                            if (dragOverFolderId !== subFolder.id) setDragOverFolderId(subFolder.id);
                                                         }}
-                                                        className="hover:bg-[#F2F6FC] dark:hover:bg-slate-800/50 transition-colors group cursor-pointer border-b border-[#F2F2F2] dark:border-slate-800/50 h-10"
+                                                        onDragLeave={() => {
+                                                            if (dragOverFolderId === subFolder.id) setDragOverFolderId(null);
+                                                        }}
+                                                        onDrop={async (e) => {
+                                                            e.preventDefault();
+                                                            setDragOverFolderId(null);
+                                                            try {
+                                                                const rawJson = e.dataTransfer.getData('application/json');
+                                                                let fileIds: (string | number)[] = [];
+                                                                if (rawJson) {
+                                                                    const parsed = JSON.parse(rawJson);
+                                                                    fileIds = parsed.fileIds || [];
+                                                                }
+                                                                if (!fileIds.length) {
+                                                                    const rawText = e.dataTransfer.getData('text/plain');
+                                                                    if (rawText) fileIds = [rawText];
+                                                                }
+                                                                if (fileIds.length > 0) {
+                                                                    await handleMoveFiles(fileIds, subFolder.id, subFolder.name);
+                                                                }
+                                                            } catch (err) {
+                                                                console.error('Drop error:', err);
+                                                            }
+                                                        }}
+                                                        className={`transition-colors group cursor-pointer border-b border-[#F2F2F2] dark:border-slate-800/50 h-10 ${
+                                                            dragOverFolderId === subFolder.id
+                                                                ? 'bg-[#c2e7ff]/60 dark:bg-blue-900/40 ring-2 ring-[#0b57d0]'
+                                                                : 'hover:bg-[#F2F6FC] dark:hover:bg-slate-800/50'
+                                                        }`}
                                                     >
                                                         {/* Checkbox */}
                                                         <td className="px-3 py-2 text-center w-12" onClick={(e) => e.stopPropagation()}>
@@ -1895,113 +2190,17 @@ function FilesContent() {
 
                                                         {/* Action 3-dots */}
                                                         <td className="px-4 py-2 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
-                                                            <div className="relative inline-block text-left row-action-menu-container">
+                                                            <div className="relative inline-block text-left">
                                                                 <button
                                                                     type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setActiveRowMenuId(isFolderMenuOpen ? null : `folder_${subFolder.id}`);
-                                                                    }}
-                                                                    className="p-1.5 rounded-full hover:bg-gray-200/70 dark:hover:bg-slate-700 text-gray-500 transition-colors"
+                                                                    onClick={(e) => handleOpenFolderContextMenu(subFolder, e)}
+                                                                    className={`folder-menu-trigger p-1.5 rounded-full hover:bg-gray-200/70 dark:hover:bg-slate-700 text-gray-500 transition-colors cursor-pointer ${
+                                                                        folderActionMenu?.folder.id === subFolder.id ? 'bg-gray-200 dark:bg-slate-700 text-blue-600' : ''
+                                                                    }`}
                                                                     title="Tùy chọn thư mục"
                                                                 >
-                                                                    <MoreVertical className="w-4 h-4" />
+                                                                    <MoreVertical className="w-4 h-4 pointer-events-none" />
                                                                 </button>
-
-                                                                {isFolderMenuOpen && (
-                                                                    <div className="absolute right-0 mt-1 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-gray-100 dark:border-slate-800 py-1.5 z-50 text-xs divide-y divide-gray-100 dark:divide-slate-800 text-left">
-                                                                        <div className="py-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    navigateToFolder(subFolder.id, subFolder.name);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <Folder className="w-4 h-4 text-blue-500" />
-                                                                                <span>Mở thư mục</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    router.push(`/ai?folderId=${subFolder.id}&folderName=${encodeURIComponent(subFolder.name)}`);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <div className="flex items-center gap-2.5">
-                                                                                    <Sparkles className="w-4 h-4 text-[#1a73e8] dark:text-blue-400 fill-[#1a73e8]/20" />
-                                                                                    <span>Hỏi Gemini</span>
-                                                                                </div>
-                                                                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#c2e7ff] text-[#001d35] dark:bg-blue-900/60 dark:text-blue-200">
-                                                                                    Mới
-                                                                                </span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    setRenamingFolder({ id: subFolder.id, name: subFolder.name });
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <Edit3 className="w-4 h-4 text-amber-500" />
-                                                                                <span>Đổi tên thư mục</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    setSelectedFolder(subFolder.id.toString());
-                                                                                    setSelectedFolderName(subFolder.name);
-                                                                                    setShowCreateFolder(true);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <FolderPlus className="w-4 h-4 text-emerald-500" />
-                                                                                <span>Tạo thư mục con</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    setSelectedFolder(subFolder.id.toString());
-                                                                                    setSelectedFolderName(subFolder.name);
-                                                                                    setShowUploadFile(true);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <Upload className="w-4 h-4 text-blue-500" />
-                                                                                <span>Tải tệp lên</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    router.push(`/files/permissions?folderId=${subFolder.id}&name=${encodeURIComponent(subFolder.name)}`);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <ShieldCheck className="w-4 h-4 text-purple-500" />
-                                                                                <span>Phân quyền (RBAC)</span>
-                                                                            </button>
-                                                                        </div>
-                                                                        <div className="py-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    handleDeleteFolder(subFolder.id, subFolder.name);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition font-medium cursor-pointer"
-                                                                            >
-                                                                                <Trash2 className="w-4 h-4 text-red-500" />
-                                                                                <span>Xóa thư mục</span>
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -2038,23 +2237,13 @@ function FilesContent() {
                                                     key={file.id}
                                                     draggable={canMove}
                                                     onClick={() => handleRowClick(file)}
+                                                    onContextMenu={(e) => handleContextMenu(file, e)}
                                                     onDragStart={(e) => {
                                                         if (!canMove) {
                                                             e.preventDefault();
                                                             return;
                                                         }
-                                                        const isMulti = selectedFileIds.includes(file.id.toString());
-                                                        const idsToMove =
-                                                            isMulti && selectedFileIds.length > 1
-                                                                ? selectedFileIds
-                                                                : [file.id.toString()];
-
-                                                        e.dataTransfer.setData(
-                                                            'application/json',
-                                                            JSON.stringify({ fileIds: idsToMove })
-                                                        );
-                                                        e.dataTransfer.setData('text/plain', file.id.toString());
-                                                        e.dataTransfer.effectAllowed = 'move';
+                                                        handleFileDragStart(file, e);
                                                     }}
                                                     className={`hover:bg-[#F2F6FC] dark:hover:bg-slate-800/50 transition-colors group cursor-pointer border-b border-[#F2F2F2] dark:border-slate-800/50 h-10 ${
                                                         isSelected ? 'bg-[#C2E7FF]/40 dark:bg-blue-950/40' : ''
@@ -2164,9 +2353,11 @@ function FilesContent() {
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         if (isAdmin) {
-                                                                            router.push(
-                                                                                `/files/${file.id}/permissions`
-                                                                            );
+                                                                            setShareTarget({
+                                                                                isOpen: true,
+                                                                                fileId: file.id,
+                                                                                fileName: file.name,
+                                                                            });
                                                                         } else {
                                                                             setShowRequestAccessModal(true);
                                                                         }
@@ -2227,198 +2418,22 @@ function FilesContent() {
                                                             </div>
 
                                                             {/* 3-dots Menu Button & Google Drive Context Menu */}
-                                                            <div className="relative row-action-menu-container">
+                                                            <div className="relative inline-block text-left">
                                                                 <button
                                                                     type="button"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        setActiveRowMenuId(
-                                                                            activeRowMenuId === file.id ? null : file.id
-                                                                        );
+                                                                        handleContextMenu(file, e);
                                                                     }}
-                                                                    className={`p-1.5 rounded-full hover:bg-gray-200/80 dark:hover:bg-slate-700 transition cursor-pointer ${
-                                                                        activeRowMenuId === file.id
+                                                                    className={`menu-trigger-btn p-1.5 rounded-full hover:bg-gray-200/80 dark:hover:bg-slate-700 transition cursor-pointer ${
+                                                                        contextMenu?.file.id === file.id
                                                                             ? 'bg-gray-200 dark:bg-slate-700 text-blue-600'
                                                                             : 'text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white'
                                                                     }`}
                                                                     title="Tùy chọn khác"
                                                                 >
-                                                                    <MoreVertical className="w-4 h-4" />
+                                                                    <MoreVertical className="w-4 h-4 pointer-events-none" />
                                                                 </button>
-
-                                                                {/* Google Drive Styled Context Menu */}
-                                                                {activeRowMenuId === file.id && (
-                                                                    <div
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                        className="absolute right-0 top-7 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-800 py-2 z-50 text-left text-xs divide-y divide-gray-100 dark:divide-slate-800/80 animate-in fade-in zoom-in-95"
-                                                                    >
-                                                                        {/* 1. Mở bằng / Xem tệp */}
-                                                                        <div className="py-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    handleRowClick(file);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <ExternalLink className="w-4 h-4 text-blue-500" />
-                                                                                <span>Mở bằng trình xem tệp</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    router.push(`/ai?fileId=${file.id}&fileName=${encodeURIComponent(file.name)}`);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <div className="flex items-center gap-2.5">
-                                                                                    <Sparkles className="w-4 h-4 text-[#1a73e8] dark:text-blue-400 fill-[#1a73e8]/20" />
-                                                                                    <span>Hỏi Gemini</span>
-                                                                                </div>
-                                                                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#c2e7ff] text-[#001d35] dark:bg-blue-900/60 dark:text-blue-200">
-                                                                                    Mới
-                                                                                </span>
-                                                                            </button>
-                                                                        </div>
-
-                                                                        {/* 2. Download, Rename, Copy Link */}
-                                                                        <div className="py-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    handleDownloadFile(file.id, file.name);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <div className="flex items-center gap-2.5">
-                                                                                    <Download className="w-4 h-4 text-gray-500" />
-                                                                                    <span>Tải xuống</span>
-                                                                                </div>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    setRenamingFile(file);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <div className="flex items-center gap-2.5">
-                                                                                    <Edit3 className="w-4 h-4 text-gray-500" />
-                                                                                    <span>Đổi tên</span>
-                                                                                </div>
-                                                                                <span className="text-[10px] text-gray-400 font-mono">
-                                                                                    Ctrl+Alt+E
-                                                                                </span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    handleCopyLink(file.id);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <Copy className="w-4 h-4 text-gray-500" />
-                                                                                <span>Sao chép đường dẫn</span>
-                                                                            </button>
-                                                                        </div>
-
-                                                                        {/* 3. Share, Organize, Star, Tags, Info */}
-                                                                        <div className="py-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    if (isAdmin) {
-                                                                                        router.push(
-                                                                                            `/files/${file.id}/permissions`
-                                                                                        );
-                                                                                    } else {
-                                                                                        setShowRequestAccessModal(true);
-                                                                                    }
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                                                                                <span>Chia sẻ / Phân quyền</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    setMovingFile(file);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <Folder className="w-4 h-4 text-blue-600 fill-blue-500" />
-                                                                                <span>Tổ chức / Di chuyển</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={(e) => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    toggleStar(file.id, e);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <Star
-                                                                                    className={`w-4 h-4 ${
-                                                                                        isStarred
-                                                                                            ? 'text-amber-500 fill-amber-400'
-                                                                                            : 'text-gray-500'
-                                                                                    }`}
-                                                                                />
-                                                                                <span>
-                                                                                    {isStarred
-                                                                                        ? 'Xóa khỏi có gắn dấu sao'
-                                                                                        : 'Gắn dấu sao'}
-                                                                                </span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    setEditingTagsFile(file);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <Tag className="w-4 h-4 text-blue-500" />
-                                                                                <span>Quản lý nhãn (Tags)</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    setActiveDetailFile(file);
-                                                                                    setShowDetailsDrawer(true);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800 hover:text-blue-600 transition cursor-pointer"
-                                                                            >
-                                                                                <Info className="w-4 h-4 text-sky-500" />
-                                                                                <span>Thông tin tệp (Chi tiết)</span>
-                                                                            </button>
-                                                                        </div>
-
-                                                                        {/* 4. Delete */}
-                                                                        <div className="py-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveRowMenuId(null);
-                                                                                    handleDeleteFile(file.id);
-                                                                                }}
-                                                                                className="w-full px-3.5 py-2 flex items-center gap-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition font-medium cursor-pointer"
-                                                                            >
-                                                                                <Trash2 className="w-4 h-4 text-red-500" />
-                                                                                <span>Chuyển vào thùng rác</span>
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
                                                             </div>
                                                         </div>
                                                     </td>
@@ -2462,11 +2477,7 @@ function FilesContent() {
                                                 onContextMenu={(e) => {
                                                     e.preventDefault();
                                                     e.stopPropagation();
-                                                    setFolderContextMenu({
-                                                        isOpen: true,
-                                                        position: { x: e.clientX, y: e.clientY },
-                                                        folder: { id: subFolder.id, name: subFolder.name },
-                                                    });
+                                                    handleOpenFolderContextMenu(subFolder, e);
                                                 }}
                                                 className="flex items-center justify-between p-3.5 rounded-2xl bg-[#f0f4f9] hover:bg-[#e6edf7] dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-transparent hover:border-gray-300 dark:hover:border-slate-700 transition cursor-pointer group shadow-2xs"
                                             >
@@ -2476,6 +2487,16 @@ function FilesContent() {
                                                         {subFolder.name}
                                                     </span>
                                                 </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleOpenFolderContextMenu(subFolder, e)}
+                                                    className={`folder-menu-trigger p-1 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-white/80 dark:hover:bg-slate-700 transition cursor-pointer shrink-0 ${
+                                                        folderActionMenu?.folder.id === subFolder.id ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white' : 'opacity-0 group-hover:opacity-100'
+                                                    }`}
+                                                    title="Tùy chọn thư mục"
+                                                >
+                                                    <MoreVertical className="w-3.5 h-3.5 pointer-events-none" />
+                                                </button>
                                             </div>
                                         ))}
                                     </div>
@@ -2507,6 +2528,7 @@ function FilesContent() {
                                         (file.uploadedByName && file.uploadedByName.toLowerCase().includes(currentUser.name.toLowerCase()))
                                     ))
                                 );
+                                const canMove = isAdmin || isOwner;
 
                                 const ownerDisplayName = isOwner ? 'tôi' : (file.uploadedByName || file.owner || 'Admin');
                                 const ownerAvatarLetter = isOwner
@@ -2521,6 +2543,15 @@ function FilesContent() {
                                 return (
                                     <div
                                         key={file.id}
+                                        draggable={canMove}
+                                        onDragStart={(e) => {
+                                            if (!canMove) {
+                                                e.preventDefault();
+                                                return;
+                                            }
+                                            handleFileDragStart(file, e);
+                                        }}
+                                        onContextMenu={(e) => handleContextMenu(file, e)}
                                         onClick={() => handleRowClick(file)}
                                         className={`bg-[#f0f4f9] hover:bg-[#e6edf7] dark:bg-slate-800/80 dark:hover:bg-slate-800 rounded-2xl p-3 flex flex-col justify-between transition-all duration-150 border group relative shadow-2xs hover:shadow-sm cursor-pointer ${
                                             isSelected
@@ -2570,6 +2601,21 @@ function FilesContent() {
                                                                 isStarred ? 'fill-amber-400' : ''
                                                             }`}
                                                         />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleContextMenu(file, e);
+                                                        }}
+                                                        className={`menu-trigger-btn p-1 rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-slate-100 hover:bg-white/80 dark:hover:bg-slate-700 transition cursor-pointer shrink-0 ${
+                                                            contextMenu?.file.id === file.id
+                                                                ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white'
+                                                                : 'opacity-0 group-hover:opacity-100'
+                                                        }`}
+                                                        title="Tùy chọn khác"
+                                                    >
+                                                        <MoreVertical className="w-3.5 h-3.5 pointer-events-none" />
                                                     </button>
                                                 </div>
                                             </div>
@@ -2756,9 +2802,11 @@ function FilesContent() {
                                                     onClick={() => {
                                                         if (effectiveDetailFile) {
                                                             if (isAdmin) {
-                                                                router.push(
-                                                                    `/files/${effectiveDetailFile.id}/permissions`
-                                                                );
+                                                                setShareTarget({
+                                                                    isOpen: true,
+                                                                    fileId: effectiveDetailFile.id,
+                                                                    fileName: effectiveDetailFile.name,
+                                                                });
                                                             } else {
                                                                 setShowRequestAccessModal(true);
                                                             }
@@ -2940,6 +2988,21 @@ function FilesContent() {
                 )}
             </div>
 
+            {/* Share / RBAC Permissions Modal */}
+            {shareTarget.isOpen && (
+                <ShareModal
+                    isOpen={shareTarget.isOpen}
+                    onClose={() => setShareTarget({ isOpen: false })}
+                    folderId={shareTarget.folderId}
+                    folderName={shareTarget.folderName}
+                    fileId={shareTarget.fileId}
+                    fileName={shareTarget.fileName}
+                    onSuccess={() => {
+                        loadData();
+                    }}
+                />
+            )}
+
             {/* ── MODALS ── */}
             {showCreateFolder && (
                 <CreateFolderModal
@@ -3014,7 +3077,8 @@ function FilesContent() {
                             );
                             await loadData(true);
                         } catch (err: any) {
-                            toast.error(`Tải lên tài liệu thất bại\n${err?.message || err}`);
+                            const errorMsg = err?.message || (typeof err === 'string' ? err : 'Lỗi hệ thống khi tải tệp');
+                            toast.error(`Tải lên tài liệu thất bại\n${errorMsg}`);
                             throw err;
                         } 
                     }}
@@ -3100,7 +3164,11 @@ function FilesContent() {
                         router.push(`/ai?folderId=${f.id}&folderName=${encodeURIComponent(f.name)}`);
                     }}
                     onShare={(f) => {
-                        router.push(`/files/permissions?folderId=${f.id}&name=${encodeURIComponent(f.name)}`);
+                        setShareTarget({
+                            isOpen: true,
+                            folderId: f.id,
+                            folderName: f.name,
+                        });
                     }}
                     onOrganize={(f) => {
                         toast(`Thư mục: ${f.name}`, { icon: '📁' });
@@ -3112,6 +3180,103 @@ function FilesContent() {
                         handleDeleteFolder(f.id, f.name);
                     }}
                 />
+            )}
+
+            {/* SHARED GOOGLE DRIVE FLOATING CONTEXT MENU FOR FILES */}
+            <FileContextMenu
+                contextMenu={contextMenu}
+                onClose={() => setContextMenu(null)}
+                onOpenWithGoogleDocs={handleOpenInGoogleDocs}
+                onOpenWithOnlyOffice={(f) => setOnlyOfficeModalFile(f)}
+                onDownload={(f) => handleDownloadFile(f.id, f.name)}
+                onRename={(f) => setRenamingFile(f)}
+                onCopy={handleCopyFile}
+                onAskGemini={(f) => router.push(`/ai?fileId=${f.id}&fileName=${encodeURIComponent(f.name)}`)}
+                onShare={(f) => {
+                    if (isAdmin) {
+                        setShareTarget({ isOpen: true, fileId: f.id, fileName: f.name });
+                    } else {
+                        setShowRequestAccessModal(true);
+                    }
+                }}
+                onToggleStar={(f, e) => toggleStar(f.id, e)}
+                isStarred={Boolean(contextMenu && starredIds.includes(contextMenu.file.id.toString()))}
+                onViewDetails={(f) => {
+                    setActiveDetailFile(f);
+                    setDetailActiveTab('details');
+                    setShowDetailsDrawer(true);
+                }}
+                onViewActivity={(f) => {
+                    setActiveDetailFile(f);
+                    setDetailActiveTab('activity');
+                    setShowDetailsDrawer(true);
+                }}
+                onManageVersions={(f) => setVersionModalFile(f)}
+                onManageTags={(f) => setEditingTagsFile(f)}
+                onDelete={(f) => handleDeleteFile(f.id)}
+                selectedCount={selectedFileIds.length}
+            />
+
+            {/* SHARED GOOGLE DRIVE FLOATING CONTEXT MENU FOR FOLDERS */}
+            <FolderActionMenu
+                menu={folderActionMenu}
+                onClose={() => setFolderActionMenu(null)}
+                onDownloadFolder={(f) => toast.success(`Đang chuẩn bị tải xuống thư mục "${f.name}"...`)}
+                onRenameFolder={(f) => setRenamingFolder({ id: f.id, name: f.name })}
+                onAskGemini={(f) => router.push(`/ai?folderId=${f.id}&folderName=${encodeURIComponent(f.name)}`)}
+                onShareFolder={(f) => {
+                    setShareTarget({
+                        isOpen: true,
+                        folderId: f.id,
+                        folderName: f.name,
+                    });
+                }}
+                onFolderInfo={(f) => toast(`Thông tin thư mục: ${f.name}`, { icon: '📁' })}
+                onDeleteFolder={(f) => handleDeleteFolder(f.id, f.name)}
+            />
+
+            {/* ONLYOFFICE ONLINE EDITOR MODAL */}
+            {onlyOfficeModalFile && (
+                <OnlyOfficeEditorModal
+                    file={onlyOfficeModalFile}
+                    onClose={() => setOnlyOfficeModalFile(null)}
+                    onFileSaved={() => loadData(false)}
+                />
+            )}
+
+            {/* VERSION MANAGEMENT MODAL */}
+            {versionModalFile && (
+                <VersionManagementModal
+                    file={versionModalFile}
+                    onClose={() => setVersionModalFile(null)}
+                    onVersionUploaded={() => loadData(false)}
+                />
+            )}
+
+            {/* GOOGLE DRIVE DARK SNACKBAR TOAST FOR MOVE FILE */}
+            {moveToast && (
+                <div className="fixed bottom-4 left-4 z-[9999] flex items-center gap-4 bg-[#202124] text-white px-4 py-2.5 rounded-[4px] shadow-2xl border border-white/10 animate-in fade-in slide-in-from-bottom-2 duration-150 select-none">
+                    <span className="text-[13.5px] font-normal text-[#e8eaed] tracking-tight">
+                        {moveToast.message}
+                    </span>
+                    <div className="flex items-center gap-3 shrink-0 ml-1">
+                        <button
+                            type="button"
+                            onClick={handleUndoMove}
+                            className="text-white hover:text-[#8ab4f8] font-medium text-[13.5px] hover:underline cursor-pointer transition px-1 py-0.5"
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setMoveToast(null)}
+                            className="p-1 text-gray-400 hover:text-white rounded-full transition cursor-pointer hover:bg-white/10"
+                            title="Đóng"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
             )}
         </div>
     );

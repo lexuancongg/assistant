@@ -1,4 +1,5 @@
 import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
+import { extractApiError } from "@/utils/api/errorHelper";
 
 export interface FileItemDto {
     id: number | string;
@@ -67,7 +68,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể tải danh sách tài liệu");
     }
 
     public async getSharedWithMeFiles(): Promise<FileItemDto[]> {
@@ -83,7 +84,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể tải thông tin chi tiết tài liệu");
     }
 
     public async getPreviewUrl(id: number | string): Promise<{ url: string; fileType?: string; fileName?: string }> {
@@ -91,7 +92,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể lấy đường dẫn xem trước tài liệu");
     }
 
     public async uploadFile(formData: FormData): Promise<FileItemDto> {
@@ -99,7 +100,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Tải lên tài liệu thất bại");
     }
 
     public async getTrash(): Promise<TrashItemDto[]> {
@@ -107,48 +108,48 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể tải danh sách thùng rác");
     }
 
     public async softDelete(id: number | string): Promise<void> {
         const response = await apiClient.delete(`${this.baseUrl}/${id}`);
         if (!response.ok) {
-            throw response;
+            throw await extractApiError(response, "Không thể xóa tài liệu");
         }
     }
 
     public async restore(id: number | string): Promise<void> {
         const response = await apiClient.post(`${this.baseUrl}/${id}/restore`);
         if (!response.ok) {
-            throw response;
+            throw await extractApiError(response, "Không thể khôi phục tài liệu");
         }
     }
 
     public async deletePermanently(id: number | string): Promise<void> {
         const response = await apiClient.delete(`${this.baseUrl}/${id}/permanent`);
         if (!response.ok) {
-            throw response;
+            throw await extractApiError(response, "Không thể xóa vĩnh viễn tài liệu");
         }
     }
 
     public async restoreBatch(ids: (number | string)[]): Promise<void> {
         const response = await apiClient.post(`${this.baseUrl}/restore/batch`, ids);
         if (!response.ok) {
-            throw response;
+            throw await extractApiError(response, "Không thể khôi phục các tài liệu");
         }
     }
 
     public async deletePermanentlyBatch(ids: (number | string)[]): Promise<void> {
         const response = await apiClient.delete(`${this.baseUrl}/permanent/batch`, ids);
         if (!response.ok) {
-            throw response;
+            throw await extractApiError(response, "Không thể xóa vĩnh viễn các tài liệu");
         }
     }
 
     public async updateVisibility(id: number | string, visibility: string): Promise<FileItemDto> {
         const response = await apiClient.patch(`${this.baseUrl}/${id}/visibility?visibility=${visibility}`);
         if (!response.ok) {
-            throw response;
+            throw await extractApiError(response, "Không thể cập nhật quyền hiển thị tài liệu");
         }
         return await response.json();
     }
@@ -170,7 +171,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể cập nhật phân quyền tài liệu");
     }
 
     public async updateFileTags(id: number | string, tags: string[]): Promise<FileItemDto> {
@@ -178,7 +179,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể cập nhật nhãn tài liệu");
     }
 
     public async getAllTags(): Promise<string[]> {
@@ -198,7 +199,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể tải danh sách phiên bản");
     }
 
     public async uploadNewVersion(fileId: number | string, file: File): Promise<FileItemDto> {
@@ -208,7 +209,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể tải lên phiên bản mới");
     }
 
     public getVersionStreamUrl(fileId: number | string, versionId: number | string): string {
@@ -221,7 +222,7 @@ class FileManagementService {
             const data = await response.json();
             return data.text || '';
         }
-        throw response;
+        throw await extractApiError(response, "Không thể đọc nội dung văn bản");
     }
 
     public async saveTextVersion(fileId: number | string, content: string): Promise<FileItemDto> {
@@ -229,7 +230,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể lưu phiên bản mới của văn bản");
     }
 
     public async moveFile(fileId: number | string, folderId: number | string | null): Promise<FileItemDto> {
@@ -237,7 +238,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể di chuyển tài liệu");
     }
 
     public async moveFilesBatch(fileIds: (number | string)[], folderId: number | string | null): Promise<FileItemDto[]> {
@@ -245,7 +246,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể di chuyển các tài liệu");
     }
 
     public async renameFile(id: number | string, name: string): Promise<FileItemDto> {
@@ -253,7 +254,7 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể đổi tên tài liệu");
     }
 
     public async uploadThumbnail(fileId: number | string, blob: Blob): Promise<void> {
@@ -293,8 +294,49 @@ class FileManagementService {
         if (response.ok) {
             return await response.json();
         }
-        throw response;
+        throw await extractApiError(response, "Không thể cập nhật trạng thái yêu thích");
     }
+
+    public async createDownloadToken(fileId: number | string): Promise<{
+        token: string;
+        downloadUrl: string;
+        directUrl?: string;
+        fileName: string;
+    }> {
+        const response = await apiClient.post(`${this.baseUrl}/${fileId}/download-token`, {});
+        if (response.ok) {
+            return await response.json();
+        }
+        throw await extractApiError(response, "Không thể tạo mã tải xuống tài liệu");
+    }
+
+    public async copyFile(id: number | string): Promise<FileItemDto> {
+        const response = await apiClient.post(`${this.baseUrl}/${id}/copy`, {});
+        if (response.ok) {
+            return await response.json();
+        }
+        throw await extractApiError(response, "Không thể tạo bản sao tài liệu");
+    }
+
+    public async setOnlyOfficeSaveOptions(
+        fileId: number | string,
+        options: { saveMode: 'OVERWRITE' | 'NEW_VERSION' | 'DISCARD'; changeDescription?: string }
+    ): Promise<void> {
+        const response = await apiClient.post(`${this.baseUrl}/${fileId}/onlyoffice-save-options`, options);
+        if (!response.ok) {
+            throw await extractApiError(response, "Không thể cập nhật cấu hình lưu tài liệu");
+        }
+    }
+
+    public async getOnlyOfficeConfig(fileId: number | string): Promise<any> {
+        const response = await apiClient.get(`${this.baseUrl}/${fileId}/onlyoffice-config`);
+        if (response.ok) {
+            return await response.json();
+        }
+        throw await extractApiError(response, "Không thể tải cấu hình ONLYOFFICE");
+    }
+
+
 }
 
 export interface FilePermissionDto {

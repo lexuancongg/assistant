@@ -61,6 +61,10 @@ public class AiService {
         return this.aiServiceClient.search(searchRequest);
     }
 
+    public com.xuancong.student_management.dto.chat.OverviewResponse getOverview(com.xuancong.student_management.dto.chat.OverviewRequest request) {
+        return this.aiServiceClient.getOverview(request);
+    }
+
     public void deleteDocument(Long fileId) {
         if (fileId == null) return;
         try {

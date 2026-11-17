@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
     Search,
+    Activity,
     ChevronDown,
     ChevronRight,
     List,
@@ -56,13 +57,18 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
-import fileManagementService, { FileItemDto } from '@/services/files/fileManagementService';
+import fileManagementService, { FileItemDto, FileVersionDto } from '@/services/files/fileManagementService';
 import forderService from '@/services/forder/forderService';
 import activityService, { ActivityLogDto } from '@/services/activity/activityService';
 import userService, { UserDto } from '@/services/user/userService';
 import { UploadFileModal } from '@/components/files/FileModals';
 import FileThumbnailPreview from '@/components/files/FileThumbnailPreview';
-import apiClient from '@/utils/api/apiClientFixed';
+import OnlyOfficeEditorModal from '@/components/files/OnlyOfficeEditorModal';
+import FileContextMenu from '@/components/files/FileContextMenu';
+import VersionManagementModal from '@/components/files/VersionManagementModal';
+import FolderActionMenu from '@/components/files/FolderActionMenu';
+import apiClient, { normalizeUrl } from '@/utils/api/apiClientFixed';
+import { recordFileOpened, getFileLastOpened } from '@/utils/fileOpenedTracker';
 
 // Visual configuration helper for file types
 function getFileTypeConfig(extOrType: string) {
@@ -176,16 +182,29 @@ function getAvatarColor(name: string) {
     return colors[Math.abs(hash) % colors.length];
 }
 
-// Format date relative like Google Drive (Vietnamese: "28 thg 9")
-function formatGoogleDriveDate(dateStr?: string): string {
-    if (!dateStr) return '28 thg 9';
+// Format date relative like Google Drive (Vietnamese: "15 thg 11" hoac "Hom nay", "Hom qua")
+function formatGoogleDriveDate(dateStr?: string | number | null): string {
+    if (!dateStr) {
+        const now = new Date();
+        return `${now.getDate()} thg ${now.getMonth() + 1}`;
+    }
     const str = String(dateStr).trim();
     const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
     if (dmyMatch) {
         return `${parseInt(dmyMatch[1], 10)} thg ${parseInt(dmyMatch[2], 10)}`;
     }
-    const date = new Date(dateStr);
+    const date = typeof dateStr === 'number' ? new Date(dateStr) : new Date(str);
     if (isNaN(date.getTime())) return str;
+
+    const now = new Date();
+    if (date.toDateString() === now.toDateString()) {
+        return 'Hôm nay';
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) {
+        return 'Hôm qua';
+    }
 
     const day = date.getDate();
     const month = date.getMonth() + 1;
@@ -193,13 +212,16 @@ function formatGoogleDriveDate(dateStr?: string): string {
 }
 
 function formatGoogleDriveDetailDate(dateStr?: string | number | null): string {
-    if (!dateStr) return '3 thg 10, 2026';
+    if (!dateStr) {
+        const now = new Date();
+        return `${now.getDate()} thg ${now.getMonth() + 1}, ${now.getFullYear()}`;
+    }
     const str = String(dateStr).trim();
     const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
     if (dmyMatch) {
         return `${parseInt(dmyMatch[1], 10)} thg ${parseInt(dmyMatch[2], 10)}, ${dmyMatch[3]}`;
     }
-    const d = new Date(dateStr);
+    const d = typeof dateStr === 'number' ? new Date(dateStr) : new Date(str);
     if (isNaN(d.getTime())) return str;
     return `${d.getDate()} thg ${d.getMonth() + 1}, ${d.getFullYear()}`;
 }
@@ -233,6 +255,13 @@ export default function HomePage() {
     const router = useRouter();
 
     const [files, setFiles] = useState<FileItemDto[]>([]);
+    const [openedHistoryVersion, setOpenedHistoryVersion] = useState(0);
+
+    useEffect(() => {
+        const handleOpened = () => setOpenedHistoryVersion((v) => v + 1);
+        window.addEventListener('file_opened_history_updated', handleOpened);
+        return () => window.removeEventListener('file_opened_history_updated', handleOpened);
+    }, []);
     const [folders, setFolders] = useState<any[]>([]);
     const [activityLogs, setActivityLogs] = useState<ActivityLogDto[]>([]);
     const [collaborators, setCollaborators] = useState<UserDto[]>([]);
@@ -270,6 +299,9 @@ export default function HomePage() {
         file: UnifiedSuggestedFile;
     } | null>(null);
     const [showOpenWithSubmenu, setShowOpenWithSubmenu] = useState(false);
+    const [showFileInfoSubmenu, setShowFileInfoSubmenu] = useState(false);
+    const [versionModalFile, setVersionModalFile] = useState<UnifiedSuggestedFile | null>(null);
+    const [onlyOfficeModalFile, setOnlyOfficeModalFile] = useState<UnifiedSuggestedFile | null>(null);
     const [renamingFile, setRenamingFile] = useState<UnifiedSuggestedFile | null>(null);
     const [renameName, setRenameName] = useState('');
     const [isRenaming, setIsRenaming] = useState(false);
@@ -423,6 +455,8 @@ export default function HomePage() {
             }
             setContextMenu(null);
             setFolderContextMenu(null);
+            setShowOpenWithSubmenu(false);
+            setShowFileInfoSubmenu(false);
             if (!target.closest('.dropdown-container')) {
                 setActiveDropdown(null);
             }
@@ -759,35 +793,43 @@ export default function HomePage() {
             const isSharedWithMe = !isMe;
             const departmentOrFolder = file.folderName || file.ownerDepartmentName || 'Drive';
 
-            // Determine Reason Suggested (Vietnamese Google Drive style)
-            let reason = 'Bạn đã mở • 28 thg 9';
+            // Determine Reason Suggested (Chính xác theo thao tác thực tế)
+            const openedTime = getFileLastOpened(file.id);
+            let reason = '';
             let rawDate = Date.now();
 
-            if (matchingLog) {
+            if (openedTime) {
+                // Người dùng thực sự đã mở/xem tệp này trên trình duyệt
+                const dateText = formatGoogleDriveDate(openedTime);
+                rawDate = openedTime;
+                reason = `Bạn đã mở • ${dateText}`;
+            } else if (matchingLog) {
                 const dateText = formatGoogleDriveDate(matchingLog.timestamp);
                 rawDate = new Date(matchingLog.timestamp || Date.now()).getTime();
                 const isActorMe = isCurrentUser(matchingLog.actorName) || isMe;
+                const logType = (matchingLog.type || '').toLowerCase();
 
-                if (matchingLog.type === 'share') {
+                if (logType === 'share') {
                     reason = isActorMe ? `Bạn đã chia sẻ • ${dateText}` : `${matchingLog.actorName} đã chia sẻ • ${dateText}`;
-                } else if (matchingLog.type === 'comment') {
+                } else if (logType === 'comment') {
                     reason = isActorMe ? `Bạn đã nhận xét • ${dateText}` : `${matchingLog.actorName} đã nhận xét • ${dateText}`;
+                } else if (logType === 'download') {
+                    reason = isActorMe ? `Bạn đã tải xuống • ${dateText}` : `${matchingLog.actorName} đã tải xuống • ${dateText}`;
+                } else if (logType === 'update') {
+                    reason = isActorMe ? `Bạn đã chỉnh sửa • ${dateText}` : `${matchingLog.actorName} đã chỉnh sửa • ${dateText}`;
+                } else if (logType === 'upload') {
+                    reason = isActorMe ? `Bạn đã tải lên • ${dateText}` : `${matchingLog.actorName} đã tải lên • ${dateText}`;
                 } else {
-                    // Thao tác xem, mở hoặc sửa đổi
-                    if (isActorMe) {
-                        reason = `Bạn đã mở • ${dateText}`;
-                    } else {
-                        reason = `${matchingLog.actorName} đã mở • ${dateText}`;
-                    }
+                    reason = isActorMe ? `Bạn đã tải lên • ${dateText}` : `${matchingLog.actorName} đã chia sẻ • ${dateText}`;
                 }
             } else if (file.updatedAt) {
                 const dateText = formatGoogleDriveDate(file.updatedAt);
                 rawDate = new Date(file.updatedAt).getTime();
                 reason = isMe
-                    ? `Bạn đã mở • ${dateText}`
-                    : `${owner} đã chia sẻ • ${dateText}`;
+                    ? `Bạn đã tải lên • ${dateText}`
+                    : `${file.uploadedByName || owner} đã chia sẻ • ${dateText}`;
             } else {
-                reason = isMe ? 'Bạn đã mở • Hôm nay' : `${owner} đã chia sẻ • Hôm nay`;
+                reason = isMe ? 'Bạn đã tải lên • Hôm nay' : `${file.uploadedByName || owner} đã chia sẻ • Hôm nay`;
             }
 
             // Determine Location: Tên thư mục cha của file đó, nếu không có thư mục cha thì ghi Drive
@@ -824,7 +866,7 @@ export default function HomePage() {
                 description: (file as any).description,
             };
         });
-    }, [files, activityLogs, currentUser, folderIdToNameMap]);
+    }, [files, activityLogs, currentUser, folderIdToNameMap, openedHistoryVersion]);
 
     // Filter files based on search & filter pills
     const filteredFiles = useMemo(() => {
@@ -1213,24 +1255,61 @@ export default function HomePage() {
         }
     };
 
-    // Download selected file(s)
-    const handleDownloadSelected = () => {
+
+    // Tạo bản sao tệp tin
+    const handleCopyFile = async (file: UnifiedSuggestedFile) => {
+        try {
+            toast.loading(`Đang tạo bản sao của "${file.name}"...`, { id: `copy-${file.id}` });
+            const newFile = await fileManagementService.copyFile(file.id);
+            toast.success(`Đã tạo bản sao: "${newFile.name}"`, { id: `copy-${file.id}` });
+            fetchHomeData(false);
+        } catch (err: any) {
+            console.error('Error copying file:', err);
+            toast.error('Lỗi khi tạo bản sao: ' + (err?.message || 'Không thể tạo bản sao'), { id: `copy-${file.id}` });
+        } finally {
+            setContextMenu(null);
+        }
+    };
+
+    // Tải xuống 1 tệp tin thông qua cơ chế Token (Download Token)
+    const handleDownloadSingleFile = async (fileId: string | number, fallbackName?: string) => {
+        try {
+            toast.loading('Đang tạo liên kết tải xuống...', { id: `dl-${fileId}` });
+            const res = await fileManagementService.createDownloadToken(fileId);
+            const fileName = res.fileName || fallbackName || 'downloaded_file';
+            const targetUrl = res.directUrl || normalizeUrl(res.downloadUrl);
+
+            const a = document.createElement('a');
+            a.href = targetUrl;
+            a.download = fileName;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            toast.success(`Đang tải xuống "${fileName}"`, { id: `dl-${fileId}` });
+        } catch (err: any) {
+            console.error('Download error:', err);
+            toast.error('Lỗi khi tải tệp: ' + (err?.message || 'Không thể tạo liên kết tải xuống'), { id: `dl-${fileId}` });
+        }
+    };
+
+    // Download selected file(s) thông qua token bảo mật
+    const handleDownloadSelected = async () => {
         if (selectedFileIds.length === 0) return;
-        selectedFileIds.forEach((id) => {
-            const f = filteredFiles.find((x) => x.id.toString() === id.toString());
-            if (f) {
-                const url = `http://localhost:8080/api/v1/files/${f.id}/stream`;
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = f.name;
-                a.target = '_blank';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            }
-        });
-        toast.success(`Đang tải xuống ${selectedFileIds.length} tệp`);
         setContextMenu(null);
+        if (selectedFileIds.length === 1) {
+            const f = filteredFiles.find((x) => x.id.toString() === selectedFileIds[0].toString());
+            await handleDownloadSingleFile(selectedFileIds[0], f?.name);
+            return;
+        }
+
+        toast(`Bắt đầu tải xuống ${selectedFileIds.length} tệp đã chọn...`);
+        for (const id of selectedFileIds) {
+            const f = filteredFiles.find((x) => x.id.toString() === id.toString());
+            await handleDownloadSingleFile(id, f?.name);
+            await new Promise((resolve) => setTimeout(resolve, 600));
+        }
     };
 
     // Start rename (Only allowed when 1 file is selected)
@@ -1304,14 +1383,24 @@ export default function HomePage() {
         setContextMenu(null);
     };
 
-    // Mở file trực tiếp qua Google Docs
+    // Mở file trực tiếp (Google Docs Viewer cho Office/PDF hoặc tab mới cho Markdown/Text/Ảnh)
     const handleOpenInGoogleDocs = async (file: UnifiedSuggestedFile) => {
+        recordFileOpened(file.id);
         try {
             const previewData = await fileManagementService.getPreviewUrl(file.id);
             const targetUrl = previewData?.url;
 
             if (!targetUrl) {
                 toast.error('Không tìm thấy đường dẫn tệp để mở!');
+                return;
+            }
+
+            const ext = (previewData?.fileType || file.fileType || '').toLowerCase();
+            const isDirectBrowserView = ['md', 'markdown', 'txt', 'json', 'log', 'sql', 'py', 'java', 'ts', 'tsx', 'html', 'css', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext);
+
+            if (isDirectBrowserView) {
+                window.open(targetUrl, '_blank', 'noopener,noreferrer');
+                toast.success('Đã mở tệp ' + file.name);
                 return;
             }
 
@@ -1327,17 +1416,18 @@ export default function HomePage() {
             window.open(gDocsUrl, '_blank', 'noopener,noreferrer');
             toast.success('Đã mở tài liệu trên Google Docs!');
         } catch (err) {
-            console.error('Lỗi khi mở qua Google Docs:', err);
+            console.error('Lỗi khi mở tài liệu:', err);
             router.push('/files');
-            toast.error('Chưa thể mở qua Google Docs, đã chuyển sang danh sách tệp.');
+            toast.error('Chưa thể mở tệp, đã chuyển sang danh sách tệp.');
         }
     };
 
-    // Xử lý Double Click: nếu là file tài liệu (doc, docx, pdf, xlsx, pptx) -> mở thẳng Google Docs
+    // Xử lý Double Click: mở trực tiếp các định dạng xem trước được (Office, PDF, Markdown, Text, Hình ảnh)
     const handleFileDoubleClick = (file: UnifiedSuggestedFile) => {
+        recordFileOpened(file.id);
         const ext = file.fileType?.toLowerCase() || '';
-        const isDocOrOffice = ['doc', 'docx', 'odt', 'rtf', 'pdf', 'xlsx', 'xls', 'pptx', 'ppt'].includes(ext);
-        if (isDocOrOffice) {
+        const isPreviewable = ['doc', 'docx', 'odt', 'rtf', 'pdf', 'xlsx', 'xls', 'pptx', 'ppt', 'md', 'markdown', 'txt', 'json', 'log', 'sql', 'py', 'java', 'ts', 'tsx', 'html', 'css', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext);
+        if (isPreviewable) {
             handleOpenInGoogleDocs(file);
         } else {
             router.push('/files');
@@ -1757,15 +1847,7 @@ export default function HomePage() {
                                                                             type="button"
                                                                             onClick={(e) => {
                                                                                 e.stopPropagation();
-                                                                                const url = `http://localhost:8080/api/v1/files/${file.id}/stream`;
-                                                                                const a = document.createElement('a');
-                                                                                a.href = url;
-                                                                                a.download = file.name;
-                                                                                a.target = '_blank';
-                                                                                document.body.appendChild(a);
-                                                                                a.click();
-                                                                                document.body.removeChild(a);
-                                                                                toast.success('Đang tải xuống tệp');
+                                                                                handleDownloadSingleFile(file.id, file.name);
                                                                             }}
                                                                             className="p-1 rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-slate-100 hover:bg-gray-200/70 dark:hover:bg-slate-700 transition cursor-pointer"
                                                                             title="Tải xuống"
@@ -2264,36 +2346,44 @@ export default function HomePage() {
                         {/* Submenu for Mở bằng */}
                         {showOpenWithSubmenu && (
                             <div
-                                className={`absolute top-0 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl shadow-xl py-1.5 w-56 z-50 text-[12px] animate-in fade-in zoom-in-95 duration-75 ${
-                                    contextMenu.x + 288 + 220 > (typeof window !== 'undefined' ? window.innerWidth : 1200)
-                                        ? 'right-full mr-1'
-                                        : 'left-full ml-1'
+                                className={`absolute top-0 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl shadow-2xl py-1.5 w-64 z-50 text-[12.5px] animate-in fade-in zoom-in-95 duration-75 text-gray-800 dark:text-slate-200 ${
+                                    contextMenu.x + 288 + 250 > (typeof window !== 'undefined' ? window.innerWidth : 1200)
+                                        ? 'right-full mr-1.5'
+                                        : 'left-full ml-1.5'
                                 }`}
                             >
+                                {/* 1. Google Tài liệu */}
                                 <button
                                     type="button"
                                     onClick={() => {
                                         handleOpenInGoogleDocs(contextMenu.file);
                                         setContextMenu(null);
+                                        setShowOpenWithSubmenu(false);
                                     }}
-                                    className="w-full px-3.5 py-2 flex items-center justify-between text-[#0b57d0] dark:text-blue-400 hover:bg-blue-50/80 dark:hover:bg-blue-950/40 font-medium transition cursor-pointer"
+                                    className="w-full px-3.5 py-2 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
                                 >
                                     <div className="flex items-center gap-2.5">
                                         <FileText className="w-4 h-4 text-[#0b57d0] dark:text-blue-400" />
-                                        <span>Google Tài liệu (Docs)</span>
+                                        <span>Google Tài liệu</span>
                                     </div>
-                                    <ExternalLink className="w-3 h-3 text-[#0b57d0] dark:text-blue-400" />
+                                    <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
                                 </button>
+
+                                {/* 2. ONLYOFFICE Editor */}
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        router.push('/files');
+                                        setOnlyOfficeModalFile(contextMenu.file);
                                         setContextMenu(null);
+                                        setShowOpenWithSubmenu(false);
                                     }}
-                                    className="w-full px-3.5 py-2 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                                    className="w-full px-3.5 py-2 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
                                 >
-                                    <Eye className="w-4 h-4 text-gray-500" />
-                                    <span>Xem chi tiết nội bộ</span>
+                                    <div className="flex items-center gap-2.5">
+                                        <FileText className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                                        <span>ONLYOFFICE Editor</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-400 font-medium">Trực tuyến</span>
                                 </button>
                             </div>
                         )}
@@ -2304,7 +2394,14 @@ export default function HomePage() {
                     {/* 2. Tải xuống */}
                     <button
                         type="button"
-                        onClick={handleDownloadSelected}
+                        onClick={() => {
+                            if (contextMenu?.file) {
+                                handleDownloadSingleFile(contextMenu.file.id, contextMenu.file.name);
+                                setContextMenu(null);
+                            } else {
+                                handleDownloadSelected();
+                            }
+                        }}
                         className="w-full px-3.5 py-1.5 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
                     >
                         <Download className="w-4 h-4 text-gray-500" />
@@ -2333,10 +2430,7 @@ export default function HomePage() {
                     {/* 4. Tạo bản sao */}
                     <button
                         type="button"
-                        onClick={() => {
-                            toast.success(`Đã tạo bản sao của "${contextMenu.file.name}"`);
-                            setContextMenu(null);
-                        }}
+                        onClick={() => handleCopyFile(contextMenu.file)}
                         className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
                     >
                         <div className="flex items-center gap-2.5">
@@ -2370,24 +2464,6 @@ export default function HomePage() {
                         </span>
                     </button>
 
-                    {/* 5. Tạo bản tổng quan bằng âm thanh... */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            toast('Tính năng Tổng quan bằng âm thanh đang được hoàn thiện...', { icon: '🎙' });
-                            setContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <Mic className="w-4 h-4 text-gray-500" />
-                            <span>Tạo bản tổng quan bằng âm thanh...</span>
-                        </div>
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#c2e7ff] text-[#001d35] dark:bg-blue-900/60 dark:text-blue-200">
-                            Mới
-                        </span>
-                    </button>
-
                     <div className="my-1 border-t border-gray-100 dark:border-slate-800" />
 
                     {/* 6. Chia sẻ > */}
@@ -2399,22 +2475,6 @@ export default function HomePage() {
                         <div className="flex items-center gap-2.5">
                             <UserPlus className="w-4 h-4 text-gray-500" />
                             <span>Chia sẻ</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-                    </button>
-
-                    {/* 7. Sắp xếp > */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            router.push(`/files?highlightId=${contextMenu.file.id}`);
-                            setContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <FolderInput className="w-4 h-4 text-gray-500" />
-                            <span>Sắp xếp</span>
                         </div>
                         <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
                     </button>
@@ -2443,35 +2503,93 @@ export default function HomePage() {
                     </button>
 
                     {/* 8. Thông tin về tệp > */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setActiveDetailFile(contextMenu.file);
-                            setDetailActiveTab('details');
-                            setShowInfoPanel(true);
-                            setContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                    <div
+                        className="relative"
+                        onMouseEnter={() => setShowFileInfoSubmenu(true)}
+                        onMouseLeave={() => setShowFileInfoSubmenu(false)}
                     >
-                        <div className="flex items-center gap-2.5">
-                            <Info className="w-4 h-4 text-gray-500" />
-                            <span>Thông tin về tệp</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-                    </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setActiveDetailFile(contextMenu.file);
+                                setDetailActiveTab('details');
+                                setShowInfoPanel(true);
+                                setContextMenu(null);
+                            }}
+                            className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                        >
+                            <div className="flex items-center gap-2.5">
+                                <Info className="w-4 h-4 text-gray-500" />
+                                <span>Thông tin về tệp</span>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                        </button>
 
-                    {/* 9. Cho phép sử dụng khi không có mạng */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            toast('Chế độ ngoại tuyến chưa được hỗ trợ trên trình duyệt này');
-                            setContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center gap-2.5 text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800/50 cursor-pointer"
-                    >
-                        <CloudOff className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                        <span>Cho phép sử dụng khi không có mạng</span>
-                    </button>
+                        {/* Submenu for Thông tin về tệp (Exact match to Google Drive) */}
+                        {showFileInfoSubmenu && (
+                            <div
+                                className={`absolute top-0 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl shadow-2xl py-1.5 w-64 z-50 text-[12.5px] animate-in fade-in zoom-in-95 duration-75 text-gray-800 dark:text-slate-200 ${
+                                    contextMenu.x + 288 + 250 > (typeof window !== 'undefined' ? window.innerWidth : 1200)
+                                        ? 'right-full mr-1.5'
+                                        : 'left-full ml-1.5'
+                                }`}
+                            >
+                                {/* Thông tin chi tiết */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setActiveDetailFile(contextMenu.file);
+                                        setDetailActiveTab('details');
+                                        setShowInfoPanel(true);
+                                        setContextMenu(null);
+                                        setShowFileInfoSubmenu(false);
+                                    }}
+                                    className="w-full px-3.5 py-2 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-2.5">
+                                        <Info className="w-4 h-4 text-gray-500" />
+                                        <span>Thông tin chi tiết</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-400 font-mono tracking-tight">Alt+V rồi đến D</span>
+                                </button>
+
+                                {/* Hoạt động */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setActiveDetailFile(contextMenu.file);
+                                        setDetailActiveTab('activity');
+                                        setShowInfoPanel(true);
+                                        setContextMenu(null);
+                                        setShowFileInfoSubmenu(false);
+                                    }}
+                                    className="w-full px-3.5 py-2 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-2.5">
+                                        <Activity className="w-4 h-4 text-gray-500" />
+                                        <span>Hoạt động</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-400 font-mono tracking-tight">Alt+V rồi đến A</span>
+                                </button>
+
+                                <div className="my-1 border-t border-gray-100 dark:border-slate-800" />
+
+                                {/* Quản lý phiên bản */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setVersionModalFile(contextMenu.file);
+                                        setContextMenu(null);
+                                        setShowFileInfoSubmenu(false);
+                                    }}
+                                    className="w-full px-3.5 py-2 flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                                >
+                                    <History className="w-4 h-4 text-gray-500" />
+                                    <span>Quản lý phiên bản</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="my-1 border-t border-gray-100 dark:border-slate-800" />
 
@@ -2487,158 +2605,42 @@ export default function HomePage() {
                         </div>
                         <span className="text-[10.5px] text-gray-400 font-mono tracking-tight">Delete</span>
                     </button>
-
-                    {/* 11. Không phải đề xuất hữu ích */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            toast.success('Đã ẩn tệp khỏi đề xuất');
-                            setContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <ThumbsDown className="w-4 h-4 text-gray-500" />
-                        <span>Không phải đề xuất hữu ích</span>
-                    </button>
                 </div>
             )}
 
             {/* FLOATING FOLDER CONTEXT MENU (Exact match to media_1791046489059.png) */}
-            {folderContextMenu && (
-                <div
-                    className="fixed z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl shadow-xl py-1.5 w-72 text-[12.5px] folder-context-menu-container animate-in fade-in zoom-in-95 duration-100 select-none text-gray-800 dark:text-slate-200"
-                    style={{ left: folderContextMenu.x, top: folderContextMenu.y }}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {/* 1. Tải xuống */}
-                    <button
-                        type="button"
-                        onClick={() => handleDownloadFolder(folderContextMenu.folder)}
-                        className="w-full px-3.5 py-1.5 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <Download className="w-4 h-4 text-gray-500" />
-                        <span>Tải xuống</span>
-                    </button>
+            <FolderActionMenu
+                menu={folderContextMenu ? { x: folderContextMenu.x, y: folderContextMenu.y, folder: folderContextMenu.folder } : null}
+                onClose={() => setFolderContextMenu(null)}
+                onDownloadFolder={handleDownloadFolder}
+                onRenameFolder={handleStartRenameFolder}
+                onAskGemini={(f) => router.push(`/ai?folderId=${f.id}&folderName=${encodeURIComponent(f.name)}`)}
+                onShareFolder={(f) => router.push(`/files/permissions?folderId=${f.id}&name=${encodeURIComponent(f.name)}`)}
+                onFolderInfo={() => setShowInfoPanel(true)}
+                onDeleteFolder={handleRequestDeleteFolder}
+            />
 
-                    {/* 2. Đổi tên */}
-                    <button
-                        type="button"
-                        onClick={() => handleStartRenameFolder(folderContextMenu.folder)}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <Edit3 className="w-4 h-4 text-gray-500" />
-                            <span>Đổi tên</span>
-                        </div>
-                        <span className="text-[10.5px] text-gray-400 font-mono tracking-tight">Ctrl+Alt+E</span>
-                    </button>
+            
+            
+            {/* ONLYOFFICE Editor Modal */}
+            {/* ONLYOFFICE Editor Modal */}
+            {onlyOfficeModalFile && (
+                <OnlyOfficeEditorModal
+                    file={onlyOfficeModalFile}
+                    onClose={() => setOnlyOfficeModalFile(null)}
+                    onFileSaved={() => {
+                        fetchHomeData(false);
+                    }}
+                />
+            )}
 
-                    <div className="my-1 border-t border-gray-100 dark:border-slate-800" />
-
-                    {/* 3. Hỏi Gemini */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            router.push(
-                                `/ai?folderId=${folderContextMenu.folder.id}&folderName=${encodeURIComponent(
-                                    folderContextMenu.folder.name
-                                )}`
-                            );
-                            setFolderContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <Sparkles className="w-4 h-4 text-[#1a73e8] dark:text-blue-400 fill-[#1a73e8]/20" />
-                            <span>Hỏi Gemini</span>
-                        </div>
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#c2e7ff] text-[#001d35] dark:bg-blue-900/60 dark:text-blue-200">
-                            Mới
-                        </span>
-                    </button>
-
-                    <div className="my-1 border-t border-gray-100 dark:border-slate-800" />
-
-                    {/* 4. Chia sẻ > */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            router.push(
-                                `/files/permissions?folderId=${folderContextMenu.folder.id}&name=${encodeURIComponent(
-                                    folderContextMenu.folder.name
-                                )}`
-                            );
-                            setFolderContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <UserPlus className="w-4 h-4 text-gray-500" />
-                            <span>Chia sẻ</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-                    </button>
-
-                    {/* 5. Sắp xếp > */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            router.push(`/files?highlightFolderId=${folderContextMenu.folder.id}`);
-                            setFolderContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <FolderInput className="w-4 h-4 text-gray-500" />
-                            <span>Sắp xếp</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-                    </button>
-
-                    {/* 6. Thông tin về thư mục > */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setShowInfoPanel(true);
-                            setFolderContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <Info className="w-4 h-4 text-gray-500" />
-                            <span>Thông tin về thư mục</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-                    </button>
-
-                    <div className="my-1 border-t border-gray-100 dark:border-slate-800" />
-
-                    {/* 7. Chuyển vào thùng rác */}
-                    <button
-                        type="button"
-                        onClick={() => handleRequestDeleteFolder(folderContextMenu.folder)}
-                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 transition cursor-pointer"
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <Trash2 className="w-4 h-4" />
-                            <span>Chuyển vào thùng rác</span>
-                        </div>
-                        <span className="text-[10.5px] text-gray-400 font-mono tracking-tight">Delete</span>
-                    </button>
-
-                    {/* 8. Không phải đề xuất hữu ích */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            toast.success(`Đã ẩn thư mục "${folderContextMenu.folder.name}" khỏi đề xuất`);
-                            setFolderContextMenu(null);
-                        }}
-                        className="w-full px-3.5 py-1.5 flex items-center gap-2.5 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                        <ThumbsDown className="w-4 h-4 text-gray-500" />
-                        <span>Không phải đề xuất hữu ích</span>
-                    </button>
-                </div>
+            {/* Version Management Modal */}
+            {versionModalFile && (
+                <VersionManagementModal
+                    file={versionModalFile}
+                    onClose={() => setVersionModalFile(null)}
+                    onVersionUploaded={() => fetchHomeData(false)}
+                />
             )}
 
             {/* RENAME FOLDER MODAL */}

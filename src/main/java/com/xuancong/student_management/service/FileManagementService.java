@@ -57,6 +57,11 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import javax.imageio.ImageIO;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
+import javax.crypto.SecretKey;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -80,6 +85,7 @@ public class FileManagementService {
     private final FolderPermissionRepository folderPermissionRepository;
     private final DepartmentRepository departmentRepository;
     private final S3FileService s3FileService;
+    private final DownloadTokenService downloadTokenService;
     private final AiService aiService;
     private final AIServiceClient aiServiceClient;
     private final ActivityLogManagementService activityLogManagementService;
@@ -90,6 +96,16 @@ public class FileManagementService {
     private final UserStarredFileRepository userStarredFileRepository;
     private final DocumentChunkRepository documentChunkRepository;
     private final AccessRequestRepository accessRequestRepository;
+    private final java.util.concurrent.ConcurrentHashMap<Long, com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest> pendingSaveOptions = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @org.springframework.beans.factory.annotation.Value("${onlyoffice.url:http://localhost:8083}")
+    private String onlyOfficeUrl;
+
+    @org.springframework.beans.factory.annotation.Value("${onlyoffice.jwt-secret:onlyoffice_jwt_secret_key_2026_assistant}")
+    private String onlyOfficeJwtSecret;
+
+    @org.springframework.beans.factory.annotation.Value("${onlyoffice.internal-callback-url:http://host.docker.internal:8080}")
+    private String onlyOfficeInternalCallbackUrl;
 
     @jakarta.annotation.PostConstruct
     @Transactional
@@ -188,8 +204,20 @@ public class FileManagementService {
         }
 
         Department ownerDept = (uploader != null) ? uploader.getDepartment() : null;
-        String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf";
+        String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename().trim() : "document.pdf";
         String ext = extractExtension(originalFilename);
+
+        // Kiểm tra trùng tên file trong cùng một thư mục cha
+        Long companyId = company != null ? company.getId() : null;
+        if (companyId != null) {
+            boolean duplicate = (folder != null)
+                    ? fileItemRepository.existsByCompanyIdAndFolderIdAndNameIgnoreCaseAndDeletedAtIsNull(companyId, folder.getId(), originalFilename)
+                    : fileItemRepository.existsByCompanyIdAndFolderIsNullAndNameIgnoreCaseAndDeletedAtIsNull(companyId, originalFilename);
+            if (duplicate) {
+                String folderDesc = folder != null ? "thư mục \"" + folder.getName() + "\"" : "thư mục gốc (Drive của tôi)";
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Tệp tin \"" + originalFilename + "\" đã tồn tại trong " + folderDesc + ". Vui lòng đổi tên file hoặc tải lên phiên bản mới.");
+            }
+        }
 
         FileItem fileItem = new FileItem();
         fileItem.setName(originalFilename);
@@ -513,7 +541,21 @@ public class FileManagementService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền đổi tên tài liệu này");
         }
         String oldName = file.getName();
-        file.setName(newName.trim());
+        String trimmedName = newName.trim();
+        if (!trimmedName.equalsIgnoreCase(oldName)) {
+            Long companyId = file.getCompany() != null ? file.getCompany().getId() : null;
+            if (companyId != null) {
+                Long fId = file.getFolder() != null ? file.getFolder().getId() : null;
+                boolean duplicate = (fId != null)
+                        ? fileItemRepository.existsByCompanyIdAndFolderIdAndNameIgnoreCaseAndDeletedAtIsNull(companyId, fId, trimmedName)
+                        : fileItemRepository.existsByCompanyIdAndFolderIsNullAndNameIgnoreCaseAndDeletedAtIsNull(companyId, trimmedName);
+                if (duplicate) {
+                    String folderDesc = file.getFolder() != null ? "thư mục \"" + file.getFolder().getName() + "\"" : "thư mục gốc (Drive của tôi)";
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Tệp tin \"" + trimmedName + "\" đã tồn tại trong " + folderDesc + ".");
+                }
+            }
+        }
+        file.setName(trimmedName);
         file.setUpdatedAt(Instant.now());
         FileItem saved = fileItemRepository.save(file);
 
@@ -681,9 +723,16 @@ public class FileManagementService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền xem tài liệu này");
         }
 
+        String ext = file.getFileType() != null ? file.getFileType().toLowerCase() : "";
+        String resContentType = null;
+        if ("md".equals(ext) || "markdown".equals(ext)) resContentType = "text/markdown; charset=UTF-8";
+        else if ("txt".equals(ext)) resContentType = "text/plain; charset=UTF-8";
+        else if ("json".equals(ext)) resContentType = "application/json; charset=UTF-8";
+        else if ("pdf".equals(ext)) resContentType = "application/pdf";
+
         String presignedUrl = null;
         if (file.getStoragePath() != null && !file.getStoragePath().isBlank()) {
-            presignedUrl = s3FileService.generatePresignedUrl(file.getStoragePath(), java.time.Duration.ofMinutes(30));
+            presignedUrl = s3FileService.generatePresignedUrl(file.getStoragePath(), java.time.Duration.ofMinutes(30), resContentType);
         }
 
         String finalUrl = (presignedUrl != null && !presignedUrl.isBlank())
@@ -720,6 +769,9 @@ public class FileManagementService {
             else if ("jpg".equals(ext) || "jpeg".equals(ext)) contentType = "image/jpeg";
             else if ("docx".equals(ext)) contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             else if ("xlsx".equals(ext)) contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            else if ("md".equals(ext) || "markdown".equals(ext)) contentType = "text/markdown; charset=UTF-8";
+            else if ("txt".equals(ext)) contentType = "text/plain; charset=UTF-8";
+            else if ("json".equals(ext)) contentType = "application/json; charset=UTF-8";
 
             ContentDisposition contentDisposition = ContentDisposition.inline()
                     .filename(file.getName() != null ? file.getName() : "document", StandardCharsets.UTF_8)
@@ -1170,15 +1222,20 @@ public class FileManagementService {
             }
         }
 
-        // Kiểm tra phân quyền trực tiếp trên file (FilePermission)
+        // Kiểm tra phân quyền trực tiếp trên file (FilePermission) - Ưu tiên User trước Department
         List<FilePermission> permissions = filePermissionRepository.findByFileId(file.getId());
-        for (FilePermission p : permissions) {
-            if (p.getSubjectType() == PermissionSubjectType.USER && p.getSubjectId().equals(user.getId())) {
-                return checkLevel(p.getLevel(), requiredLevel);
-            }
-            if (p.getSubjectType() == PermissionSubjectType.DEPARTMENT && user.getDepartment() != null
-                    && p.getSubjectId().equals(user.getDepartment().getId())) {
-                return checkLevel(p.getLevel(), requiredLevel);
+        java.util.Optional<FilePermission> userFilePerm = permissions.stream()
+                .filter(p -> p.getSubjectType() == PermissionSubjectType.USER && p.getSubjectId().equals(user.getId()))
+                .findFirst();
+        if (userFilePerm.isPresent()) {
+            return checkLevel(userFilePerm.get().getLevel(), requiredLevel);
+        }
+        if (user.getDepartment() != null) {
+            java.util.Optional<FilePermission> deptFilePerm = permissions.stream()
+                    .filter(p -> p.getSubjectType() == PermissionSubjectType.DEPARTMENT && p.getSubjectId().equals(user.getDepartment().getId()))
+                    .findFirst();
+            if (deptFilePerm.isPresent()) {
+                return checkLevel(deptFilePerm.get().getLevel(), requiredLevel);
             }
         }
 
@@ -1256,5 +1313,461 @@ public class FileManagementService {
         if (actual == null) return false;
         if (required == PermissionLevel.VIEWER) return true;
         return actual == PermissionLevel.EDITOR;
+    }
+
+    
+    private String buildContentDisposition(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "attachment; filename=\"download\"";
+        }
+        String cleanName = fileName.replace("\"", "").replace("\r", "").replace("\n", "");
+        String asciiFallback = cleanName.replaceAll("[^\\x20-\\x7E]", "_");
+        if (asciiFallback.isBlank()) {
+            asciiFallback = "file";
+        }
+        String encodedUtf8 = java.net.URLEncoder.encode(cleanName, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+        return "attachment; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encodedUtf8;
+    }
+
+    public Map<String, Object> createDownloadToken(Long id) {
+        FileItem file = getOrThrow(id);
+        User currentUser = getAuthenticatedUser();
+        if (currentUser != null && !hasFileAccess(file, currentUser, PermissionLevel.VIEWER)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền tải tài liệu này");
+        }
+
+        String fileName = file.getName() != null ? file.getName() : "downloaded_file";
+        String ext = file.getFileType() != null ? file.getFileType().toLowerCase() : "";
+
+        String directDownloadUrl = null;
+        if (file.getStoragePath() != null && !file.getStoragePath().isBlank()) {
+            String disposition = buildContentDisposition(fileName);
+            directDownloadUrl = s3FileService.generatePresignedUrl(
+                    file.getStoragePath(),
+                    java.time.Duration.ofMinutes(10),
+                    null,
+                    disposition
+            );
+        }
+
+        String token = downloadTokenService.createToken(
+                file.getId(),
+                fileName,
+                file.getStoragePath(),
+                ext,
+                directDownloadUrl
+        );
+
+        activityLogManagementService.logActivity(
+                file.getCompany(),
+                currentUser != null ? currentUser : file.getUploadedBy(),
+                com.xuancong.student_management.entity.enums.ActivityType.DOWNLOAD,
+                file,
+                Map.of("fileName", fileName)
+        );
+
+        return Map.of(
+                "token", token,
+                "downloadUrl", "/api/v1/files/download?token=" + token,
+                "directUrl", directDownloadUrl != null ? directDownloadUrl : "",
+                "fileName", fileName
+        );
+    }
+
+    public ResponseEntity<?> downloadByToken(String token) {
+        DownloadTokenService.DownloadTicket ticket = downloadTokenService.validateToken(token);
+        if (ticket == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Liên kết tải xuống không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.");
+        }
+
+        if (ticket.getDirectUrl() != null && !ticket.getDirectUrl().isBlank()) {
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(java.net.URI.create(ticket.getDirectUrl()))
+                    .build();
+        }
+
+        if (ticket.getStoragePath() == null || ticket.getStoragePath().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy nội dung tệp để tải");
+        }
+
+        try {
+            byte[] bytes = s3FileService.downloadFile(ticket.getStoragePath());
+            String safeName = ticket.getFileName() != null ? ticket.getFileName() : "file";
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, buildContentDisposition(safeName))
+                    .contentLength(bytes.length)
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(bytes);
+        } catch (Exception e) {
+            log.error("Failed to download file by token: {}", e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Lỗi khi tải tệp từ storage");
+        }
+    }
+
+
+    @Transactional
+    public FileItemResponse copyFile(Long fileId) {
+        FileItem original = getOrThrow(fileId);
+        User currentUser = getAuthenticatedUser();
+        if (currentUser != null && !hasFileAccess(original, currentUser, PermissionLevel.VIEWER)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền sao chép tài liệu này");
+        }
+
+        String baseName = original.getName();
+        String ext = original.getFileType() != null ? original.getFileType() : "";
+        Long companyId = original.getCompany() != null ? original.getCompany().getId() : null;
+        Long folderId = original.getFolder() != null ? original.getFolder().getId() : null;
+        String newName = generateCopyFileName(baseName, companyId, folderId);
+
+        String newStoragePath = "";
+        if (original.getStoragePath() != null && !original.getStoragePath().isBlank()) {
+            String newKey = "docs/" + UUID.randomUUID() + (ext.isBlank() ? "" : "." + ext);
+            try {
+                newStoragePath = s3FileService.copyFile(original.getStoragePath(), newKey);
+            } catch (Exception e) {
+                log.error("Failed to copy S3 object for file {}: {}", fileId, e.getMessage());
+                newStoragePath = original.getStoragePath();
+            }
+        }
+
+        FileItem copy = new FileItem();
+        copy.setName(newName);
+        copy.setFileType(original.getFileType());
+        copy.setSizeBytes(original.getSizeBytes());
+        copy.setCompany(original.getCompany());
+        copy.setFolder(original.getFolder());
+        copy.setOwnerDepartment(original.getOwnerDepartment());
+        copy.setUploadedBy(currentUser != null ? currentUser : original.getUploadedBy());
+        copy.setVisibility(original.getVisibility());
+        copy.setAiIndexed(false);
+        copy.setThumbnailPath(original.getThumbnailPath());
+        copy.setStoragePath(newStoragePath);
+        copy.setCreatedAt(Instant.now());
+        copy.setUpdatedAt(Instant.now());
+
+        if (original.getTags() != null) {
+            for (FileTag tag : original.getTags()) {
+                FileTag newTag = new FileTag();
+                newTag.setFile(copy);
+                newTag.setTag(tag.getTag());
+                copy.getTags().add(newTag);
+            }
+        }
+
+        FileItem saved = fileItemRepository.save(copy);
+
+        FileVersion v1 = new FileVersion();
+        v1.setFile(saved);
+        v1.setVersionNo(1);
+        v1.setStoragePath(newStoragePath);
+        v1.setSizeBytes(original.getSizeBytes());
+        v1.setUploadedBy(currentUser != null ? currentUser : original.getUploadedBy());
+        v1.setCreatedAt(Instant.now());
+        v1 = fileVersionRepository.save(v1);
+
+        saved.setCurrentVersionId(v1.getId());
+        saved = fileItemRepository.save(saved);
+
+        activityLogManagementService.logActivity(
+                saved.getCompany(),
+                currentUser != null ? currentUser : saved.getUploadedBy(),
+                com.xuancong.student_management.entity.enums.ActivityType.UPLOAD,
+                saved,
+                Map.of("action", "COPY_FILE", "originalFileId", original.getId(), "fileName", saved.getName())
+        );
+
+        return toFileResponse(saved);
+    }
+
+    private String generateCopyFileName(String originalName, Long companyId, Long folderId) {
+        String copyPrefix = "Bản sao của ";
+        String candidate = copyPrefix + originalName;
+
+        if (companyId == null) return candidate;
+
+        if (!checkCopyFileExists(candidate, companyId, folderId)) {
+            return candidate;
+        }
+
+        int count = 2;
+        while (true) {
+            candidate = "Bản sao (" + count + ") của " + originalName;
+            if (!checkCopyFileExists(candidate, companyId, folderId)) {
+                return candidate;
+            }
+            count++;
+        }
+    }
+
+    private boolean checkCopyFileExists(String name, Long companyId, Long folderId) {
+        if (folderId != null) {
+            return fileItemRepository.existsByCompanyIdAndFolderIdAndNameIgnoreCaseAndDeletedAtIsNull(companyId, folderId, name);
+        } else {
+            return fileItemRepository.existsByCompanyIdAndFolderIsNullAndNameIgnoreCaseAndDeletedAtIsNull(companyId, name);
+        }
+    }
+
+
+    private SecretKey getOnlyOfficeSigningKey() {
+        byte[] keyBytes = onlyOfficeJwtSecret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < 32) {
+            byte[] padded = new byte[32];
+            System.arraycopy(keyBytes, 0, padded, 0, keyBytes.length);
+            return Keys.hmacShaKeyFor(padded);
+        }
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    private String createOnlyOfficeToken(Map<String, Object> payload) {
+        try {
+            return Jwts.builder()
+                    .setClaims(payload)
+                    .signWith(getOnlyOfficeSigningKey(), SignatureAlgorithm.HS256)
+                    .compact();
+        } catch (Exception e) {
+            log.error("Failed to generate ONLYOFFICE JWT token", e);
+            return "";
+        }
+    }
+
+    public Map<String, Object> getOnlyOfficeConfig(Long id) {
+        FileItem file = getOrThrow(id);
+        User currentUser = getAuthenticatedUser();
+        if (currentUser != null && !hasFileAccess(file, currentUser, PermissionLevel.VIEWER)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền xem tài liệu này");
+        }
+
+        boolean canEdit = currentUser == null || hasFileAccess(file, currentUser, PermissionLevel.EDITOR);
+
+        String ext = file.getFileType() != null ? file.getFileType().toLowerCase() : "docx";
+        String docType = "word";
+        if (ext.matches("^(xlsx|xls|csv|ods)$")) {
+            docType = "cell";
+        } else if (ext.matches("^(pptx|ppt|odp)$")) {
+            docType = "slide";
+        }
+
+        // Secure internal download token URL for ONLYOFFICE to fetch file without S3 header conflict
+        String dlToken = downloadTokenService.createToken(file.getId(), file.getName(), file.getStoragePath(), ext, null);
+        String downloadUrl = onlyOfficeInternalCallbackUrl + "/api/v1/files/download?token=" + dlToken;
+
+        String key = "file_" + file.getId() + "_v" + (file.getCurrentVersionId() != null ? file.getCurrentVersionId() : (file.getUpdatedAt() != null ? file.getUpdatedAt().toEpochMilli() : System.currentTimeMillis()));
+
+        Map<String, Object> permissions = new HashMap<>();
+        permissions.put("edit", canEdit);
+        permissions.put("download", true);
+        permissions.put("print", true);
+        permissions.put("review", canEdit);
+        permissions.put("comment", canEdit);
+        permissions.put("fillForms", true);
+        permissions.put("modifyFilter", canEdit);
+        permissions.put("modifyContentControl", canEdit);
+
+        Map<String, Object> document = new HashMap<>();
+        document.put("title", file.getName());
+        document.put("url", downloadUrl);
+        document.put("fileType", ext);
+        document.put("key", key);
+        document.put("permissions", permissions);
+
+        Map<String, Object> user = new HashMap<>();
+        user.put("id", currentUser != null ? currentUser.getId().toString() : "anonymous");
+        user.put("name", "");
+
+        Map<String, Object> headerLayout = new HashMap<>();
+        headerLayout.put("user", false);
+        headerLayout.put("users", false);
+
+        Map<String, Object> layout = new HashMap<>();
+        layout.put("header", headerLayout);
+
+        Map<String, Object> customization = new HashMap<>();
+        customization.put("autosave", true);
+        customization.put("forcesave", true);
+        customization.put("chat", false);
+        customization.put("comments", true);
+        customization.put("help", false);
+        customization.put("feedback", false);
+        customization.put("layout", layout);
+
+        Map<String, Object> editorConfig = new HashMap<>();
+        editorConfig.put("callbackUrl", onlyOfficeInternalCallbackUrl + "/api/v1/files/" + id + "/onlyoffice-callback");
+        editorConfig.put("mode", canEdit ? "edit" : "view");
+        editorConfig.put("lang", "en");
+        editorConfig.put("user", user);
+        editorConfig.put("customization", customization);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("documentType", docType);
+        result.put("document", document);
+        result.put("editorConfig", editorConfig);
+        result.put("serverUrl", onlyOfficeUrl);
+
+        // Sign ONLYOFFICE JWT token
+        Map<String, Object> tokenPayload = new HashMap<>();
+        tokenPayload.put("document", document);
+        tokenPayload.put("editorConfig", editorConfig);
+        tokenPayload.put("documentType", docType);
+
+        String token = createOnlyOfficeToken(tokenPayload);
+        result.put("token", token);
+        document.put("token", token);
+        editorConfig.put("token", token);
+
+        return result;
+    }
+
+    @Transactional
+    public void setOnlyOfficeSaveOptions(Long fileId, com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest request) {
+        if (request != null) {
+            log.info("Setting pending ONLYOFFICE save options for file {}: mode={}, desc={}", fileId, request.getSaveMode(), request.getChangeDescription());
+            pendingSaveOptions.put(fileId, request);
+        }
+    }
+
+    @Transactional
+    public Map<String, Object> handleOnlyOfficeCallback(Long fileId, Map<String, Object> payload) {
+        log.info("Received ONLYOFFICE callback for file {}: keys={}", fileId, payload != null ? payload.keySet() : null);
+
+        if (payload != null && payload.containsKey("token") && payload.get("status") == null) {
+            try {
+                String token = (String) payload.get("token");
+                Claims claims = Jwts.parserBuilder()
+                        .setSigningKey(getOnlyOfficeSigningKey())
+                        .build()
+                        .parseClaimsJws(token)
+                        .getBody();
+                payload = new HashMap<>(claims);
+                log.info("Decoded ONLYOFFICE callback token payload: status={}", payload.get("status"));
+            } catch (Exception e) {
+                log.warn("Failed to parse ONLYOFFICE callback token: {}", e.getMessage());
+            }
+        }
+
+        Integer status = payload != null && payload.get("status") instanceof Number ? ((Number) payload.get("status")).intValue() : null;
+        if (status != null && (status == 2 || status == 6)) {
+            com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest options = pendingSaveOptions.remove(fileId);
+            if (options != null && "DISCARD".equalsIgnoreCase(options.getSaveMode())) {
+                log.info("ONLYOFFICE save discarded by user choice for file {}", fileId);
+                return Map.of("error", 0);
+            }
+
+            String downloadUrl = (String) payload.get("url");
+            if (downloadUrl != null && !downloadUrl.isBlank()) {
+                FileItem file = getOrThrow(fileId);
+                try {
+                    String resolvedUrl = downloadUrl;
+                    try {
+                        java.net.URI rawUri = new java.net.URI(downloadUrl);
+                        String pathAndQuery = rawUri.getRawPath() + (rawUri.getRawQuery() != null ? "?" + rawUri.getRawQuery() : "");
+                        resolvedUrl = onlyOfficeUrl + pathAndQuery;
+                    } catch (Exception uriEx) {
+                        log.warn("Could not rewrite ONLYOFFICE downloadUrl {}: {}", downloadUrl, uriEx.getMessage());
+                    }
+                    log.info("Fetching edited document from ONLYOFFICE: original={}, resolved={}", downloadUrl, resolvedUrl);
+
+                    java.net.URL url = new java.net.URI(resolvedUrl).toURL();
+                    byte[] bytes;
+                    try (java.io.InputStream in = url.openStream()) {
+                        bytes = in.readAllBytes();
+                    }
+
+                    String ext = file.getFileType() != null ? file.getFileType().toLowerCase() : "docx";
+                    String key = "docs/" + UUID.randomUUID() + "." + ext;
+                    String newStoragePath = s3FileService.uploadBytes(key, bytes, "application/octet-stream");
+
+                    file.setStoragePath(newStoragePath);
+                    file.setSizeBytes((long) bytes.length);
+                    file.setUpdatedAt(Instant.now());
+
+                    boolean isOverwrite = options != null && "OVERWRITE".equalsIgnoreCase(options.getSaveMode());
+                    if (isOverwrite) {
+                        FileVersion currentVersion = file.getCurrentVersionId() != null
+                                ? fileVersionRepository.findById(file.getCurrentVersionId()).orElse(null)
+                                : fileVersionRepository.findTopByFile_IdOrderByVersionNoDesc(file.getId()).orElse(null);
+
+                        if (currentVersion != null) {
+                            currentVersion.setStoragePath(newStoragePath);
+                            currentVersion.setSizeBytes((long) bytes.length);
+                            fileVersionRepository.save(currentVersion);
+                        } else {
+                            FileVersion v = new FileVersion();
+                            v.setFile(file);
+                            v.setVersionNo(1);
+                            v.setStoragePath(newStoragePath);
+                            v.setSizeBytes((long) bytes.length);
+                            v.setUploadedBy(file.getUploadedBy());
+                            v.setCreatedAt(Instant.now());
+                            v = fileVersionRepository.save(v);
+                            file.setCurrentVersionId(v.getId());
+                        }
+
+                        fileItemRepository.save(file);
+
+                        try {
+                            aiService.deleteDocument(file.getId());
+                            aiService.processAsync(file.getId(), newStoragePath);
+                            log.info("Triggered AI re-indexing for overwritten document {}: newStoragePath={}", fileId, newStoragePath);
+                        } catch (Exception aiEx) {
+                            log.warn("Could not trigger AI re-indexing for file {}: {}", fileId, aiEx.getMessage());
+                        }
+
+                        activityLogManagementService.logActivity(
+                                file.getCompany(),
+                                file.getUploadedBy(),
+                                com.xuancong.student_management.entity.enums.ActivityType.UPDATE,
+                                file,
+                                Map.of("action", "ONLYOFFICE_OVERWRITE", "fileName", file.getName())
+                        );
+                        log.info("ONLYOFFICE overwrite successfully processed for file {}", fileId);
+                    } else {
+                        int nextVersionNo = fileVersionRepository.findTopByFile_IdOrderByVersionNoDesc(file.getId())
+                                .map(v -> v.getVersionNo() + 1)
+                                .orElse(1);
+
+                        FileVersion v = new FileVersion();
+                        v.setFile(file);
+                        v.setVersionNo(nextVersionNo);
+                        v.setStoragePath(newStoragePath);
+                        v.setSizeBytes((long) bytes.length);
+                        v.setUploadedBy(file.getUploadedBy());
+                        v.setCreatedAt(Instant.now());
+                        v = fileVersionRepository.save(v);
+
+                        file.setCurrentVersionId(v.getId());
+                        fileItemRepository.save(file);
+
+                        try {
+                            aiService.deleteDocument(file.getId());
+                            aiService.processAsync(file.getId(), newStoragePath);
+                            log.info("Triggered AI re-indexing for new version document {}: newStoragePath={}", fileId, newStoragePath);
+                        } catch (Exception aiEx) {
+                            log.warn("Could not trigger AI re-indexing for file {}: {}", fileId, aiEx.getMessage());
+                        }
+
+                        Map<String, Object> meta = new HashMap<>();
+                        meta.put("action", "ONLYOFFICE_NEW_VERSION");
+                        meta.put("versionNo", nextVersionNo);
+                        meta.put("fileName", file.getName());
+                        if (options != null && options.getChangeDescription() != null && !options.getChangeDescription().isBlank()) {
+                            meta.put("changeDescription", options.getChangeDescription().trim());
+                        }
+                        activityLogManagementService.logActivity(
+                                file.getCompany(),
+                                file.getUploadedBy(),
+                                com.xuancong.student_management.entity.enums.ActivityType.UPDATE,
+                                file,
+                                meta
+                        );
+                        log.info("ONLYOFFICE new version successfully processed for file {}: new version={}", fileId, nextVersionNo);
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to process ONLYOFFICE document save for file {}: {}", fileId, e.getMessage(), e);
+                    return Map.of("error", 1);
+                }
+            }
+        }
+
+        return Map.of("error", 0);
     }
 }
