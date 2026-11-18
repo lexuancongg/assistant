@@ -672,7 +672,7 @@ public class ChatService {
         try {
             String result = text;
 
-            // 1. Tự động nhận diện tên file thực tế trong hệ thống và gán link có fileId để click xem trước
+            // 1. Tự động nhận diện chính xác theo tên file thực tế trong hệ thống và gán link có fileId để click xem trước
             List<FileItem> activeFiles = fileItemRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
             if (activeFiles != null && !activeFiles.isEmpty()) {
                 List<FileItem> sortedFiles = activeFiles.stream()
@@ -691,25 +691,7 @@ public class ChatService {
                 }
             }
 
-            // 2. Nhận diện theo cú pháp "Tài liệu #1", "Tài liệu số 1"
-            java.util.regex.Pattern docPattern = java.util.regex.Pattern.compile("(?i)(?:\\*\\*)?Tài liệu\\s*(?:số\\s*)?#?(\\d+)(?:\\*\\*)?");
-            java.util.regex.Matcher matcher = docPattern.matcher(result);
-            StringBuilder sb = new StringBuilder();
-            while (matcher.find()) {
-                try {
-                    Long docId = Long.parseLong(matcher.group(1));
-                    FileItem fi = fileItemRepository.findById(docId).orElse(null);
-                    if (fi != null) {
-                        matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement("[" + fi.getName() + "](/files?fileId=" + docId + ")"));
-                    } else {
-                        matcher.appendReplacement(sb, matcher.group(0));
-                    }
-                } catch (Exception ex) {
-                    matcher.appendReplacement(sb, matcher.group(0));
-                }
-            }
-            matcher.appendTail(sb);
-            return sb.toString();
+            return result;
         } catch (Exception e) {
             return text;
         }
