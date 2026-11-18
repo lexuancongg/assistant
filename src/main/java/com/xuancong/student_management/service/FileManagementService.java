@@ -170,6 +170,19 @@ public class FileManagementService {
                 .toList();
     }
 
+        public java.util.Map<String, Object> getFilePublicInfo(Long id) {
+        FileItem file = getOrThrow(id);
+        java.util.Map<String, Object> info = new java.util.HashMap<>();
+        info.put("id", file.getId());
+        info.put("name", file.getName());
+        info.put("fileType", file.getFileType());
+        if (file.getFolder() != null) {
+            info.put("folderId", file.getFolder().getId());
+            info.put("folderName", file.getFolder().getName());
+        }
+        return info;
+    }
+
     public FileItemResponse getFileDetail(Long id) {
         FileItem file = getOrThrow(id);
         User currentUser = getAuthenticatedUser();
@@ -201,6 +214,10 @@ public class FileManagementService {
         Folder folder = null;
         if (folderId != null) {
             folder = folderRepository.findById(folderId).orElse(null);
+            if (folder != null && uploader != null && !folderService.canUploadToFolder(uploader, folder)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Bạn không có quyền tải tệp tin lên thư mục \"" + folder.getName() + "\"!");
+            }
         }
 
         Department ownerDept = (uploader != null) ? uploader.getDepartment() : null;
@@ -1202,6 +1219,17 @@ public class FileManagementService {
         // Người tải lên là OWNER -> toàn quyền
         if (file.getUploadedBy() != null && file.getUploadedBy().getId().equals(user.getId())) {
             return true;
+        }
+
+        // Chủ sở hữu của thư mục chứa file (hoặc thư mục cha của nó) -> toàn quyền xem / quản lý file trong thư mục của mình
+        if (file.getFolder() != null) {
+            com.xuancong.student_management.entity.Folder currentFolder = file.getFolder();
+            while (currentFolder != null) {
+                if (currentFolder.getCreatedBy() != null && currentFolder.getCreatedBy().getId().equals(user.getId())) {
+                    return true;
+                }
+                currentFolder = currentFolder.getParent();
+            }
         }
 
         FileVisibility visibility = file.getVisibility() != null ? file.getVisibility() : FileVisibility.INHERIT;

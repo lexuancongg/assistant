@@ -79,6 +79,14 @@ class FileManagementService {
         return [];
     }
 
+    public async getFilePublicInfo(id: number | string): Promise<{ id: number | string; name: string; fileType?: string; folderId?: number; folderName?: string }> {
+        const response = await apiClient.get(`${this.baseUrl}/${id}/public-info`);
+        if (response.ok) {
+            return await response.json();
+        }
+        throw await extractApiError(response, "Không thể tải thông tin tài liệu");
+    }
+
     public async getFileDetail(id: number | string): Promise<FileItemDto> {
         const response = await apiClient.get(`${this.baseUrl}/${id}`);
         if (response.ok) {

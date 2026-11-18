@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import com.xuancong.student_management.security.CustomUserDetails;
 
@@ -29,6 +28,17 @@ public class AccessRequestController {
     ) {
         User currentUser = userDetails != null ? userDetails.getUser() : null;
         return ResponseEntity.ok(accessRequestService.createRequest(req, currentUser));
+    }
+
+    @GetMapping("/check-pending")
+    public ResponseEntity<Map<String, Boolean>> checkPending(
+            @RequestParam(required = false) Long fileId,
+            @RequestParam(required = false) Long folderId,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        User currentUser = userDetails != null ? userDetails.getUser() : null;
+        boolean hasPending = accessRequestService.hasPendingRequest(fileId, folderId, currentUser);
+        return ResponseEntity.ok(Map.of("hasPending", hasPending));
     }
 
     @GetMapping

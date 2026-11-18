@@ -3,34 +3,24 @@
 import React, { useEffect, useState, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-    KeyRound,
-    Check,
     X,
-    CheckCircle2,
-    XCircle,
-    Clock,
     Folder,
     FileSpreadsheet,
     FileText,
     Presentation,
-    Archive,
-    Image as ImageIcon,
     FileBox,
-    ExternalLink,
-    Shield,
+    Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
 import accessRequestService, { AccessRequestDto } from '@/services/access/accessRequestService';
 
-// File Type visual configuration matching Google Drive style
+// File Type icon config matching Google Drive
 function getFileTypeConfig(extOrType: string, isFolder = false) {
     if (isFolder) {
         return {
             icon: Folder,
-            color: 'text-[#444746] dark:text-slate-300',
-            bgColor: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300',
-            category: 'Thư mục',
+            color: 'text-[#5f6368] dark:text-neutral-400 fill-[#5f6368]/20',
         };
     }
 
@@ -39,69 +29,37 @@ function getFileTypeConfig(extOrType: string, isFolder = false) {
     if (['xlsx', 'xls', 'csv'].includes(ext)) {
         return {
             icon: FileSpreadsheet,
-            color: 'text-[#0f9d58] dark:text-emerald-400',
-            bgColor: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300',
-            category: 'Bảng tính',
+            color: 'text-[#0f9d58]',
         };
     }
     if (['docx', 'doc', 'txt', 'rtf'].includes(ext)) {
         return {
             icon: FileText,
-            color: 'text-[#1a73e8] dark:text-blue-400',
-            bgColor: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300',
-            category: 'Tài liệu',
+            color: 'text-[#0b57d0]',
         };
     }
     if (['pptx', 'ppt'].includes(ext)) {
         return {
             icon: Presentation,
-            color: 'text-[#f29900] dark:text-amber-400',
-            bgColor: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300',
-            category: 'Trình bày',
+            color: 'text-[#f29900]',
         };
     }
     if (ext === 'pdf') {
         return {
             icon: FileText,
-            color: 'text-[#ea4335] dark:text-red-400',
-            bgColor: 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300',
-            category: 'PDF',
+            color: 'text-[#ea4335]',
         };
     }
 
     return {
         icon: FileBox,
-        color: 'text-sky-600 dark:text-sky-400',
-        bgColor: 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300',
-        category: 'Tệp',
+        color: 'text-[#0b57d0]',
     };
 }
 
-// Generate colored avatar based on email/name
-function getAvatarColor(identifier: string) {
-    const colors = [
-        'bg-[#0b57d0] text-white',
-        'bg-[#7c3aed] text-white',
-        'bg-[#0284c7] text-white',
-        'bg-[#059669] text-white',
-        'bg-[#dc2626] text-white',
-        'bg-[#d97706] text-white',
-        'bg-[#4f46e5] text-white',
-        'bg-[#db2777] text-white',
-        'bg-[#0891b2] text-white',
-        'bg-[#65a30d] text-white',
-    ];
-    let hash = 0;
-    const safeStr = identifier || 'user';
-    for (let i = 0; i < safeStr.length; i++) {
-        hash = safeStr.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return colors[Math.abs(hash) % colors.length];
-}
-
-// Format date into human-friendly Vietnamese string
+// Format date into clean string: "18 thg 11, 16:18"
 function formatRequestDate(dateStr?: string): string {
-    if (!dateStr) return 'Vừa xong';
+    if (!dateStr) return '';
     try {
         let d: Date;
         if (dateStr.includes('/')) {
@@ -111,7 +69,8 @@ function formatRequestDate(dateStr?: string): string {
             d = new Date(dateStr);
         }
         if (isNaN(d.getTime())) return dateStr;
-        return `${d.getDate()} thg ${d.getMonth() + 1}, ${d.getFullYear()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        const time = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        return `${d.getDate()} thg ${d.getMonth() + 1}, ${time}`;
     } catch {
         return dateStr;
     }
@@ -150,7 +109,7 @@ function AccessRequestsContent() {
         }
     }, []);
 
-    // Fetch data from real backend
+    // Fetch data
     const loadRequests = async () => {
         setLoading(true);
         try {
@@ -159,20 +118,11 @@ function AccessRequestsContent() {
                 accessRequestService.getAllRequests().catch(() => []),
                 accessRequestService.getMyRequests().catch(() => []),
             ]);
-
             setPendingRequests(pending);
             setAllRequests(all);
             setMyRequests(my);
-
-            // Auto-select first request if any
-            if (activeTab === 'pending' && pending.length > 0 && !selectedRequest) {
-                setSelectedRequest(pending[0]);
-            } else if (activeTab === 'my' && my.length > 0 && !selectedRequest) {
-                setSelectedRequest(my[0]);
-            }
-        } catch (err) {
-            console.error('Lỗi tải danh sách yêu cầu quyền:', err);
-            toast.error('Không thể tải danh sách yêu cầu quyền truy cập');
+        } catch {
+            // ignore
         } finally {
             setLoading(false);
         }
@@ -180,9 +130,8 @@ function AccessRequestsContent() {
 
     useEffect(() => {
         loadRequests();
-    }, [activeTab]);
+    }, []);
 
-    // Filter requests according to tab and status filter
     const currentList = useMemo(() => {
         let base: AccessRequestDto[] = [];
         if (activeTab === 'pending') {
@@ -194,7 +143,6 @@ function AccessRequestsContent() {
         }
 
         return base.filter((r) => {
-            // Filter by status if tab is 'all' or 'my'
             if (activeTab !== 'pending' && statusFilter !== 'ALL' && r.status !== statusFilter) {
                 return false;
             }
@@ -208,7 +156,7 @@ function AccessRequestsContent() {
         setActionLoadingId(request.id);
         try {
             await accessRequestService.approveRequest(request.id);
-            toast.success(`Đã phê duyệt quyền ${request.requestedLevel} cho ${request.requesterName}`);
+            toast.success(`Đã phê duyệt cho ${request.requesterName}`);
             await loadRequests();
             if (selectedRequest?.id === request.id) {
                 setSelectedRequest((prev) => (prev ? { ...prev, status: 'APPROVED' } : null));
@@ -226,7 +174,7 @@ function AccessRequestsContent() {
         setActionLoadingId(request.id);
         try {
             await accessRequestService.rejectRequest(request.id);
-            toast.success(`Đã từ chối yêu cầu cấp quyền của ${request.requesterName}`);
+            toast.success(`Đã từ chối yêu cầu của ${request.requesterName}`);
             await loadRequests();
             if (selectedRequest?.id === request.id) {
                 setSelectedRequest((prev) => (prev ? { ...prev, status: 'REJECTED' } : null));
@@ -239,18 +187,16 @@ function AccessRequestsContent() {
     };
 
     return (
-        <div className="h-full flex flex-col overflow-hidden bg-white dark:bg-slate-900 font-sans select-none">
-            {/* ── TOP HEADER (TITLE & CONTROLS) - Chuẩn Google Drive theo Thùng rác ── */}
-            <div className="px-6 pt-3 pb-2 shrink-0 flex items-center justify-between border-b border-transparent">
-                <div>
-                    <h1 className="text-[22px] font-normal text-[#1F1F1F] dark:text-[#E3E3E3] tracking-tight">
-                        Yêu cầu quyền truy cập
-                    </h1>
-                </div>
+        <div className="h-full flex flex-col overflow-hidden bg-white dark:bg-[#1E1F20] font-sans select-none">
+            {/* Header tiêu đề chuẩn Google Drive */}
+            <div className="px-6 pt-4 pb-2 shrink-0">
+                <h1 className="text-[22px] font-normal text-[#1F1F1F] dark:text-[#E3E3E3] tracking-tight">
+                    Yêu cầu quyền truy cập
+                </h1>
             </div>
 
-            {/* ── ROW 2: GOOGLE MATERIAL UNDERLINE TABS ── */}
-            <div className="flex items-center justify-between border-b border-gray-200/80 dark:border-slate-800 px-6 shrink-0">
+            {/* Google Material Tabs */}
+            <div className="flex items-center justify-between border-b border-[#E0E0E0] dark:border-neutral-800 px-6 shrink-0">
                 <div className="flex items-center gap-6">
                     {userRole === 'ADMIN' && (
                         <>
@@ -260,20 +206,20 @@ function AccessRequestsContent() {
                                     setActiveTab('pending');
                                     setStatusFilter('ALL');
                                 }}
-                                className={`relative pb-3 pt-1 text-[13px] font-medium transition-colors cursor-pointer flex items-center gap-2 ${
+                                className={`relative pb-3 pt-1 text-[13.5px] transition-colors cursor-pointer flex items-center gap-2 ${
                                     activeTab === 'pending'
-                                        ? 'text-[#0b57d0] dark:text-[#c2e7ff]'
-                                        : 'text-[#444746] dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
+                                        ? 'text-[#0B57D0] dark:text-[#A8C7FA] font-medium'
+                                        : 'text-[#444746] dark:text-neutral-400 hover:text-[#1F1F1F] dark:hover:text-neutral-200'
                                 }`}
                             >
-                                <span>Chờ tôi phê duyệt</span>
+                                <span>Chờ phê duyệt</span>
                                 {pendingRequests.length > 0 && (
-                                    <span className="px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 dark:bg-red-950/80 dark:text-red-300">
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#EDF2FA] dark:bg-neutral-800 text-[#0B57D0] dark:text-[#A8C7FA]">
                                         {pendingRequests.length}
                                     </span>
                                 )}
                                 {activeTab === 'pending' && (
-                                    <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#0b57d0] dark:bg-[#c2e7ff] rounded-t-full" />
+                                    <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#0B57D0] dark:bg-[#A8C7FA] rounded-t-full" />
                                 )}
                             </button>
 
@@ -283,16 +229,16 @@ function AccessRequestsContent() {
                                     setActiveTab('all');
                                     setStatusFilter('ALL');
                                 }}
-                                className={`relative pb-3 pt-1 text-[13px] font-medium transition-colors cursor-pointer flex items-center gap-2 ${
+                                className={`relative pb-3 pt-1 text-[13.5px] transition-colors cursor-pointer flex items-center gap-2 ${
                                     activeTab === 'all'
-                                        ? 'text-[#0b57d0] dark:text-[#c2e7ff]'
-                                        : 'text-[#444746] dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
+                                        ? 'text-[#0B57D0] dark:text-[#A8C7FA] font-medium'
+                                        : 'text-[#444746] dark:text-neutral-400 hover:text-[#1F1F1F] dark:hover:text-neutral-200'
                                 }`}
                             >
                                 <span>Tất cả yêu cầu</span>
-                                <span className="text-[11px] text-gray-400">({allRequests.length})</span>
+                                <span className="text-[11px] text-[#747775]">({allRequests.length})</span>
                                 {activeTab === 'all' && (
-                                    <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#0b57d0] dark:bg-[#c2e7ff] rounded-t-full" />
+                                    <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#0B57D0] dark:bg-[#A8C7FA] rounded-t-full" />
                                 )}
                             </button>
                         </>
@@ -304,23 +250,23 @@ function AccessRequestsContent() {
                             setActiveTab('my');
                             setStatusFilter('ALL');
                         }}
-                        className={`relative pb-3 pt-1 text-[13px] font-medium transition-colors cursor-pointer flex items-center gap-2 ${
+                        className={`relative pb-3 pt-1 text-[13.5px] transition-colors cursor-pointer flex items-center gap-2 ${
                             activeTab === 'my'
-                                ? 'text-[#0b57d0] dark:text-[#c2e7ff]'
-                                : 'text-[#444746] dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
+                                ? 'text-[#0B57D0] dark:text-[#A8C7FA] font-medium'
+                                : 'text-[#444746] dark:text-neutral-400 hover:text-[#1F1F1F] dark:hover:text-neutral-200'
                         }`}
                     >
                         <span>Yêu cầu của tôi</span>
-                        <span className="text-[11px] text-gray-400">({myRequests.length})</span>
+                        <span className="text-[11px] text-[#747775]">({myRequests.length})</span>
                         {activeTab === 'my' && (
-                            <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#0b57d0] dark:bg-[#c2e7ff] rounded-t-full" />
+                            <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#0B57D0] dark:bg-[#A8C7FA] rounded-t-full" />
                         )}
                     </button>
                 </div>
 
-                {/* Status Filter Chips (for Tab 'all' or 'my') */}
+                {/* Filter Chips khi ở tab Tất cả hoặc Yêu cầu của tôi */}
                 {activeTab !== 'pending' && (
-                    <div className="flex items-center gap-1.5 pb-2.5">
+                    <div className="flex items-center gap-1.5 pb-2">
                         {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((st) => (
                             <button
                                 key={st}
@@ -328,8 +274,8 @@ function AccessRequestsContent() {
                                 onClick={() => setStatusFilter(st)}
                                 className={`px-3 py-1 rounded-full text-[12px] font-medium transition cursor-pointer ${
                                     statusFilter === st
-                                        ? 'bg-[#c2e7ff] text-[#001d35] dark:bg-[#004a77] dark:text-[#c2e7ff]'
-                                        : 'text-[#444746] dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                                        ? 'bg-[#EDF2FA] text-[#0B57D0] dark:bg-neutral-800 dark:text-[#A8C7FA]'
+                                        : 'text-[#444746] dark:text-neutral-400 hover:bg-[#F0F4F9] dark:hover:bg-neutral-800'
                                 }`}
                             >
                                 {st === 'ALL' && 'Tất cả'}
@@ -342,60 +288,51 @@ function AccessRequestsContent() {
                 )}
             </div>
 
-            {/* ── ROW 3: MAIN LIST TABLE & RIGHT DETAILS DRAWER ── */}
+            {/* Danh sách Table */}
             <div className="flex-1 flex overflow-hidden min-h-0">
                 <div className="flex-1 overflow-y-auto px-6 py-2">
                     {loading ? (
-                        <div className="py-20 flex flex-col items-center justify-center text-gray-400 gap-2">
-                            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                            <span className="text-xs">Đang tải danh sách yêu cầu quyền...</span>
+                        <div className="py-20 flex flex-col items-center justify-center text-[#747775] gap-2">
+                            <Loader2 className="w-5 h-5 animate-spin text-[#0B57D0]" />
+                            <span className="text-xs">Đang tải...</span>
                         </div>
                     ) : currentList.length === 0 ? (
-                        <div className="py-24 flex flex-col items-center justify-center text-center text-gray-400">
-                            <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-3">
-                                <CheckCircle2 className="w-8 h-8" />
-                            </div>
-                            <p className="text-sm font-medium text-gray-800 dark:text-slate-200">
+                        <div className="py-24 flex flex-col items-center justify-center text-center text-[#747775]">
+                            <p className="text-[14px] text-[#444746] dark:text-neutral-300">
                                 {activeTab === 'pending'
                                     ? 'Không có yêu cầu nào đang chờ xử lý'
                                     : 'Không tìm thấy yêu cầu phù hợp'}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1 max-w-sm">
-                                {activeTab === 'pending'
-                                    ? 'Tuyệt vời! Tất cả các yêu cầu xin cấp quyền truy cập tài liệu đã được phê duyệt đầy đủ.'
-                                    : 'Bạn có thể thay đổi bộ lọc hoặc tìm kiếm theo từ khóa khác.'}
                             </p>
                         </div>
                     ) : (
                         <div className="w-full pb-8">
                             <table className="w-full table-fixed text-left border-collapse">
                                 <thead>
-                                    <tr className="border-b border-gray-200/80 dark:border-slate-800 text-[12px] font-normal text-[#444746] dark:text-slate-400 select-none h-10">
-                                        <th className="py-2 px-3 w-[32%] min-w-0 font-normal">
-                                            <span>Tài liệu / Thư mục</span>
+                                    <tr className="border-b border-[#E0E0E0] dark:border-neutral-800 text-[13px] font-normal text-[#444746] dark:text-neutral-400 select-none h-11">
+                                        <th className="py-2 px-3 w-[36%] min-w-0 font-normal">
+                                            <span>Tên</span>
                                         </th>
                                         <th className="py-2 px-3 w-[22%] min-w-0 font-normal">
                                             <span>Người yêu cầu</span>
                                         </th>
-                                        <th className="py-2 px-3 w-[14%] min-w-0 font-normal">
+                                        <th className="py-2 px-3 w-[15%] min-w-0 font-normal">
                                             <span>Quyền xin</span>
                                         </th>
-                                        <th className="py-2 px-3 w-[16%] min-w-0 font-normal">
-                                            <span>Thời gian</span>
+                                        <th className="py-2 px-3 w-[13%] min-w-0 font-normal">
+                                            <span>Ngày yêu cầu</span>
                                         </th>
-                                        <th className="py-2 pr-3 w-[16%] text-right font-normal">
+                                        <th className="py-2 pr-3 w-[14%] text-right font-normal">
                                             <span>Thao tác</span>
                                         </th>
                                     </tr>
                                 </thead>
-                                <tbody className="text-[13px] divide-y divide-gray-100 dark:divide-slate-800/60">
+                                <tbody className="divide-y divide-[#F0F0F0] dark:divide-neutral-800/60">
                                     {currentList.map((req) => {
                                         const isFolder = Boolean(req.folderId && !req.fileId);
-                                        const targetName = req.fileName || req.folderName || 'Tài liệu bảo mật';
+                                        const targetName = req.fileName || req.folderName || 'Tài liệu';
                                         const ext = targetName.split('.').pop() || '';
                                         const config = getFileTypeConfig(ext, isFolder);
                                         const Icon = config.icon;
-                                        const avatarClass = getAvatarColor(req.requesterEmail || req.requesterName);
                                         const initial = (req.requesterName || req.requesterEmail || 'U').charAt(0).toUpperCase();
                                         const isSelected = selectedRequest?.id === req.id;
                                         const isBusy = actionLoadingId === req.id;
@@ -407,118 +344,79 @@ function AccessRequestsContent() {
                                                     setSelectedRequest(req);
                                                     setShowDetailDrawer(true);
                                                 }}
-                                                className={`group transition-colors cursor-pointer select-none h-13 ${
+                                                className={`group transition-colors cursor-pointer select-none h-12 ${
                                                     isSelected
-                                                        ? 'bg-[#c2e7ff]/40 dark:bg-[#004a77]/40 text-[#001d35] dark:text-blue-100'
-                                                        : 'hover:bg-[#f2f6fc] dark:hover:bg-slate-800/60 text-gray-800 dark:text-slate-100'
+                                                        ? 'bg-[#EDF2FA] dark:bg-neutral-800/80'
+                                                        : 'hover:bg-[#F8FAFD] dark:hover:bg-neutral-800/40 text-[#1F1F1F] dark:text-[#E3E3E3]'
                                                 }`}
                                             >
-                                                {/* 1. Target Name */}
+                                                {/* 1. Tên tệp / thư mục */}
                                                 <td className="py-2 px-3">
                                                     <div className="flex items-center gap-2.5 min-w-0">
-                                                        <div className="shrink-0 flex items-center justify-center">
-                                                            {isFolder ? (
-                                                                <Folder className="w-4.5 h-4.5 text-[#5f6368] dark:text-slate-400 fill-[#5f6368]/20" />
-                                                            ) : (
-                                                                <Icon className={`w-4.5 h-4.5 ${config.color}`} />
-                                                            )}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p
-                                                                className="truncate text-[13px] font-medium text-gray-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition"
-                                                                title={targetName}
-                                                            >
-                                                                {targetName}
-                                                            </p>
-                                                            {req.reason && (
-                                                                <p
-                                                                    className="truncate text-[11px] text-gray-500 dark:text-slate-400 italic max-w-xs"
-                                                                    title={req.reason}
-                                                                >
-                                                                    &ldquo;{req.reason}&rdquo;
-                                                                </p>
-                                                            )}
-                                                        </div>
+                                                        <Icon className={`w-4 h-4 shrink-0 ${config.color}`} />
+                                                        <span
+                                                            className="truncate text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3]"
+                                                            title={req.reason ? `${targetName} (Lời nhắn: ${req.reason})` : targetName}
+                                                        >
+                                                            {targetName}
+                                                        </span>
                                                     </div>
                                                 </td>
 
-                                                {/* 2. Requester */}
-                                                <td className="py-2 px-3 text-[#444746] dark:text-slate-400 font-normal">
+                                                {/* 2. Người yêu cầu */}
+                                                <td className="py-2 px-3">
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <div
-                                                            className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 ${avatarClass}`}
-                                                        >
+                                                        <div className="w-6 h-6 rounded-full bg-[#0B57D0] text-white flex items-center justify-center font-medium text-[11px] shrink-0">
                                                             {initial}
                                                         </div>
-                                                        <div className="min-w-0">
-                                                            <p className="truncate text-[12px] font-medium text-gray-800 dark:text-slate-200">
-                                                                {req.requesterName}
-                                                            </p>
-                                                            <p className="truncate text-[10.5px] text-gray-400">
-                                                                {req.requesterEmail}
-                                                            </p>
-                                                        </div>
+                                                        <span className="truncate text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3]">
+                                                            {req.requesterName || req.requesterEmail}
+                                                        </span>
                                                     </div>
                                                 </td>
 
-                                                {/* 3. Requested Level */}
-                                                <td className="py-2 px-3">
-                                                    <span
-                                                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-                                                            req.requestedLevel === 'EDITOR'
-                                                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                                                : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
-                                                        }`}
-                                                    >
-                                                        <Shield className="w-3 h-3" />
-                                                        <span>{req.requestedLevel === 'EDITOR' ? 'Chỉnh sửa' : 'Chỉ xem'}</span>
-                                                    </span>
+                                                {/* 3. Quyền xin */}
+                                                <td className="py-2 px-3 text-[13px] text-[#444746] dark:text-neutral-400 font-normal">
+                                                    {req.requestedLevel === 'EDITOR' ? 'Người chỉnh sửa' : 'Người xem'}
                                                 </td>
 
-                                                {/* 4. Timestamp */}
-                                                <td className="py-2 px-3 text-[#444746] dark:text-slate-400 text-[11.5px] whitespace-nowrap">
+                                                {/* 4. Ngày yêu cầu */}
+                                                <td className="py-2 px-3 text-[13px] text-[#444746] dark:text-neutral-400 font-normal whitespace-nowrap">
                                                     {formatRequestDate(req.createdAt)}
                                                 </td>
 
-                                                {/* 5. Status / Actions */}
+                                                {/* 5. Thao tác */}
                                                 <td className="py-2 pr-3 text-right">
                                                     {req.status === 'PENDING' && activeTab === 'pending' && userRole === 'ADMIN' ? (
-                                                        <div className="flex items-center justify-end gap-1.5">
-                                                            <button
-                                                                type="button"
-                                                                disabled={isBusy}
-                                                                onClick={(e) => handleApprove(req, e)}
-                                                                className="px-2.5 py-1 bg-[#0b57d0] hover:bg-[#0842a0] text-white rounded-full text-[11.5px] font-medium shadow-2xs transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                                                title="Phê duyệt quyền"
-                                                            >
-                                                                <Check className="w-3 h-3 stroke-[2.5]" />
-                                                                <span>Duyệt</span>
-                                                            </button>
+                                                        <div className="flex items-center justify-end gap-2">
                                                             <button
                                                                 type="button"
                                                                 disabled={isBusy}
                                                                 onClick={(e) => handleReject(req, e)}
-                                                                className="px-2.5 py-1 bg-white hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 border border-gray-300 dark:border-slate-700 rounded-full text-[11.5px] font-medium shadow-2xs transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                                                title="Từ chối yêu cầu"
+                                                                className="h-[30px] px-3.5 rounded-full border border-[#747775]/40 hover:border-[#1F1F1F] dark:border-neutral-600 dark:hover:border-neutral-400 text-[12.5px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-[#F0F4F9] dark:hover:bg-neutral-800 transition cursor-pointer disabled:opacity-50 inline-flex items-center justify-center"
                                                             >
-                                                                <X className="w-3 h-3 stroke-[2.5]" />
-                                                                <span>Từ chối</span>
+                                                                Từ chối
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={isBusy}
+                                                                onClick={(e) => handleApprove(req, e)}
+                                                                className="h-[30px] px-4 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:scale-[0.98] text-[12.5px] font-medium text-white transition cursor-pointer disabled:opacity-50 shadow-none inline-flex items-center justify-center"
+                                                            >
+                                                                Duyệt
                                                             </button>
                                                         </div>
                                                     ) : req.status === 'PENDING' ? (
-                                                        <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-600 dark:text-amber-400">
-                                                            <Clock className="w-3.5 h-3.5" />
-                                                            <span>Đang chờ duyệt</span>
+                                                        <span className="text-[13px] text-[#444746] dark:text-neutral-400">
+                                                            Đang chờ
                                                         </span>
                                                     ) : req.status === 'APPROVED' ? (
-                                                        <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-emerald-600 dark:text-emerald-400">
-                                                            <CheckCircle2 className="w-3.5 h-3.5" />
-                                                            <span>Đã phê duyệt</span>
+                                                        <span className="text-[13px] font-medium text-[#137333] dark:text-emerald-400">
+                                                            Đã duyệt
                                                         </span>
                                                     ) : (
-                                                        <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-rose-500 dark:text-rose-400">
-                                                            <XCircle className="w-3.5 h-3.5" />
-                                                            <span>Đã từ chối</span>
+                                                        <span className="text-[13px] text-[#747775]">
+                                                            Đã từ chối
                                                         </span>
                                                     )}
                                                 </td>
@@ -531,135 +429,97 @@ function AccessRequestsContent() {
                     )}
                 </div>
 
-                {/* ── RIGHT DETAILS DRAWER ── */}
+                {/* Right Detail Drawer */}
                 {showDetailDrawer && selectedRequest && (
-                    <div className="w-88 border-l border-gray-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0 transition-all select-none overflow-y-auto">
-                        <div className="h-14 px-4 flex items-center justify-between border-b border-gray-200/80 dark:border-slate-800 shrink-0">
-                            <span className="text-xs font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-1.5 truncate">
-                                <KeyRound className="w-4 h-4 text-[#0b57d0]" />
-                                <span>Chi tiết yêu cầu quyền</span>
+                    <div className="w-80 border-l border-[#E0E0E0] dark:border-neutral-800 bg-white dark:bg-[#1E1F20] flex flex-col shrink-0 select-none overflow-y-auto">
+                        <div className="h-12 px-4 flex items-center justify-between border-b border-[#E0E0E0] dark:border-neutral-800 shrink-0">
+                            <span className="text-[14px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
+                                Chi tiết yêu cầu
                             </span>
                             <button
                                 type="button"
                                 onClick={() => setShowDetailDrawer(false)}
-                                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 rounded-full"
+                                className="w-7 h-7 rounded-full flex items-center justify-center text-[#444746] hover:bg-[#F0F4F9] dark:hover:bg-neutral-800 cursor-pointer"
+                                title="Đóng"
                             >
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
 
-                        <div className="p-4 flex-1 text-xs space-y-4">
-                            {/* Target Item Card */}
-                            <div className="p-3 bg-white dark:bg-slate-950 border border-gray-200/80 dark:border-slate-800 rounded-xl space-y-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                                    Mục được yêu cầu
+                        <div className="p-4 space-y-4 text-[13px]">
+                            {/* Mục được yêu cầu */}
+                            <div>
+                                <span className="text-[11.5px] font-medium text-[#747775] uppercase tracking-wider">
+                                    Tài liệu
                                 </span>
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 flex items-center justify-center shrink-0">
-                                        {selectedRequest.folderId && !selectedRequest.fileId ? (
-                                            <Folder className="w-4 h-4 text-amber-600" />
-                                        ) : (
-                                            <FileText className="w-4 h-4 text-blue-600" />
-                                        )}
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="font-semibold text-gray-900 dark:text-slate-100 text-xs truncate">
-                                            {selectedRequest.fileName || selectedRequest.folderName || 'Tài liệu'}
-                                        </p>
-                                        <p className="text-[11px] text-gray-400 truncate">
-                                            {selectedRequest.folderName ? `Thư mục: ${selectedRequest.folderName}` : 'Tệp tin'}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Requester Card */}
-                            <div className="p-3 bg-white dark:bg-slate-950 border border-gray-200/80 dark:border-slate-800 rounded-xl space-y-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                                    Người gửi yêu cầu
-                                </span>
-                                <div className="flex items-center gap-2.5">
-                                    <div
-                                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${getAvatarColor(
-                                            selectedRequest.requesterEmail || selectedRequest.requesterName
-                                        )}`}
-                                    >
-                                        {(selectedRequest.requesterName || 'U').charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="font-semibold text-gray-900 dark:text-slate-100 text-xs truncate">
-                                            {selectedRequest.requesterName}
-                                        </p>
-                                        <p className="text-[11px] text-gray-400 truncate">
-                                            {selectedRequest.requesterEmail}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Reason for Access */}
-                            <div className="p-3 bg-white dark:bg-slate-950 border border-gray-200/80 dark:border-slate-800 rounded-xl space-y-1.5">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                                    Lý do xin cấp quyền
-                                </span>
-                                <p className="text-gray-700 dark:text-slate-200 leading-relaxed text-[11.5px] bg-gray-50 dark:bg-slate-900 p-2.5 rounded-lg border border-gray-100 dark:border-slate-800">
-                                    {selectedRequest.reason || 'Không có lý do chi tiết được cung cấp.'}
+                                <p className="mt-1 font-medium text-[#1F1F1F] dark:text-[#E3E3E3] break-words">
+                                    {selectedRequest.fileName || selectedRequest.folderName || 'Tài liệu'}
                                 </p>
                             </div>
 
-                            {/* Request Info Summary */}
-                            <div className="bg-white dark:bg-slate-950 border border-gray-200/80 dark:border-slate-800 rounded-xl p-3 space-y-2 text-[11.5px]">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-400">Quyền xin cấp</span>
-                                    <span className="font-semibold text-gray-800 dark:text-slate-200">
-                                        {selectedRequest.requestedLevel === 'EDITOR' ? 'Chỉnh sửa (EDITOR)' : 'Chỉ xem (VIEWER)'}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-400">Thời gian tạo</span>
-                                    <span className="font-medium text-gray-700 dark:text-slate-300">
-                                        {formatRequestDate(selectedRequest.createdAt)}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-400">Trạng thái</span>
-                                    <span
-                                        className={`font-semibold ${
-                                            selectedRequest.status === 'APPROVED'
-                                                ? 'text-emerald-600'
-                                                : selectedRequest.status === 'REJECTED'
-                                                ? 'text-rose-500'
-                                                : 'text-amber-600'
-                                        }`}
-                                    >
-                                        {selectedRequest.status === 'APPROVED' && 'Đã phê duyệt'}
-                                        {selectedRequest.status === 'REJECTED' && 'Đã từ chối'}
-                                        {selectedRequest.status === 'PENDING' && 'Đang chờ duyệt'}
-                                    </span>
-                                </div>
+                            {/* Người gửi */}
+                            <div>
+                                <span className="text-[11.5px] font-medium text-[#747775] uppercase tracking-wider">
+                                    Người gửi
+                                </span>
+                                <p className="mt-1 font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
+                                    {selectedRequest.requesterName}
+                                </p>
+                                <p className="text-[12px] text-[#747775]">
+                                    {selectedRequest.requesterEmail}
+                                </p>
                             </div>
 
-                            {/* Action Buttons in Drawer */}
-                            {selectedRequest.status === 'PENDING' && userRole === 'ADMIN' && (
-                                <div className="pt-2 space-y-2">
-                                    <button
-                                        type="button"
-                                        disabled={actionLoadingId === selectedRequest.id}
-                                        onClick={() => handleApprove(selectedRequest)}
-                                        className="w-full py-2 bg-[#0b57d0] hover:bg-[#0842a0] text-white rounded-xl text-xs font-semibold shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                                    >
-                                        <Check className="w-4 h-4 stroke-[2.5]" />
-                                        <span>Phê duyệt và Cấp quyền ngay</span>
-                                    </button>
+                            {/* Quyền xin */}
+                            <div>
+                                <span className="text-[11.5px] font-medium text-[#747775] uppercase tracking-wider">
+                                    Quyền xin
+                                </span>
+                                <p className="mt-1 text-[#1F1F1F] dark:text-[#E3E3E3]">
+                                    {selectedRequest.requestedLevel === 'EDITOR' ? 'Người chỉnh sửa' : 'Người xem'}
+                                </p>
+                            </div>
 
+                            {/* Lời nhắn */}
+                            {selectedRequest.reason && (
+                                <div>
+                                    <span className="text-[11.5px] font-medium text-[#747775] uppercase tracking-wider">
+                                        Lời nhắn
+                                    </span>
+                                    <p className="mt-1 text-[#444746] dark:text-neutral-300 bg-[#F0F4F9] dark:bg-neutral-800 p-2.5 rounded-[8px] leading-relaxed">
+                                        {selectedRequest.reason}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Thời gian */}
+                            <div>
+                                <span className="text-[11.5px] font-medium text-[#747775] uppercase tracking-wider">
+                                    Thời gian gửi
+                                </span>
+                                <p className="mt-1 text-[#444746] dark:text-neutral-300">
+                                    {formatRequestDate(selectedRequest.createdAt)}
+                                </p>
+                            </div>
+
+                            {/* Actions trong drawer */}
+                            {selectedRequest.status === 'PENDING' && userRole === 'ADMIN' && (
+                                <div className="pt-2 flex items-center gap-2">
                                     <button
                                         type="button"
                                         disabled={actionLoadingId === selectedRequest.id}
                                         onClick={() => handleReject(selectedRequest)}
-                                        className="w-full py-2 bg-white hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 border border-gray-300 dark:border-slate-700 rounded-xl text-xs font-semibold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                        className="flex-1 py-1.5 rounded-full text-[13px] font-medium text-[#444746] hover:bg-[#F0F4F9] dark:hover:bg-neutral-800 border border-[#DADCE0] dark:border-neutral-700 transition cursor-pointer"
                                     >
-                                        <X className="w-4 h-4 stroke-[2.5]" />
-                                        <span>Từ chối yêu cầu này</span>
+                                        Từ chối
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={actionLoadingId === selectedRequest.id}
+                                        onClick={() => handleApprove(selectedRequest)}
+                                        className="flex-1 py-1.5 rounded-full text-[13px] font-medium text-white bg-[#0B57D0] hover:bg-[#0842A0] transition cursor-pointer shadow-none"
+                                    >
+                                        Duyệt
                                     </button>
                                 </div>
                             )}
@@ -675,9 +535,8 @@ export default function AccessRequestsPage() {
     return (
         <Suspense
             fallback={
-                <div className="p-8 text-center text-gray-400 flex items-center justify-center gap-2">
-                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                    <span>Đang tải...</span>
+                <div className="flex-1 flex items-center justify-center p-8 bg-white dark:bg-[#1E1F20]">
+                    <Loader2 className="w-6 h-6 animate-spin text-[#0B57D0]" />
                 </div>
             }
         >

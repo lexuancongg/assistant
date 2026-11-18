@@ -455,7 +455,7 @@ function SharedWithMeContent() {
 
     // Handle Copy Link
     const handleCopyLink = (item: SharedItem) => {
-        const link = `${window.location.origin}/files/${item.id}`;
+        const link = `${window.location.origin}/files?fileId=${item.id}`;
         navigator.clipboard.writeText(link);
         toast.success('Đã sao chép đường liên kết vào khay nhớ tạm');
         setContextMenu(null);

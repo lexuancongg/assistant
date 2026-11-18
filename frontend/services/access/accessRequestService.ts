@@ -34,7 +34,30 @@ class AccessRequestService {
         if (response.ok) {
             return await response.json();
         }
-        throw new Error("Không thể gửi yêu cầu cấp quyền");
+        let message = "Không thể gửi yêu cầu cấp quyền";
+        try {
+            const errData = await response.json();
+            if (errData?.message) message = errData.message;
+        } catch {
+            // ignore
+        }
+        throw new Error(message);
+    }
+
+    public async checkPending(fileId?: number | string, folderId?: number | string): Promise<boolean> {
+        try {
+            const params = new URLSearchParams();
+            if (fileId) params.append('fileId', String(fileId));
+            if (folderId) params.append('folderId', String(folderId));
+            const response = await apiClient.get(`${this.baseUrl}/check-pending?${params.toString()}`);
+            if (response.ok) {
+                const data = await response.json();
+                return !!data.hasPending;
+            }
+        } catch {
+            // ignore
+        }
+        return false;
     }
 
     public async getAllRequests(): Promise<AccessRequestDto[]> {

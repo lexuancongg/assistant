@@ -1366,7 +1366,7 @@ export default function HomePage() {
     const handleCopyLinkSelected = () => {
         if (selectedFileIds.length === 0) return;
         const firstId = selectedFileIds[0];
-        const link = `${window.location.origin}/files/${firstId}`;
+        const link = `${window.location.origin}/files?fileId=${firstId}`;
         navigator.clipboard.writeText(link);
         toast.success(selectedFileIds.length > 1 ? `Đã sao chép liên kết tệp đầu tiên!` : 'Đã sao chép liên kết tệp!');
         setContextMenu(null);

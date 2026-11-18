@@ -2,6 +2,7 @@ package com.xuancong.student_management.service;
 
 import com.xuancong.student_management.dto.notification.NotificationMessage;
 import com.xuancong.student_management.entity.*;
+import com.xuancong.student_management.entity.enums.PermissionLevel;
 import com.xuancong.student_management.entity.enums.PermissionSubjectType;
 import com.xuancong.student_management.repository.DepartmentRepository;
 import com.xuancong.student_management.repository.FolderPermissionRepository;
@@ -101,7 +102,7 @@ public class NotificationWebSocketService {
             return;
         }
 
-        // Lấy danh sách phân quyền của folder đa cấp (Duyệt ngược từ thư mục con lên toàn bộ các cấp thư mục cha)
+        // Lấy danh sách phân quyền của folder đa cấp
         List<FolderPermission> permissions = new ArrayList<>();
         Folder currentFolder = folderRepository.findById(folderId).orElse(null);
         while (currentFolder != null) {
@@ -110,7 +111,7 @@ public class NotificationWebSocketService {
         }
 
         if (permissions.isEmpty()) {
-            // Folder mặc định không có restricted permissions: Gửi toàn công ty
+            // Folder mặc định: Gửi toàn công ty
             if (fileItem.getCompany() != null && fileItem.getCompany().getId() != null) {
                 sendToCompany(fileItem.getCompany().getId(), notif);
             }
@@ -119,10 +120,8 @@ public class NotificationWebSocketService {
 
         for (FolderPermission p : permissions) {
             if (p.getSubjectType() == PermissionSubjectType.DEPARTMENT && p.getSubjectId() != null) {
-                // Gửi thông báo tới kênh của phòng ban
                 sendToDepartment(p.getSubjectId(), notif);
 
-                // Đồng thời gửi tới từng user trong phòng ban
                 List<User> deptUsers = userRepository.findByDepartmentId(p.getSubjectId());
                 for (User u : deptUsers) {
                     if (u != null && u.getId() != null && !notifiedUsers.contains(u.getId())) {
@@ -131,12 +130,83 @@ public class NotificationWebSocketService {
                     }
                 }
             } else if (p.getSubjectType() == PermissionSubjectType.USER && p.getSubjectId() != null) {
-                // Gửi thông báo tới kênh cá nhân riêng
                 if (!notifiedUsers.contains(p.getSubjectId())) {
                     notifiedUsers.add(p.getSubjectId());
                     sendToUser(p.getSubjectId(), notif);
                 }
             }
         }
+    }
+
+    /**
+     * Thông báo yêu cầu quyền truy cập mới tới người duyệt (chủ sở hữu tệp/thư mục và các Quản trị viên)
+     */
+    public void notifyAccessRequest(AccessRequest request, User requester, User targetOwner, List<User> admins) {
+        String requesterName = requester != null && requester.getName() != null ? requester.getName() : "Người dùng";
+        String requesterAvatar = requesterName != null && !requesterName.isBlank()
+                ? requesterName.substring(0, 1).toUpperCase()
+                : "U";
+
+        String targetName = request.getFileName() != null ? request.getFileName() : (request.getFolderName() != null ? request.getFolderName() : "Tài liệu");
+        String levelText = request.getRequestedLevel() == PermissionLevel.EDITOR ? "Chỉnh sửa" : "Xem";
+
+        NotificationMessage notif = NotificationMessage.builder()
+                .id(System.currentTimeMillis())
+                .title("Yêu cầu quyền truy cập mới")
+                .message(requesterName + " vừa yêu cầu quyền " + levelText + " đối với \"" + targetName + "\"")
+                .type("ACCESS_REQUEST")
+                .fileId(request.getFileId())
+                .fileName(request.getFileName())
+                .folderId(request.getFolderId())
+                .folderName(request.getFolderName())
+                .uploaderId(requester != null ? requester.getId() : null)
+                .uploaderName(requesterName)
+                .uploaderAvatar(requesterAvatar)
+                .timestamp(Instant.now().toString())
+                .build();
+
+        Set<Long> notifiedUserIds = new HashSet<>();
+        if (requester != null && requester.getId() != null) {
+            notifiedUserIds.add(requester.getId());
+        }
+
+        // 1. Gửi tới chủ sở hữu tệp hoặc thư mục
+        if (targetOwner != null && targetOwner.getId() != null && !notifiedUserIds.contains(targetOwner.getId())) {
+            notifiedUserIds.add(targetOwner.getId());
+            sendToUser(targetOwner.getId(), notif);
+        }
+
+        // 2. Gửi tới tất cả Admin hệ thống
+        if (admins != null) {
+            for (User admin : admins) {
+                if (admin != null && admin.getId() != null && !notifiedUserIds.contains(admin.getId())) {
+                    notifiedUserIds.add(admin.getId());
+                    sendToUser(admin.getId(), notif);
+                }
+            }
+        }
+    }
+
+    /**
+     * Thông báo kết quả phê duyệt / từ chối yêu cầu quyền truy cập tới người yêu cầu
+     */
+    public void notifyAccessRequestResponse(AccessRequest request, boolean approved, User approver) {
+        if (request == null || request.getRequester() == null) return;
+        String approverName = approver != null && approver.getName() != null ? approver.getName() : "Quản trị viên";
+        String targetName = request.getFileName() != null ? request.getFileName() : (request.getFolderName() != null ? request.getFolderName() : "Tài liệu");
+
+        NotificationMessage notif = NotificationMessage.builder()
+                .id(System.currentTimeMillis())
+                .title(approved ? "Yêu cầu quyền đã được duyệt" : "Yêu cầu quyền đã bị từ chối")
+                .message(approverName + (approved ? " đã phê duyệt" : " đã từ chối") + " yêu cầu quyền truy cập cho \"" + targetName + "\"")
+                .type(approved ? "PERMISSION_GRANTED" : "ACCESS_REQUEST_REJECTED")
+                .fileId(request.getFileId())
+                .fileName(request.getFileName())
+                .folderId(request.getFolderId())
+                .folderName(request.getFolderName())
+                .timestamp(Instant.now().toString())
+                .build();
+
+        sendToUser(request.getRequester().getId(), notif);
     }
 }

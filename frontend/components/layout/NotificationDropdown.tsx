@@ -39,7 +39,7 @@ export default function NotificationDropdown() {
     useEffect(() => {
         const handleWsNotification = (e: any) => {
             const newNotif: WsNotification = e.detail;
-            setLiveNotifs((prev) => [newNotif, ...prev.slice(0, 19)]);
+            setLiveNotifs((prev) => [newNotif, ...prev.slice(0, 19)]); if (newNotif.type === 'ACCESS_REQUEST') { fetchRequests(); }
         };
 
         window.addEventListener('new_ws_notification', handleWsNotification);

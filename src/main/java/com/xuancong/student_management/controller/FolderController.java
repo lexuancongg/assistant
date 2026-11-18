@@ -38,6 +38,11 @@ public class FolderController {
         return ResponseEntity.ok(folderService.getTree(currentUser));
     }
 
+        @GetMapping("/{id}/public-info")
+    public ResponseEntity<java.util.Map<String, Object>> getFolderPublicInfo(@PathVariable Long id) {
+        return ResponseEntity.ok(folderService.getFolderPublicInfo(id));
+    }
+
     @GetMapping("/{folderId}")
     public ResponseEntity<FolderResponse> getFolderById(@PathVariable Long folderId) {
         User currentUser = null;
@@ -46,7 +51,9 @@ public class FolderController {
         } catch (Exception ignored) {
         }
         Folder folder = folderService.getById(folderId, currentUser);
-        return ResponseEntity.ok(FolderResponse.from(folder));
+        boolean canUpload = folderService.canUploadToFolder(currentUser, folder);
+        boolean canManageOwner = folderService.canManageOwner(currentUser, folder);
+        return ResponseEntity.ok(FolderResponse.from(folder, canUpload, canManageOwner));
     }
 
     @PostMapping

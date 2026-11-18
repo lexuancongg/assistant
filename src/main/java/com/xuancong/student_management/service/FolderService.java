@@ -65,6 +65,11 @@ public class FolderService {
                 Long parentId = Long.parseLong(request.parentId());
                 parent = folderRepository.findById(parentId)
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thư mục cha không tồn tại"));
+
+                if (createdBy != null && !canUploadToFolder(createdBy, parent)) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                            "Bạn không có quyền tạo thư mục con bên trong thư mục \"" + parent.getName() + "\"!");
+                }
             } catch (NumberFormatException e) {
                 // parentId không hợp lệ — tạo root folder
             }
@@ -86,7 +91,7 @@ public class FolderService {
         folder.setCreatedBy(createdBy);
         folder.setParent(parent);
 
-        return folderRepository.save(folder);
+            return folderRepository.save(folder);
     }
 
     /** Đổi tên folder */
@@ -184,7 +189,7 @@ public class FolderService {
                     .filter(f -> f.getParent() == null)
                     .toList();
             return roots.stream()
-                    .map(f -> buildTree(f, allFolders))
+                    .map(f -> buildTree(f, allFolders, currentUser))
                     .toList();
         }
 
@@ -199,8 +204,17 @@ public class FolderService {
                 .toList();
 
         return roots.stream()
-                .map(f -> buildTree(f, visibleFolders))
+                .map(f -> buildTree(f, visibleFolders, currentUser))
                 .toList();
+    }
+
+        public java.util.Map<String, Object> getFolderPublicInfo(Long id) {
+        Folder folder = folderRepository.findById(id)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Folder not found"));
+        java.util.Map<String, Object> info = new java.util.HashMap<>();
+        info.put("id", folder.getId());
+        info.put("name", folder.getName());
+        return info;
     }
 
     public Folder getById(Long folderId) {
@@ -278,13 +292,15 @@ public class FolderService {
         }
     }
 
-    private FolderResponse buildTree(Folder folder, List<Folder> all) {
+    private FolderResponse buildTree(Folder folder, List<Folder> all, User currentUser) {
         List<FolderResponse> children = all.stream()
                 .filter(f -> f.getParent() != null && f.getParent().getId().equals(folder.getId()))
-                .map(f -> buildTree(f, all))
+                .map(f -> buildTree(f, all, currentUser))
                 .toList();
 
         User u = folder.getCreatedBy();
+        boolean canUpload = canUploadToFolder(currentUser, folder);
+        boolean canManageOwner = canManageOwner(currentUser, folder);
         return new FolderResponse(
                 folder.getId(),
                 folder.getName(),
@@ -294,15 +310,50 @@ public class FolderService {
                 u != null ? u.getName() : null,
                 u != null ? u.getEmail() : null,
                 folder.getCreatedAt(),
-                children
+                children,
+                canUpload,
+                canManageOwner
         );
     }
 
-    /** Lấy danh sách phân quyền của folder */
+    /** Lấy danh sách phân quyền của folder (kế thừa động từ thư mục cha nếu chưa có cấu hình riêng) */
     @Transactional(readOnly = true)
     public List<FolderPermissionResponse> getPermissions(Long folderId) {
-        List<FolderPermission> list = folderPermissionRepository.findByFolderId(folderId);
-        return list.stream().map(this::toResponse).toList();
+        Folder folder = folderRepository.findById(folderId).orElse(null);
+        if (folder == null) {
+            return List.of();
+        }
+        List<FolderPermission> directList = folderPermissionRepository.findByFolderId(folderId);
+        if (directList != null && !directList.isEmpty()) {
+            return directList.stream().map(p -> toResponse(p, false, null)).toList();
+        }
+
+        // Kế thừa động từ cây thư mục cha
+        Folder curr = folder.getParent();
+        while (curr != null) {
+            List<FolderPermission> parentList = folderPermissionRepository.findByFolderId(curr.getId());
+            if (parentList != null && !parentList.isEmpty()) {
+                final String parentName = curr.getName();
+                return parentList.stream().map(p -> toResponse(p, true, parentName)).toList();
+            }
+            curr = curr.getParent();
+        }
+
+        return List.of();
+    }
+
+    /** Lấy quyền có hiệu lực cao nhất theo chuỗi kế thừa từ cha lên ông */
+    public List<FolderPermission> getEffectiveFolderPermissions(Folder folder) {
+        if (folder == null) return List.of();
+        Folder curr = folder;
+        while (curr != null) {
+            List<FolderPermission> list = folderPermissionRepository.findByFolderId(curr.getId());
+            if (list != null && !list.isEmpty()) {
+                return list;
+            }
+            curr = curr.getParent();
+        }
+        return List.of();
     }
 
     /** Cập nhật phân quyền cho folder */
@@ -313,10 +364,17 @@ public class FolderService {
 
         // Cập nhật người phụ trách / chủ sở hữu thư mục nếu có truyền lên
         if (request != null && request.ownerId() != null) {
-            User newOwner = userRepository.findById(request.ownerId()).orElse(null);
-            if (newOwner != null) {
-                folder.setCreatedBy(newOwner);
-                folderRepository.save(folder);
+            Long currentOwnerId = folder.getCreatedBy() != null ? folder.getCreatedBy().getId() : null;
+            if (!request.ownerId().equals(currentOwnerId)) {
+                if (!canManageOwner(currentUser, folder)) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                            "Bạn không có quyền chuyển quyền sở hữu của thư mục này! Chỉ Quản trị viên, chủ sở hữu hiện tại hoặc chủ sở hữu thư mục cha mới có quyền.");
+                }
+                User newOwner = userRepository.findById(request.ownerId()).orElse(null);
+                if (newOwner != null) {
+                    folder.setCreatedBy(newOwner);
+                    folderRepository.save(folder);
+                }
             }
         }
 
@@ -354,6 +412,10 @@ public class FolderService {
     }
 
     private FolderPermissionResponse toResponse(FolderPermission p) {
+        return toResponse(p, false, null);
+    }
+
+    private FolderPermissionResponse toResponse(FolderPermission p, boolean inherited, String inheritedFromName) {
         String name = "Không xác định";
         String detail = "";
 
@@ -373,13 +435,15 @@ public class FolderService {
 
         return new FolderPermissionResponse(
                 p.getId(),
-                p.getFolder().getId(),
+                p.getFolder() != null ? p.getFolder().getId() : null,
                 p.getSubjectType(),
                 p.getSubjectId(),
                 name,
                 detail,
                 p.getLevel(),
-                p.getCreatedAt()
+                p.getCreatedAt(),
+                inherited,
+                inheritedFromName
         );
     }
 
@@ -412,10 +476,43 @@ public class FolderService {
                 return false;
             }
 
+            if (current.getCreatedBy() != null && current.getCreatedBy().getId().equals(user.getId())) {
+                return true; // Chủ sở hữu thư mục hiện tại hoặc tổ tiên có toàn quyền truy cập
+            }
+
             if (hasDirectPermission(user, current.getId())) {
                 return true; // Tìm thấy quyền kế thừa hợp lệ tại cấp hiện tại!
             }
             current = current.getParent(); // Leo ngược lên thư mục cha
+        }
+
+        return false;
+    }
+
+    /**
+     * Kiểm tra quyền quản lý / thay đổi chủ sở hữu thư mục.
+     * Chỉ người có quyền cao hơn mới được gán/chuyển chủ sở hữu:
+     * - Admin
+     * - Chủ sở hữu hiện tại của folder này
+     * - Chủ sở hữu của một trong các folder cha (ancestor folders)
+     */
+    @Transactional(readOnly = true)
+    public boolean canManageOwner(User user, Folder folder) {
+        if (user == null || folder == null) return false;
+        if (user.getRole() == UserRole.ADMIN) return true;
+
+        // 1. Chủ sở hữu hiện tại của folder
+        if (folder.getCreatedBy() != null && folder.getCreatedBy().getId().equals(user.getId())) {
+            return true;
+        }
+
+        // 2. Chủ sở hữu của một trong các folder cha (ancestor folders)
+        Folder parent = folder.getParent();
+        while (parent != null) {
+            if (parent.getCreatedBy() != null && parent.getCreatedBy().getId().equals(user.getId())) {
+                return true;
+            }
+            parent = parent.getParent();
         }
 
         return false;
@@ -443,6 +540,11 @@ public class FolderService {
 
         Folder current = folder;
         while (current != null) {
+            // Chủ sở hữu của thư mục hiện tại hoặc thư mục cha luôn có quyền upload/chỉnh sửa
+            if (current.getCreatedBy() != null && current.getCreatedBy().getId().equals(user.getId())) {
+                return true;
+            }
+
             List<FolderPermission> permissions = folderPermissionRepository.findByFolderId(current.getId());
             // 1. Quyền cấp riêng cho User luôn có độ ưu tiên cao nhất ghi đè phòng ban
             java.util.Optional<FolderPermission> userPerm = permissions.stream()

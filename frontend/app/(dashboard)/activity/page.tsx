@@ -656,7 +656,7 @@ export default function ActivityPage() {
                                                                     onClick={() => {
                                                                         navigator.clipboard.writeText(
                                                                             window.location.origin +
-                                                                                (item.fileId ? '/files' : '/files')
+                                                                                (item.fileId ? `/files?fileId=${item.fileId}` : '/files')
                                                                         );
                                                                         toast.success('Đã sao chép liên kết tệp!');
                                                                     }}
@@ -699,7 +699,7 @@ export default function ActivityPage() {
                                                                                 setActiveActionMenuId(null);
                                                                                 navigator.clipboard.writeText(
                                                                                     window.location.origin +
-                                                                                        (item.fileId ? '/files' : '/files')
+                                                                                        (item.fileId ? `/files?fileId=${item.fileId}` : '/files')
                                                                                 );
                                                                                 toast.success('Đã sao chép liên kết tệp!');
                                                                             }}

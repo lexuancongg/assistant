@@ -12,6 +12,8 @@ import {
     ChevronUp,
     HelpCircle,
     Settings,
+    Crown,
+    Search,
 } from 'lucide-react';
 import departmentService, { DepartmentDto } from '@/services/department/departmentService';
 import userService, { UserDto } from '@/services/user/userService';
@@ -37,6 +39,7 @@ interface SelectedDept {
     memberCount: number;
     level: 'VIEWER' | 'EDITOR';
     isInherited?: boolean;
+    inheritedFromName?: string;
 }
 
 interface SelectedUser {
@@ -45,6 +48,7 @@ interface SelectedUser {
     email: string;
     level: 'VIEWER' | 'EDITOR' | 'DENY';
     isInherited?: boolean;
+    inheritedFromName?: string;
 }
 
 export default function ShareModal({
@@ -66,11 +70,33 @@ export default function ShareModal({
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
     const [users, setUsers] = useState<UserDto[]>([]);
     const [owner, setOwner] = useState<any>(null);
+    const [canManageOwner, setCanManageOwner] = useState(false);
+    const [ownerSearchQuery, setOwnerSearchQuery] = useState('');
+
+    const isCurrentUserOwner = useMemo(() => {
+        try {
+            const stored = localStorage.getItem('user');
+            if (stored && owner) {
+                const u = JSON.parse(stored);
+                return String(u.id) === String(owner.id) || (u.email && owner.email && u.email.toLowerCase() === owner.email.toLowerCase());
+            }
+        } catch (e) {}
+        return false;
+    }, [owner]);
 
     const [scope, setScope] = useState<AccessScope>('Hạn chế');
     const [generalRole, setGeneralRole] = useState<'VIEWER' | 'EDITOR'>('VIEWER');
     const [directDepts, setDirectDepts] = useState<SelectedDept[]>([]);
     const [directUsers, setDirectUsers] = useState<SelectedUser[]>([]);
+
+    const deptMemberUserIds = useMemo(() => {
+        const ids = new Set<string>();
+        directDepts.forEach((d) => {
+            const fullDept = departments.find((x) => String(x.id) === String(d.id));
+            fullDept?.members?.forEach((m) => ids.add(String(m.userId)));
+        });
+        return ids;
+    }, [directDepts, departments]);
 
     // Lưu các override cá nhân cho thành viên trong phòng ban: userId -> 'INHERIT' | 'EDITOR' | 'VIEWER' | 'DENY'
     const [memberOverrides, setMemberOverrides] = useState<Record<string, 'INHERIT' | 'EDITOR' | 'VIEWER' | 'DENY'>>({});
@@ -167,7 +193,14 @@ export default function ShareModal({
                     forderService.getFolderPermissions(String(targetId)).catch(() => []),
                 ]);
 
-                if (folderData?.createdBy) {
+                if (folderData?.ownerName || folderData?.ownerEmail) {
+                    setOwner({
+                        id: folderData.ownerId || 'owner',
+                        name: folderData.ownerName || 'Chủ sở hữu',
+                        email: folderData.ownerEmail || '',
+                        role: 'USER',
+                    });
+                } else if (folderData?.createdBy) {
                     setOwner({
                         id: folderData.createdBy.id,
                         name: folderData.createdBy.name,
@@ -177,6 +210,22 @@ export default function ShareModal({
                 } else if (usersData.length > 0) {
                     setOwner(usersData[0]);
                 }
+
+                let isAuthorizedToManageOwner = false;
+                if (folderData?.canManageOwner !== undefined) {
+                    isAuthorizedToManageOwner = Boolean(folderData.canManageOwner);
+                } else {
+                    try {
+                        const stored = localStorage.getItem('user');
+                        if (stored) {
+                            const u = JSON.parse(stored);
+                            if (u.role === 'ADMIN' || (folderData?.ownerId && String(u.id) === String(folderData.ownerId))) {
+                                isAuthorizedToManageOwner = true;
+                            }
+                        }
+                    } catch (e) {}
+                }
+                setCanManageOwner(isAuthorizedToManageOwner);
 
                 if (folderData?.accessScope === 'COMPANY_WIDE') setScope('Toàn công ty');
                 else if (folderData?.accessScope === 'PRIVATE') setScope('Riêng tư');
@@ -194,6 +243,8 @@ export default function ShareModal({
                             name: d ? d.name : p.subjectName || 'Phòng ban',
                             memberCount: d?.members ? d.members.length : 0,
                             level: p.level === 'EDITOR' ? 'EDITOR' : 'VIEWER',
+                            isInherited: p.inherited,
+                            inheritedFromName: p.inheritedFromName,
                         });
                     } else if (p.subjectType === 'USER') {
                         const u = usersData.find((x) => String(x.id) === String(p.subjectId));
@@ -203,6 +254,8 @@ export default function ShareModal({
                             name: u ? u.name : p.subjectName || 'Người dùng',
                             email: u ? u.email : p.subjectDetail || '',
                             level: p.level as any,
+                            isInherited: p.inherited,
+                            inheritedFromName: p.inheritedFromName,
                         });
                     }
                 });
@@ -352,9 +405,49 @@ export default function ShareModal({
     };
 
     const handleCopyLink = () => {
-        const link = window.location.origin + `/files?folderId=${targetId}`;
+        const link = isFile
+            ? `${window.location.origin}/files?fileId=${targetId}${titleName ? `&fileName=${encodeURIComponent(titleName)}` : ''}`
+            : `${window.location.origin}/files?folderId=${targetId}${titleName ? `&folderName=${encodeURIComponent(titleName)}` : ''}`;
         navigator.clipboard.writeText(link);
-        toast.success('Đã sao chép đường liên kết vào bộ nhớ tạm');
+        toast.success(
+            isFile
+                ? 'Đã sao chép đường liên kết tệp vào bộ nhớ tạm'
+                : 'Đã sao chép đường liên kết thư mục vào bộ nhớ tạm'
+        );
+    };
+
+    const handleTransferOwner = (newUser: { id: number | string; name: string; email: string }) => {
+        if (!canManageOwner) {
+            toast.error('Bạn không có quyền chuyển quyền sở hữu của thư mục này!');
+            return;
+        }
+        const oldOwner = owner;
+        setOwner({
+            id: newUser.id,
+            name: newUser.name,
+            email: newUser.email,
+            role: 'USER',
+        });
+
+        // Chuyển chủ sở hữu cũ thành Editor nếu có
+        if (oldOwner && String(oldOwner.id) !== String(newUser.id) && oldOwner.id !== 'owner') {
+            setDirectUsers((prev) => {
+                if (prev.some((u) => String(u.id) === String(oldOwner.id))) {
+                    return prev.map((u) => String(u.id) === String(oldOwner.id) ? { ...u, level: 'EDITOR' } : u);
+                }
+                return [...prev, {
+                    id: oldOwner.id,
+                    name: oldOwner.name,
+                    email: oldOwner.email,
+                    level: 'EDITOR',
+                }];
+            });
+        }
+
+        // Xóa newUser khỏi directUsers (vì đã là owner)
+        setDirectUsers((prev) => prev.filter((u) => String(u.id) !== String(newUser.id)));
+        setOpenDropdownId(null);
+        toast.success(`Đã chọn "${newUser.name}" làm Chủ sở hữu mới`);
     };
 
     const handleSave = async () => {
@@ -416,6 +509,7 @@ export default function ShareModal({
             } else {
                 await forderService.updateFolderPermissions(String(targetId), {
                     accessScope: backendScope,
+                    ownerId: owner?.id && !isNaN(Number(owner.id)) ? Number(owner.id) : undefined,
                     permissions: permissionsPayload.map((p) => ({
                         subjectType: p.subjectType,
                         subjectId: Number(p.subjectId),
@@ -584,18 +678,146 @@ export default function ShareModal({
                                                     <span className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate">
                                                         {owner.name}
                                                     </span>
-                                                    <span className="text-[13px] text-[#444746] dark:text-slate-400 font-normal">
-                                                        (you)
-                                                    </span>
+                                                    {isCurrentUserOwner && (
+                                                        <span className="text-[13px] text-[#444746] dark:text-slate-400 font-normal">
+                                                            (you)
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="text-[12px] text-[#444746] dark:text-slate-400 truncate">
                                                     {owner.email}
                                                 </div>
                                             </div>
                                         </div>
-                                        <span className="text-[13.5px] text-[#444746] dark:text-slate-400 shrink-0 font-normal">
-                                            Chủ sở hữu
-                                        </span>
+                                        
+                                        {!isFile && canManageOwner ? (
+                                            <div className="relative shrink-0" data-dropdown-container>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setOwnerSearchQuery('');
+                                                        setOpenDropdownId(openDropdownId === 'owner-picker' ? null : 'owner-picker');
+                                                    }}
+                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-[4px] hover:bg-[#F0F4F9] dark:hover:bg-slate-800 text-[13.5px] text-[#0B57D0] dark:text-[#7CBBF3] font-medium transition cursor-pointer select-none"
+                                                    title="Chuyển quyền sở hữu thư mục"
+                                                >
+                                                    <span>Chủ sở hữu</span>
+                                                    <ChevronDown className="w-4 h-4 text-[#0B57D0] dark:text-[#7CBBF3]" />
+                                                </button>
+
+                                                {openDropdownId === 'owner-picker' && (
+                                                    <div className="absolute right-0 top-full mt-1 w-72 bg-white dark:bg-[#282A2C] rounded-[8px] shadow-[0_4px_16px_rgba(0,0,0,0.2)] border border-gray-200 dark:border-slate-700 py-1.5 z-[70] text-[13px] animate-in fade-in zoom-in-95 duration-100">
+                                                        <div className="px-3 py-1.5 border-b border-gray-100 dark:border-slate-700">
+                                                            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                                                                Chọn Chủ sở hữu mới
+                                                            </div>
+                                                            <div className="relative">
+                                                                <input
+                                                                    type="text"
+                                                                    value={ownerSearchQuery}
+                                                                    onChange={(e) => setOwnerSearchQuery(e.target.value)}
+                                                                    placeholder="Tìm nhân viên..."
+                                                                    className="w-full pl-7 pr-2.5 py-1 bg-gray-100 dark:bg-slate-800 rounded text-xs border border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 outline-none transition"
+                                                                    autoFocus
+                                                                />
+                                                                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2 top-2" />
+                                                            </div>
+                                                        </div>
+                                                        <div className="max-h-60 overflow-y-auto py-1 divide-y divide-gray-100 dark:divide-slate-800">
+                                                            {(() => {
+                                                                const deptName = directDepts[0]?.name || 'Bộ phận';
+                                                                const q = ownerSearchQuery.toLowerCase().trim();
+                                                                const deptUsers = users
+                                                                    .filter((u) => deptMemberUserIds.has(String(u.id)))
+                                                                    .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+                                                                const otherUsers = users
+                                                                    .filter((u) => !deptMemberUserIds.has(String(u.id)))
+                                                                    .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+
+                                                                return (
+                                                                    <>
+                                                                        {deptUsers.length > 0 && (
+                                                                            <div className="py-1">
+                                                                                <div className="px-3 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 uppercase tracking-wider flex items-center justify-between">
+                                                                                    <span>Thành viên {deptName}</span>
+                                                                                    <span className="text-[10px] font-normal lowercase">({deptUsers.length} người)</span>
+                                                                                </div>
+                                                                                {deptUsers.map((u) => {
+                                                                                    const isCurrentOwner = owner && String(owner.id) === String(u.id);
+                                                                                    return (
+                                                                                        <button
+                                                                                            key={u.id}
+                                                                                            type="button"
+                                                                                            onClick={() => handleTransferOwner(u)}
+                                                                                            className={`w-full px-3 py-2 flex items-center justify-between text-left hover:bg-[#F0F4F9] dark:hover:bg-slate-700/80 transition cursor-pointer ${
+                                                                                                isCurrentOwner ? 'bg-blue-50/70 dark:bg-blue-950/40 text-blue-600 font-medium' : 'text-[#1F1F1F] dark:text-[#E3E3E3]'
+                                                                                            }`}
+                                                                                        >
+                                                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                                                <div className="w-6 h-6 rounded-full bg-[#0B57D0] text-white text-[10px] flex items-center justify-center shrink-0 font-medium">
+                                                                                                    {(u.name || u.email).charAt(0).toUpperCase()}
+                                                                                                </div>
+                                                                                                <div className="min-w-0">
+                                                                                                    <div className="truncate font-medium text-[12.5px]">{u.name}</div>
+                                                                                                    <div className="truncate text-[11px] text-[#444746] dark:text-slate-400">{u.email}</div>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            {isCurrentOwner && <Check className="w-4 h-4 text-blue-600 shrink-0 ml-1.5" />}
+                                                                                        </button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {otherUsers.length > 0 && (
+                                                                            <div className="py-1">
+                                                                                <div className="px-3 py-1 text-[11px] font-semibold text-gray-500 dark:text-slate-400 bg-gray-50/80 dark:bg-slate-800/40 uppercase tracking-wider">
+                                                                                    Nhân sự khác trong công ty
+                                                                                </div>
+                                                                                {otherUsers.map((u) => {
+                                                                                    const isCurrentOwner = owner && String(owner.id) === String(u.id);
+                                                                                    return (
+                                                                                        <button
+                                                                                            key={u.id}
+                                                                                            type="button"
+                                                                                            onClick={() => handleTransferOwner(u)}
+                                                                                            className={`w-full px-3 py-2 flex items-center justify-between text-left hover:bg-[#F0F4F9] dark:hover:bg-slate-700/80 transition cursor-pointer ${
+                                                                                                isCurrentOwner ? 'bg-blue-50/70 dark:bg-blue-950/40 text-blue-600 font-medium' : 'text-[#1F1F1F] dark:text-[#E3E3E3]'
+                                                                                            }`}
+                                                                                        >
+                                                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                                                <div className="w-6 h-6 rounded-full bg-gray-400 text-white text-[10px] flex items-center justify-center shrink-0">
+                                                                                                    {(u.name || u.email).charAt(0).toUpperCase()}
+                                                                                                </div>
+                                                                                                <div className="min-w-0">
+                                                                                                    <div className="truncate font-medium text-[12.5px]">{u.name}</div>
+                                                                                                    <div className="truncate text-[11px] text-[#444746] dark:text-slate-400">{u.email}</div>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            {isCurrentOwner && <Check className="w-4 h-4 text-blue-600 shrink-0 ml-1.5" />}
+                                                                                        </button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {deptUsers.length === 0 && otherUsers.length === 0 && (
+                                                                            <div className="px-4 py-4 text-center text-xs text-gray-400">
+                                                                                Không tìm thấy nhân viên phù hợp
+                                                                            </div>
+                                                                        )}
+                                                                    </>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-[13.5px] text-[#444746] dark:text-slate-400 shrink-0 font-normal">
+                                                Chủ sở hữu
+                                            </span>
+                                        )}
                                     </div>
                                 )}
 
@@ -618,8 +840,15 @@ export default function ShareModal({
                                                         <Building2 className="w-4 h-4" />
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <div className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate font-normal">
-                                                            {dept.name}
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate font-normal">
+                                                                {dept.name}
+                                                            </span>
+                                                            {dept.isInherited && (
+                                                                <span className="text-[11px] text-[#444746] dark:text-slate-400 bg-[#F0F4F9] dark:bg-slate-800 px-1.5 py-0.5 rounded font-normal shrink-0">
+                                                                    Kế thừa từ {dept.inheritedFromName ? `"${dept.inheritedFromName}"` : 'thư mục cha'}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-[12px] text-[#444746] dark:text-slate-400">
@@ -773,6 +1002,19 @@ export default function ShareModal({
                                                                             )}
 
                                                                             <div className="border-t border-gray-100 dark:border-slate-700 my-1" />
+                                                                            {!isFile && canManageOwner && (
+                                                                                <>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleTransferOwner({ id: member.userId, name: member.name, email: member.email })}
+                                                                                        className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-[13px] hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-700 dark:text-amber-400 cursor-pointer font-medium"
+                                                                                    >
+                                                                                        <Crown className="w-4 h-4 text-amber-500 shrink-0" />
+                                                                                        <span>Chuyển quyền sở hữu</span>
+                                                                                    </button>
+                                                                                    <div className="border-t border-gray-100 dark:border-slate-700 my-1" />
+                                                                                </>
+                                                                            )}
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => handleMemberOverride(member.userId, 'DENY')}
@@ -812,8 +1054,15 @@ export default function ShareModal({
                                                         {(user.name || user.email).charAt(0).toUpperCase()}
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <div className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate font-normal">
-                                                            {user.name}
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate font-normal">
+                                                                {user.name}
+                                                            </span>
+                                                            {user.isInherited && (
+                                                                <span className="text-[11px] text-[#444746] dark:text-slate-400 bg-[#F0F4F9] dark:bg-slate-800 px-1.5 py-0.5 rounded font-normal shrink-0">
+                                                                    Kế thừa từ {user.inheritedFromName ? `"${user.inheritedFromName}"` : 'thư mục cha'}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="text-[12px] text-[#444746] dark:text-slate-400 truncate">
                                                             {user.email}
@@ -849,6 +1098,21 @@ export default function ShareModal({
                                                                 <span>Người chỉnh sửa</span>
                                                                 {user.level === 'EDITOR' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                             </button>
+
+                                                            {!isFile && canManageOwner && (
+                                                                <>
+                                                                    <div className="border-t border-gray-100 dark:border-slate-700 my-1" />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleTransferOwner({ id: user.id, name: user.name, email: user.email })}
+                                                                        className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-[13px] hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-700 dark:text-amber-400 cursor-pointer font-medium"
+                                                                    >
+                                                                        <Crown className="w-4 h-4 text-amber-500 shrink-0" />
+                                                                        <span>Chuyển quyền sở hữu</span>
+                                                                    </button>
+                                                                </>
+                                                            )}
+
                                                             <div className="border-t border-gray-100 dark:border-slate-700 my-1" />
                                                             <button
                                                                 type="button"

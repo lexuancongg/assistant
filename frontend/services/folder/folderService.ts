@@ -1,3 +1,4 @@
+import { extractApiError } from "@/utils/api/errorHelper";
 import apiClient, { API_ROOT } from "@/utils/api/apiClientFixed";
 import { FolderCreateRequest, ForderCreateRequest } from "@/models/folder/folder";
 
@@ -10,6 +11,8 @@ export interface FolderPermissionDto {
     subjectDetail?: string;
     level: 'VIEWER' | 'EDITOR' | 'DENY';
     createdAt: string;
+    inherited?: boolean;
+    inheritedFromName?: string;
 }
 
 export interface FolderPermissionUpdateDto {
@@ -27,6 +30,14 @@ export class FolderService {
 
     constructor() {
         this.baseUrl = `${API_ROOT}/api/v1/folders`;
+    }
+
+    public async getFolderPublicInfo(id: string | number): Promise<{ id: number | string; name: string }> {
+        const response = await apiClient.get(`${this.baseUrl}/${id}/public-info`);
+        if (response.ok) {
+            return await response.json();
+        }
+        throw await extractApiError(response, "Không thể tải thông tin thư mục");
     }
 
     public async getFolderById(folderId: string | number): Promise<any> {

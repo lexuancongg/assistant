@@ -6,13 +6,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.UUID;
 
 @Repository
 public interface AccessRequestRepository extends JpaRepository<AccessRequest, Long> {
     List<AccessRequest> findByStatusOrderByCreatedAtDesc(AccessRequestStatus status);
     List<AccessRequest> findByRequesterIdOrderByCreatedAtDesc(Long requesterId);
     long countByStatus(AccessRequestStatus status);
+
+    boolean existsByRequesterIdAndFileIdAndStatus(Long requesterId, Long fileId, AccessRequestStatus status);
+    boolean existsByRequesterIdAndFolderIdAndStatus(Long requesterId, Long folderId, AccessRequestStatus status);
 
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.data.jpa.repository.Query("DELETE FROM AccessRequest a WHERE a.fileId = :fileId")

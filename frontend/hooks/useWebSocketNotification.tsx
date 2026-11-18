@@ -179,7 +179,7 @@ export function useWebSocketNotification() {
                             <button
                                 onClick={() => {
                                     toast.dismiss(t.id);
-                                    router.push('/files');
+                                    router.push(notif.type === 'ACCESS_REQUEST' ? '/access-requests' : '/files');
                                 }}
                                 className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition"
                             >

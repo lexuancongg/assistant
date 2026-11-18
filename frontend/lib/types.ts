@@ -6,6 +6,7 @@ export interface FolderNode {
     id: number | string;
     name: string;
     children: FolderNode[];
+    canUpload?: boolean;
 }
 
 // lib/types.ts — bổ sung

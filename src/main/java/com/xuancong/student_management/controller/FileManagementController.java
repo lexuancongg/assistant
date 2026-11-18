@@ -46,6 +46,11 @@ public class FileManagementController {
         return ResponseEntity.ok(Map.of("fileId", id, "starred", starred));
     }
 
+    @GetMapping("/{id}/public-info")
+    public ResponseEntity<java.util.Map<String, Object>> getFilePublicInfo(@PathVariable Long id) {
+        return ResponseEntity.ok(fileManagementService.getFilePublicInfo(id));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<FileItemResponse> getFileDetail(@PathVariable Long id) {
         return ResponseEntity.ok(fileManagementService.getFileDetail(id));

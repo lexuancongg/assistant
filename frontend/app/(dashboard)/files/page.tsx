@@ -441,6 +441,12 @@ function FilesContent() {
     const [showUploadFile, setShowUploadFile] = useState(false);
     const [showPermissionModal, setShowPermissionModal] = useState(false);
     const [showRequestAccessModal, setShowRequestAccessModal] = useState(false);
+    const [requestAccessTarget, setRequestAccessTarget] = useState<{
+        folderId?: number | string;
+        folderName?: string;
+        fileId?: number | string;
+        fileName?: string;
+    } | null>(null);
     const [editingTagsFile, setEditingTagsFile] = useState<FileItemDto | null>(null);
     const [renamingFolder, setRenamingFolder] = useState<{ id: string | number; name: string } | null>(null);
     const [renamingFile, setRenamingFile] = useState<FileItemDto | null>(null);
@@ -540,16 +546,78 @@ function FilesContent() {
         }
     };
 
-    // Sync folder state from URL search params
+    // Sync folder & file state from URL search params
     useEffect(() => {
         const folderIdParam = searchParams.get('folderId');
         const folderNameParam = searchParams.get('folderName');
-        if (folderIdParam && folderIdParam !== 'all') {
+        const fileIdParam = searchParams.get('fileId');
+
+        if (fileIdParam) {
+            fileManagementService.getFileDetail(Number(fileIdParam))
+                .then((fileDetail) => {
+                    
+                    if (fileDetail) {
+                        if (fileDetail.folderId) {
+                            setSelectedFolder(String(fileDetail.folderId));
+                            setSelectedFolderName(fileDetail.folderName || 'Thư mục');
+                        } else {
+                            setSelectedFolder('all');
+                            setSelectedFolderName('Drive của tôi');
+                        }
+                        setSelectedFileIds([fileIdParam.toString()]);
+                        setActiveDetailFile(fileDetail);
+                        setShowDetailsDrawer(true);
+                        toast.success(`Đang mở tài liệu: ${fileDetail.name}`);
+                    }
+                })
+                .catch(async (err) => {
+                    console.warn('[Direct link] Access denied, fetching public info:', err);
+                    let fetchedName = searchParams.get('fileName') || undefined;
+                    try {
+                        const publicInfo = await fileManagementService.getFilePublicInfo(Number(fileIdParam));
+                        if (publicInfo && publicInfo.name) {
+                            fetchedName = publicInfo.name;
+                        }
+                    } catch (e) {
+                        // ignore
+                    }
+                    setRequestAccessTarget({
+                        fileId: fileIdParam,
+                        fileName: fetchedName,
+                    });
+                    setShowRequestAccessModal(true);
+                });
+        } else if (folderIdParam && folderIdParam !== 'all') {
             setSelectedFolder(folderIdParam);
             if (folderNameParam) {
                 setSelectedFolderName(decodeURIComponent(folderNameParam));
+                
+            } else {
+                forderService.getFolderById(folderIdParam)
+                    .then((f) => {
+                        
+                        if (f && f.name) setSelectedFolderName(f.name);
+                    })
+                    .catch(async (err) => {
+                        console.warn('[Direct link] Folder access denied, fetching public info:', err);
+                        let fetchedName = searchParams.get('folderName') || undefined;
+                        try {
+                            const publicInfo = await forderService.getFolderPublicInfo(folderIdParam);
+                            if (publicInfo && publicInfo.name) {
+                                fetchedName = publicInfo.name;
+                            }
+                        } catch (e) {
+                            // ignore
+                        }
+                        setRequestAccessTarget({
+                            folderId: folderIdParam,
+                            folderName: fetchedName,
+                        });
+                        setShowRequestAccessModal(true);
+                    });
             }
         } else {
+            
             setSelectedFolder('all');
             setSelectedFolderName('Drive của tôi');
         }
@@ -1300,6 +1368,8 @@ function FilesContent() {
         }
         return null;
     }, [activeDetailFile, selectedFileIds, files]);
+
+
 
     return (
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#F8FAFD] dark:bg-[#0B1120] text-gray-900 dark:text-slate-100">
@@ -3100,9 +3170,14 @@ function FilesContent() {
 
             <RequestAccessModal
                 isOpen={showRequestAccessModal}
-                folderId={selectedFolder !== 'all' && !isNaN(Number(selectedFolder)) ? Number(selectedFolder) : undefined}
-                folderName={selectedFolderName}
-                onClose={() => setShowRequestAccessModal(false)}
+                folderId={requestAccessTarget?.folderId ?? (selectedFolder !== 'all' && !isNaN(Number(selectedFolder)) ? Number(selectedFolder) : undefined)}
+                folderName={requestAccessTarget?.folderName ?? (requestAccessTarget?.folderId ? undefined : selectedFolderName)}
+                fileId={requestAccessTarget?.fileId}
+                fileName={requestAccessTarget?.fileName}
+                onClose={() => {
+                    setShowRequestAccessModal(false);
+                    setRequestAccessTarget(null);
+                }}
             />
 
             <TagManagementModal
