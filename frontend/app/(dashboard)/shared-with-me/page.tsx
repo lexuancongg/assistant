@@ -634,13 +634,16 @@ function SharedWithMeContent() {
                             <span className="text-xs">Đang tải danh sách tài liệu từ cơ sở dữ liệu...</span>
                         </div>
                     ) : items.length === 0 ? (
-                        <div className="py-20 flex flex-col items-center justify-center text-center text-gray-400">
-                            <Users className="w-12 h-12 stroke-1 mb-3 text-gray-300 dark:text-slate-600" />
-                            <p className="text-sm font-medium text-gray-700 dark:text-slate-200">
+                        /* Google Drive Basic Empty State */
+                        <div className="py-20 flex flex-col items-center justify-center text-center select-none">
+                            <div className="w-20 h-20 rounded-full bg-[#F0F4F9] dark:bg-slate-800 flex items-center justify-center text-[#747775] dark:text-slate-400 mb-3">
+                                <Users className="w-9 h-9 stroke-[1.5]" />
+                            </div>
+                            <h3 className="text-base font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
                                 Chưa có tệp nào được chia sẻ với bạn
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1 max-w-sm">
-                                Khi người khác trong tổ chức chia sẻ tệp hoặc thư mục với tài khoản của bạn, chúng sẽ tự động hiển thị tại đây.
+                            </h3>
+                            <p className="text-[12.5px] text-[#747775] dark:text-slate-400 max-w-sm mt-1">
+                                Các tệp hoặc thư mục được chia sẻ với bạn sẽ xuất hiện tại đây.
                             </p>
                         </div>
                     ) : viewMode === 'list' ? (

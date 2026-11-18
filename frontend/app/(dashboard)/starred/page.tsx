@@ -699,15 +699,15 @@ export default function StarredPage() {
                             ))}
                         </div>
                     ) : starredFiles.length === 0 ? (
-                        /* Authentic Google Drive Empty State */
+                        /* Google Drive Basic Empty State */
                         <div className="py-20 flex flex-col items-center justify-center text-center select-none">
-                            <div className="w-32 h-32 rounded-full bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center mb-4">
-                                <Star className="w-16 h-16 text-amber-400 fill-amber-300 stroke-[1.5]" />
+                            <div className="w-20 h-20 rounded-full bg-[#F0F4F9] dark:bg-slate-800 flex items-center justify-center text-[#747775] dark:text-slate-400 mb-3">
+                                <Star className="w-9 h-9 stroke-[1.5]" />
                             </div>
-                            <h2 className="text-[17px] font-medium text-gray-800 dark:text-slate-100 mb-1.5">
-                                Không có tệp nào có dấu sao
-                            </h2>
-                            <p className="text-[13px] text-gray-500 dark:text-slate-400 max-w-sm">
+                            <h3 className="text-base font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
+                                Không có tệp nào có gắn dấu sao
+                            </h3>
+                            <p className="text-[12.5px] text-[#747775] dark:text-slate-400 max-w-sm mt-1">
                                 Thêm dấu sao vào những mục bạn muốn tìm lại dễ dàng sau này.
                             </p>
                         </div>
