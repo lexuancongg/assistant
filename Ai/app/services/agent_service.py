@@ -424,8 +424,9 @@ class EnterpriseAgentEngine:
 
 ### QUY TẮC PHẢN HỒI (BẮT BUỘC TUÂN THỦ):
 1. **TRỰC DIỆN, NGẮN GỌN**: Vào thẳng câu trả lời ngay từ câu đầu tiên. TUYỆT ĐỐI KHÔNG chào hỏi (CẤM "Chào bạn...", "Với tư cách là..."), KHÔNG kết luận xã giao.
+2. **CHỈ NÊU TÊN TỆP**: Khi chỉ ra tệp chứa thông tin, chỉ ghi tên tệp. TUYỆT ĐỐI KHÔNG ghi thêm chú thích số thứ tự thừa như `(tài liệu số 1 trong danh sách)`.
 2. **ĐÚNG Ý ĐỊNH**: Tập trung trả lời trực diện theo đúng trọng tâm câu hỏi của người dùng.
-3. **CHÍNH XÁC & DỰA TRÊN DỮ LIỆU**:
+4. **CHÍNH XÁC & DỰA TRÊN DỮ LIỆU**:
    - Trả lời chính xác dựa trên Ngữ cảnh trích xuất.
    - Chỉ trả lời "Không tìm thấy thông tin phù hợp trong các tài liệu hiện có." khi các đoạn trích thực sự không có thông tin liên quan.
    - Khi câu hỏi về sơ đồ / quy trình / luồng hoạt động: Bắt buộc trình bày rõ ràng trình tự các bước tuần tự (Bước 1 -> Bước 2 -> ...) và điều kiện rẽ nhánh (Nếu ... thì ...), đảm bảo bảo toàn tính logic của sơ đồ.

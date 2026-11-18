@@ -691,6 +691,9 @@ public class ChatService {
                 }
             }
 
+            // Loại bỏ các đoạn chú thích số thứ tự thừa như "(tài liệu số 1 trong danh sách)", "(tài liệu 1)"
+            result = result.replaceAll("(?i)\\s*\\((?:tài liệu|tệp|file)\\s*(?:số\\s*)?#?\\d+(?:\\s*trong\\s*danh\\s*sách)?\\)", "");
+
             return result;
         } catch (Exception e) {
             return text;

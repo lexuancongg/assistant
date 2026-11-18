@@ -132,6 +132,10 @@ function formatMarkdownContent(raw: string, filesList: FileItemDto[] = []): stri
             formatted = formatted.replace(regex, `[${f.name}](/files?fileId=${f.id})`);
         }
     }
+
+    // Loại bỏ các đoạn chú thích số thứ tự thừa như "(tài liệu số 1 trong danh sách)", "(tài liệu 1)"
+    formatted = formatted.replace(/\s*\((?:tài liệu|tệp|file)\s*(?:số\s*)?#?\d+(?:\s*trong\s*danh\s*sách)?\)/gi, '');
+
     return formatted;
 }
 
