@@ -116,10 +116,22 @@ function formatSessionTimestamp(timestamp?: number | string | Date): string {
 
 const formatSessionDate = formatSessionTimestamp;
 
-function formatMarkdownContent(raw: string): string {
+function formatMarkdownContent(raw: string, filesList: FileItemDto[] = []): string {
     if (!raw) return '';
     let formatted = raw.replace(/([^\n])\n(\s*[\*\-\+]\s+)/g, '$1\n\n$2');
     formatted = formatted.replace(/([^\n])\n(\s*\d+\.\s+)/g, '$1\n\n$2');
+
+    // Tự động nhận diện tên file có trong hệ thống và chuyển thành markdown link có thể click mở
+    if (filesList && filesList.length > 0) {
+        const sorted = [...filesList].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
+        for (const f of sorted) {
+            if (!f.name || f.name.length < 3) continue;
+            // Escape special regex characters in file name safely
+            const escaped = f.name.replace(/[.*+?^${}()|[\]\\]/g, (match) => '\\' + match);
+            const regex = new RegExp(`(?<!\\[)(?:\\*\\*|[\`"'])?(${escaped})(?:\\*\\*|[\`"'])?(?!\\s*\\]\\(/files)`, 'gi');
+            formatted = formatted.replace(regex, `[${f.name}](/files?fileId=${f.id})`);
+        }
+    }
     return formatted;
 }
 
@@ -1047,7 +1059,7 @@ function DriveAiContent() {
                                                                 ),
                                                             }}
                                                         >
-                                                            {formatMarkdownContent(msg.content)}
+                                                            {formatMarkdownContent(msg.content, allFiles)}
                                                         </ReactMarkdown>
                                                     </div>
                                                 )}

@@ -666,12 +666,34 @@ public class ChatService {
     }
 
     public String resolveDocumentLinks(String text) {
-        if (text == null || text.isBlank() || !text.toLowerCase().contains("tài liệu")) {
+        if (text == null || text.isBlank()) {
             return text;
         }
         try {
-            java.util.regex.Pattern docPattern = java.util.regex.Pattern.compile("(?i)(?:\\*\\*)?Tài liệu\\s*#?(\\d+)(?:\\*\\*)?");
-            java.util.regex.Matcher matcher = docPattern.matcher(text);
+            String result = text;
+
+            // 1. Tự động nhận diện tên file thực tế trong hệ thống và gán link có fileId để click xem trước
+            List<FileItem> activeFiles = fileItemRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
+            if (activeFiles != null && !activeFiles.isEmpty()) {
+                List<FileItem> sortedFiles = activeFiles.stream()
+                        .filter(f -> f.getName() != null && !f.getName().isBlank())
+                        .sorted((a, b) -> Integer.compare(b.getName().length(), a.getName().length()))
+                        .toList();
+
+                for (FileItem fi : sortedFiles) {
+                    String fileName = fi.getName().trim();
+                    if (fileName.contains(".") || fileName.length() >= 5) {
+                        String escaped = java.util.regex.Pattern.quote(fileName);
+                        String filePatternStr = "(?<!\\[)(?:\\*\\*|`|[\"'])?(" + escaped + ")(?:\\*\\*|`|[\"'])?(?!\\s*\\]\\(/files)";
+                        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(filePatternStr, java.util.regex.Pattern.CASE_INSENSITIVE);
+                        result = pattern.matcher(result).replaceAll(java.util.regex.Matcher.quoteReplacement("[" + fileName + "](/files?fileId=" + fi.getId() + ")"));
+                    }
+                }
+            }
+
+            // 2. Nhận diện theo cú pháp "Tài liệu #1", "Tài liệu số 1"
+            java.util.regex.Pattern docPattern = java.util.regex.Pattern.compile("(?i)(?:\\*\\*)?Tài liệu\\s*(?:số\\s*)?#?(\\d+)(?:\\*\\*)?");
+            java.util.regex.Matcher matcher = docPattern.matcher(result);
             StringBuilder sb = new StringBuilder();
             while (matcher.find()) {
                 try {
