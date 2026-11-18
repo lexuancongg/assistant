@@ -30,12 +30,22 @@ public class FolderController {
 
     @GetMapping
     public ResponseEntity<List<FolderResponse>> getFolderTree() {
-        return ResponseEntity.ok(folderService.getTree());
+        User currentUser = null;
+        try {
+            currentUser = getCurrentUser();
+        } catch (Exception ignored) {
+        }
+        return ResponseEntity.ok(folderService.getTree(currentUser));
     }
 
     @GetMapping("/{folderId}")
     public ResponseEntity<FolderResponse> getFolderById(@PathVariable Long folderId) {
-        Folder folder = folderService.getById(folderId);
+        User currentUser = null;
+        try {
+            currentUser = getCurrentUser();
+        } catch (Exception ignored) {
+        }
+        Folder folder = folderService.getById(folderId, currentUser);
         return ResponseEntity.ok(FolderResponse.from(folder));
     }
 

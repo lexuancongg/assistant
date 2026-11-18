@@ -21,6 +21,8 @@ import com.xuancong.student_management.repository.FolderRepository;
 import com.xuancong.student_management.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -41,6 +43,10 @@ public class FolderService {
     private final CompanyRepository companyRepository;
     private final DepartmentRepository departmentRepository;
     private final UserRepository userRepository;
+
+    @Lazy
+    @Autowired
+    private FileManagementService fileManagementService;
 
     /** Tạo folder mới */
     public Folder create(FolderCreateRequest request, User createdBy) {
@@ -167,21 +173,109 @@ public class FolderService {
 
     /** Lấy cây folder */
     public List<FolderResponse> getTree() {
+        return getTree(null);
+    }
+
+    public List<FolderResponse> getTree(User currentUser) {
         List<Folder> allFolders = folderRepository.findAll();
 
-        // Lấy root folders (không có parent)
-        List<Folder> roots = allFolders.stream()
+        if (currentUser == null || currentUser.getRole() == UserRole.ADMIN) {
+            List<Folder> roots = allFolders.stream()
+                    .filter(f -> f.getParent() == null)
+                    .toList();
+            return roots.stream()
+                    .map(f -> buildTree(f, allFolders))
+                    .toList();
+        }
+
+        Set<Long> visibleFolderIds = getVisibleFolderIds(currentUser, allFolders);
+
+        List<Folder> visibleFolders = allFolders.stream()
+                .filter(f -> visibleFolderIds.contains(f.getId()))
+                .toList();
+
+        List<Folder> roots = visibleFolders.stream()
                 .filter(f -> f.getParent() == null)
                 .toList();
 
         return roots.stream()
-                .map(f -> buildTree(f, allFolders))
+                .map(f -> buildTree(f, visibleFolders))
                 .toList();
     }
 
     public Folder getById(Long folderId) {
-        return folderRepository.findById(folderId)
+        return getById(folderId, null);
+    }
+
+    public Folder getById(Long folderId, User currentUser) {
+        Folder folder = folderRepository.findById(folderId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Folder not found"));
+
+        if (currentUser == null || currentUser.getRole() == UserRole.ADMIN) {
+            return folder;
+        }
+
+        List<Folder> allFolders = folderRepository.findAll();
+        Set<Long> visibleFolderIds = getVisibleFolderIds(currentUser, allFolders);
+        if (!visibleFolderIds.contains(folder.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền truy cập thư mục này");
+        }
+
+        return folder;
+    }
+
+    private Set<Long> getVisibleFolderIds(User user, List<Folder> allFolders) {
+        Set<Long> visibleIds = new HashSet<>();
+
+        // 1. Duyệt quyền ở cấp thư mục (trực tiếp hoặc kế thừa qua cây cha)
+        for (Folder f : allFolders) {
+            if (isFolderAccessible(user, f)) {
+                addFolderAndAncestors(f, visibleIds);
+            }
+        }
+
+        // 2. Ngoại lệ: Nếu có ít nhất 1 file bên trong thư mục con được cấp quyền xem riêng cho user
+        try {
+            if (fileManagementService != null) {
+                List<FileItem> activeFiles = fileItemRepository.findByDeletedAtIsNull();
+                for (FileItem file : activeFiles) {
+                    if (file.getFolder() != null && !visibleIds.contains(file.getFolder().getId())) {
+                        if (fileManagementService.hasFileAccess(file, user, PermissionLevel.VIEWER)) {
+                            addFolderAndAncestors(file.getFolder(), visibleIds);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        return visibleIds;
+    }
+
+    private boolean isFolderAccessible(User user, Folder folder) {
+        if (user == null) return true;
+        if (user.getRole() == UserRole.ADMIN) return true;
+
+        if (folder.getCreatedBy() != null && folder.getCreatedBy().getId().equals(user.getId())) {
+            return true;
+        }
+
+        if (folder.getDefaultDepartment() != null && user.getDepartment() != null
+                && folder.getDefaultDepartment().getId().equals(user.getDepartment().getId())) {
+            return true;
+        }
+
+        return hasAccessRecursive(user, folder);
+    }
+
+    private void addFolderAndAncestors(Folder folder, Set<Long> visibleIds) {
+        Folder curr = folder;
+        while (curr != null) {
+            if (!visibleIds.add(curr.getId())) {
+                break;
+            }
+            curr = curr.getParent();
+        }
     }
 
     private FolderResponse buildTree(Folder folder, List<Folder> all) {
