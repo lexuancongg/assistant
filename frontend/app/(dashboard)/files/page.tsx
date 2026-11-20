@@ -87,6 +87,7 @@ import VersionManagementModal from '@/components/files/VersionManagementModal';
 import OnlyOfficeEditorModal from '@/components/files/OnlyOfficeEditorModal';
 import UserAvatar from '@/components/common/UserAvatar';
 import FileActivityDrawerTab from '@/components/files/FileActivityDrawerTab';
+import FileExtractionModal from '@/components/files/FileExtractionModal';
 
 import apiClient, { API_ROOT, normalizeUrl } from '@/utils/api/apiClientFixed';
 
@@ -297,6 +298,7 @@ function FilesContent() {
     const [contextMenu, setContextMenu] = useState<FileContextMenuData | null>(null);
     const [versionModalFile, setVersionModalFile] = useState<any | null>(null);
     const [onlyOfficeModalFile, setOnlyOfficeModalFile] = useState<any | null>(null);
+    const [extractModalFile, setExtractModalFile] = useState<any | null>(null);
     const [dragOverFolderId, setDragOverFolderId] = useState<string | number | null>(null);
 
     // Google Drive style snackbar toast for file move: Đã di chuyển “...” vào “...”
@@ -2896,6 +2898,18 @@ function FilesContent() {
                                         </div>
                                     )}
 
+                                    {/* Action Button: Khai thác dữ liệu AI */}
+                                    {effectiveDetailFile && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setExtractModalFile(effectiveDetailFile)}
+                                            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-medium transition cursor-pointer shadow-2xs"
+                                        >
+                                            <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                            <span>Khai thác & Bóc tách dữ liệu AI</span>
+                                        </button>
+                                    )}
+
                                     {/* 2. Người có quyền truy cập (Who has access - theo dữ liệu thật từ DB) */}
                                     {(() => {
                                         const isEffectiveOwner = !!(
@@ -3380,6 +3394,7 @@ function FilesContent() {
                 onRename={(f) => setRenamingFile(f)}
                 onCopy={handleCopyFile}
                 onAskGemini={(f) => router.push(`/ai?fileId=${f.id}&fileName=${encodeURIComponent(f.name)}`)}
+                onExtractData={(f) => setExtractModalFile(f)}
                 onShare={(f) => {
                     if (isAdmin) {
                         setShareTarget({ isOpen: true, fileId: f.id, fileName: f.name });
@@ -3429,6 +3444,14 @@ function FilesContent() {
                     file={onlyOfficeModalFile}
                     onClose={() => setOnlyOfficeModalFile(null)}
                     onFileSaved={() => loadData(false)}
+                />
+            )}
+
+            {/* AI DATA EXTRACTION MODAL */}
+            {extractModalFile && (
+                <FileExtractionModal
+                    file={extractModalFile}
+                    onClose={() => setExtractModalFile(null)}
                 />
             )}
 

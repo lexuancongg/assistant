@@ -344,6 +344,33 @@ class FileManagementService {
         throw await extractApiError(response, "Không thể tải cấu hình ONLYOFFICE");
     }
 
+    public async getFileExtraction(fileId: number | string): Promise<any> {
+        const response = await apiClient.get(`${this.baseUrl}/${fileId}/extraction`);
+        if (response.ok) {
+            return await response.json();
+        }
+        return null;
+    }
+
+    public async extractFileData(fileId: number | string, force = false): Promise<any> {
+        const response = await apiClient.post(`${this.baseUrl}/${fileId}/extraction?force=${force}`);
+        if (response.ok) {
+            return await response.json();
+        }
+        throw await extractApiError(response, "Không thể trích xuất dữ liệu tài liệu");
+    }
+
+    public async updateFileExtraction(
+        fileId: number | string,
+        data: { documentType?: string; summary?: string; metadata?: Record<string, any> }
+    ): Promise<any> {
+        const response = await apiClient.put(`${this.baseUrl}/${fileId}/extraction`, data);
+        if (response.ok) {
+            return await response.json();
+        }
+        throw await extractApiError(response, "Không thể cập nhật dữ liệu trích xuất");
+    }
+
 
 }
 

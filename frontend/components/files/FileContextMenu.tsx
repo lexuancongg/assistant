@@ -7,6 +7,7 @@ import {
     Edit3,
     Copy,
     Sparkles,
+    BrainCircuit,
     UserPlus,
     Star,
     Info,
@@ -39,6 +40,7 @@ export interface FileContextMenuProps {
     onRename?: (file: any) => void;
     onCopy?: (file: any) => void;
     onAskGemini?: (file: any) => void;
+    onExtractData?: (file: any) => void;
     onShare?: (file: any) => void;
     onToggleStar?: (file: any, e: React.MouseEvent) => void;
     isStarred?: boolean;
@@ -99,6 +101,7 @@ export function FileContextMenu({
     onRename,
     onCopy,
     onAskGemini,
+    onExtractData,
     onShare,
     onToggleStar,
     isStarred = false,
@@ -293,6 +296,26 @@ export function FileContextMenu({
                     </div>
                     <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#c2e7ff] text-[#001d35] dark:bg-blue-900/60 dark:text-blue-200">
                         Mới
+                    </span>
+                </button>
+            )}
+
+            {/* 5.1. Khai thác dữ liệu AI */}
+            {onExtractData && (
+                <button
+                    type="button"
+                    onClick={() => {
+                        onExtractData(file);
+                        onClose();
+                    }}
+                    className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition cursor-pointer"
+                >
+                    <div className="flex items-center gap-2.5">
+                        <BrainCircuit className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                        <span>Khai thác dữ liệu AI</span>
+                    </div>
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200">
+                        Bóc tách
                     </span>
                 </button>
             )}

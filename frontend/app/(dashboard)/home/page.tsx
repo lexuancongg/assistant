@@ -65,6 +65,8 @@ import userService, { UserDto } from '@/services/user/userService';
 import { UploadFileModal } from '@/components/files/FileModals';
 import FileThumbnailPreview from '@/components/files/FileThumbnailPreview';
 import OnlyOfficeEditorModal from '@/components/files/OnlyOfficeEditorModal';
+import FileExtractionModal from '@/components/files/FileExtractionModal';
+import { BrainCircuit } from 'lucide-react';
 import FileContextMenu from '@/components/files/FileContextMenu';
 import VersionManagementModal from '@/components/files/VersionManagementModal';
 import FolderActionMenu from '@/components/files/FolderActionMenu';
@@ -318,6 +320,7 @@ export default function HomePage() {
     const [showFileInfoSubmenu, setShowFileInfoSubmenu] = useState(false);
     const [versionModalFile, setVersionModalFile] = useState<UnifiedSuggestedFile | null>(null);
     const [onlyOfficeModalFile, setOnlyOfficeModalFile] = useState<UnifiedSuggestedFile | null>(null);
+    const [extractModalFile, setExtractModalFile] = useState<any | null>(null);
     const [renamingFile, setRenamingFile] = useState<UnifiedSuggestedFile | null>(null);
     const [renameName, setRenameName] = useState('');
     const [isRenaming, setIsRenaming] = useState(false);
@@ -2565,6 +2568,24 @@ export default function HomePage() {
                         </span>
                     </button>
 
+                    {/* 5.1 Khai thác dữ liệu AI */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setExtractModalFile(contextMenu.file);
+                            setContextMenu(null);
+                        }}
+                        className="w-full px-3.5 py-1.5 flex items-center justify-between text-gray-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition cursor-pointer"
+                    >
+                        <div className="flex items-center gap-2.5">
+                            <BrainCircuit className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                            <span>Khai thác dữ liệu AI</span>
+                        </div>
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200">
+                            Bóc tách
+                        </span>
+                    </button>
+
                     <div className="my-1 border-t border-gray-100 dark:border-slate-800" />
 
                     {/* 6. Chia sẻ > */}
@@ -2738,6 +2759,13 @@ export default function HomePage() {
                     onFileSaved={() => {
                         fetchHomeData(false);
                     }}
+                />
+            )}
+
+            {extractModalFile && (
+                <FileExtractionModal
+                    file={extractModalFile}
+                    onClose={() => setExtractModalFile(null)}
                 />
             )}
 
