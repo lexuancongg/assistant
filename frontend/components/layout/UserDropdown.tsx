@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { LogOut, Settings, ChevronRight, ClipboardList, Loader2 } from 'lucide-react';
 import authenticationService from '@/services/auth/authenticationService';
 import toast from 'react-hot-toast';
+import UserAvatar from '@/components/common/UserAvatar';
 
 interface UserInfo {
     id?: string;
@@ -114,13 +115,13 @@ export default function UserDropdown() {
                 aria-haspopup="true"
                 title={`Tài khoản: ${cleanDisplayName} (${userInfo.email || userInfo.role || 'ADMIN'})`}
             >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs overflow-hidden">
-                    {userInfo.avatarUrl ? (
-                        <img src={userInfo.avatarUrl} alt={cleanDisplayName} className="w-full h-full object-cover" />
-                    ) : (
-                        initial
-                    )}
-                </div>
+                <UserAvatar
+                    name={cleanDisplayName}
+                    email={userInfo.email}
+                    avatarUrl={userInfo.avatarUrl}
+                    isCurrentUser
+                    size="lg"
+                />
             </button>
 
             {/* Dropdown Menu - Sleek & Compact Context Menu Style */}
@@ -132,13 +133,13 @@ export default function UserDropdown() {
                     {/* Compact User Header Profile */}
                     <div className="px-3.5 py-2">
                         <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-[#1a73e8] text-white flex items-center justify-center font-semibold text-xs shrink-0 shadow-2xs overflow-hidden">
-                                {userInfo.avatarUrl ? (
-                                    <img src={userInfo.avatarUrl} alt={cleanDisplayName} className="w-full h-full object-cover" />
-                                ) : (
-                                    initial
-                                )}
-                            </div>
+                            <UserAvatar
+                                name={cleanDisplayName}
+                                email={userInfo.email}
+                                avatarUrl={userInfo.avatarUrl}
+                                isCurrentUser
+                                size="lg"
+                            />
                             <div className="min-w-0 flex-1">
                                 <p className="text-[13px] font-semibold text-[#1F1F1F] dark:text-[#E3E3E3] truncate leading-tight">
                                     {cleanDisplayName}

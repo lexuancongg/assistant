@@ -54,10 +54,11 @@ import {
     Mic,
     Shield,
     History,
+    Building2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
-import fileManagementService, { FileItemDto, FileVersionDto } from '@/services/files/fileManagementService';
+import fileManagementService, { FileItemDto, FileVersionDto, FilePermissionDto } from '@/services/files/fileManagementService';
 import forderService from '@/services/forder/forderService';
 import activityService, { ActivityLogDto } from '@/services/activity/activityService';
 import userService, { UserDto } from '@/services/user/userService';
@@ -67,6 +68,9 @@ import OnlyOfficeEditorModal from '@/components/files/OnlyOfficeEditorModal';
 import FileContextMenu from '@/components/files/FileContextMenu';
 import VersionManagementModal from '@/components/files/VersionManagementModal';
 import FolderActionMenu from '@/components/files/FolderActionMenu';
+import UserAvatar from '@/components/common/UserAvatar';
+import ShareModal from '@/components/files/permissions/ShareModal';
+import FileActivityDrawerTab from '@/components/files/FileActivityDrawerTab';
 import apiClient, { normalizeUrl } from '@/utils/api/apiClientFixed';
 import { recordFileOpened, getFileLastOpened } from '@/utils/fileOpenedTracker';
 
@@ -246,6 +250,10 @@ interface UnifiedSuggestedFile {
     updatedAt?: string;
     createdAt?: string;
     uploadedByName?: string;
+    uploadedByEmail?: string;
+    uploadedByAvatarUrl?: string;
+    avatarUrl?: string;
+    visibility?: string;
     aiIndexed?: boolean;
     description?: string;
 }
@@ -275,6 +283,7 @@ export default function HomePage() {
     const [showInfoPanel, setShowInfoPanel] = useState(false);
     const [activeDetailFile, setActiveDetailFile] = useState<UnifiedSuggestedFile | null>(null);
     const [detailActiveTab, setDetailActiveTab] = useState<'details' | 'activity'>('details');
+    const [detailPermissions, setDetailPermissions] = useState<FilePermissionDto[]>([]);
 
     // Search & Filter controls
     const [searchTerm, setSearchTerm] = useState('');
@@ -289,6 +298,13 @@ export default function HomePage() {
 
     // Modals
     const [showUploadModal, setShowUploadModal] = useState(false);
+    const [shareTarget, setShareTarget] = useState<{
+        isOpen: boolean;
+        fileId?: number | string;
+        fileName?: string;
+        folderId?: number | string;
+        folderName?: string;
+    }>({ isOpen: false });
 
     // Multi-selection state (Google Drive multiple row selection)
     const [selectedFileIds, setSelectedFileIds] = useState<(string | number)[]>([]);
@@ -384,7 +400,7 @@ export default function HomePage() {
     };
 
     // Current user
-    const [currentUser, setCurrentUser] = useState({ name: 'Lê Xuân Công', email: 'admin@enterprise.ai' });
+    const [currentUser, setCurrentUser] = useState({ name: 'Lê Xuân Công', email: 'admin@enterprise.ai', role: 'ADMIN' });
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -392,10 +408,11 @@ export default function HomePage() {
             if (stored) {
                 try {
                     const parsed = JSON.parse(stored);
-                    if (parsed.name || parsed.username) {
+                    if (parsed.name || parsed.username || parsed.email) {
                         setCurrentUser({
                             name: parsed.name || parsed.username || 'Lê Xuân Công',
                             email: parsed.email || 'admin@enterprise.ai',
+                            role: parsed.role || (Array.isArray(parsed.roles) ? parsed.roles[0] : '') || 'ADMIN',
                         });
                     }
                 } catch (e) {}
@@ -405,6 +422,7 @@ export default function HomePage() {
                     setCurrentUser({
                         name: authUser,
                         email: 'admin@enterprise.ai',
+                        role: 'ADMIN',
                     });
                 }
             }
@@ -508,14 +526,13 @@ export default function HomePage() {
 
     // Admin permission check
     const isAdmin = useMemo(() => {
-        if (typeof window !== 'undefined') {
-            try {
-                const u = JSON.parse(window.localStorage.getItem('user') || '{}');
-                if (u.role === 'ADMIN') return true;
-            } catch (e) {}
-        }
-        return false;
-    }, []);
+        return Boolean(
+            currentUser?.role?.toUpperCase() === 'ADMIN' ||
+            currentUser?.role?.toUpperCase() === 'ROLE_ADMIN' ||
+            currentUser?.email?.toLowerCase().includes('admin') ||
+            currentUser?.name?.toLowerCase().includes('admin')
+        );
+    }, [currentUser]);
 
     // Drag over suggested folder state
     const [dragOverSuggestedFolderId, setDragOverSuggestedFolderId] = useState<string | number | null>(null);
@@ -862,6 +879,10 @@ export default function HomePage() {
                 updatedAt: file.updatedAt,
                 createdAt: (file as any).createdAt,
                 uploadedByName: file.uploadedByName,
+                uploadedByEmail: file.uploadedByEmail,
+                uploadedByAvatarUrl: (file as any).uploadedByAvatarUrl,
+                avatarUrl: (file as any).avatarUrl,
+                visibility: file.visibility,
                 aiIndexed: file.aiIndexed,
                 description: (file as any).description,
             };
@@ -932,6 +953,25 @@ export default function HomePage() {
         }
         return filteredFiles[0] || null;
     }, [activeDetailFile, selectedFileIds, filteredFiles]);
+
+    // Load real permissions from DB for the selected file in info panel
+    useEffect(() => {
+        if (!effectiveDetailFile?.id) {
+            setDetailPermissions([]);
+            return;
+        }
+        let isCancelled = false;
+        fileManagementService.getFilePermissions(effectiveDetailFile.id)
+            .then((perms) => {
+                if (!isCancelled) setDetailPermissions(perms || []);
+            })
+            .catch(() => {
+                if (!isCancelled) setDetailPermissions([]);
+            });
+        return () => {
+            isCancelled = true;
+        };
+    }, [effectiveDetailFile?.id]);
 
     const activeFilterCount = [
         filterType !== 'all',
@@ -1374,11 +1414,15 @@ export default function HomePage() {
 
     // Share selected
     const handleShareSelected = () => {
-        if (selectedFileIds.length === 0) return;
-        const firstId = selectedFileIds[0];
-        const target = filteredFiles.find((f) => f.id.toString() === firstId.toString());
+        const target = selectedFileIds.length > 0
+            ? filteredFiles.find((f) => f.id.toString() === selectedFileIds[0].toString())
+            : effectiveDetailFile;
         if (target) {
-            router.push(`/files/${target.id}/permissions`);
+            setShareTarget({
+                isOpen: true,
+                fileId: target.id,
+                fileName: target.name,
+            });
         }
         setContextMenu(null);
     };
@@ -1605,6 +1649,10 @@ export default function HomePage() {
                                                   onDragLeave={(e) => {
                                                       e.preventDefault();
                                                       e.stopPropagation();
+                                                      const relatedTarget = e.relatedTarget as HTMLElement;
+                                                      if (relatedTarget && e.currentTarget.contains(relatedTarget)) {
+                                                          return;
+                                                      }
                                                       if (dragOverSuggestedFolderId === f.id) {
                                                           setDragOverSuggestedFolderId(null);
                                                       }
@@ -1741,7 +1789,7 @@ export default function HomePage() {
                                                     const Icon = config.icon;
                                                     const avatarClass = getAvatarColor(file.owner);
                                                     const isSelected = selectedFileIds.includes(file.id.toString());
-                                                    const canMove = isAdmin || file.isMe;
+                                                    const canMove = true;
 
                                                     return (
                                                         <tr
@@ -1911,7 +1959,7 @@ export default function HomePage() {
                                             const Icon = config.icon;
                                             const avatarClass = getAvatarColor(file.owner);
                                             const isSelected = selectedFileIds.includes(file.id.toString());
-                                            const canMove = isAdmin || file.isMe;
+                                            const canMove = true;
 
                                             return (
                                                 <div
@@ -2093,9 +2141,50 @@ export default function HomePage() {
                                         </div>
                                     )}
 
-                                    {/* 2. Người có quyền truy cập (Who has access) */}
+                                    {/* 2. Người có quyền truy cập (Who has access - theo dữ liệu thật từ DB) */}
                                     {(() => {
-                                        const isEffectiveOwner = effectiveDetailFile?.isMe || effectiveDetailFile?.owner === 'tôi';
+                                        const isEffectiveOwner = !!(
+                                            (currentUser?.email && effectiveDetailFile?.uploadedByEmail && currentUser.email.toLowerCase() === effectiveDetailFile.uploadedByEmail.toLowerCase()) ||
+                                            (currentUser?.name && (
+                                                effectiveDetailFile?.owner?.toLowerCase() === currentUser.name.toLowerCase() ||
+                                                effectiveDetailFile?.uploadedByName?.toLowerCase() === currentUser.name.toLowerCase()
+                                            ))
+                                        );
+
+                                        const ownerName = isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'Chủ sở hữu');
+                                        const visibility = effectiveDetailFile?.visibility || 'INHERIT';
+
+                                        // Danh sách các phòng ban và user được cấp quyền từ DB
+                                        const sharedDepts = detailPermissions.filter((p) => p.subjectType === 'DEPARTMENT');
+                                        const sharedUsers = detailPermissions.filter((p) => p.subjectType === 'USER');
+
+                                        // Tạo câu mô tả quyền truy cập thực tế theo chuẩn Google Drive & DB
+                                        let accessDescription = '';
+                                        if (visibility === 'COMPANY') {
+                                            accessDescription = isEffectiveOwner
+                                                ? 'Do bạn sở hữu. Bất kỳ ai trong nội bộ công ty đều có thể truy cập.'
+                                                : `Do ${ownerName} sở hữu. Toàn bộ nhân viên công ty có quyền xem.`;
+                                        } else if (visibility === 'PRIVATE') {
+                                            accessDescription = isEffectiveOwner
+                                                ? 'Do bạn sở hữu. Chỉ mình bạn có quyền truy cập (Riêng tư).'
+                                                : `Do ${ownerName} sở hữu. Được đặt ở chế độ riêng tư.`;
+                                        } else if (visibility === 'RESTRICTED') {
+                                            if (sharedDepts.length > 0 || sharedUsers.length > 0) {
+                                                const parts = [];
+                                                if (sharedDepts.length > 0) parts.push(`${sharedDepts.length} phòng ban`);
+                                                if (sharedUsers.length > 0) parts.push(`${sharedUsers.length} người dùng`);
+                                                accessDescription = `Do ${isEffectiveOwner ? 'bạn' : ownerName} sở hữu. Đã chia sẻ với ${parts.join(', ')}.`;
+                                            } else {
+                                                accessDescription = `Do ${isEffectiveOwner ? 'bạn' : ownerName} sở hữu. Chỉ những người và nhóm được cấp quyền mới có thể xem.`;
+                                            }
+                                        } else {
+                                            // INHERIT (mặc định)
+                                            if (effectiveDetailFile?.folderName) {
+                                                accessDescription = `Do ${isEffectiveOwner ? 'bạn' : ownerName} sở hữu. Quyền truy cập được kế thừa từ thư mục "${effectiveDetailFile.folderName}".`;
+                                            } else {
+                                                accessDescription = `Do ${isEffectiveOwner ? 'bạn' : ownerName} sở hữu. Được bảo vệ trong Drive của bạn.`;
+                                            }
+                                        }
 
                                         return (
                                             <div className="space-y-1.5 pt-0.5">
@@ -2103,39 +2192,64 @@ export default function HomePage() {
                                                     Người có quyền truy cập
                                                 </h4>
 
-                                                <div className="flex items-center gap-1.5 pt-0.5">
+                                                <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
                                                     {/* Owner avatar */}
-                                                    <div
-                                                        className={`w-6 h-6 rounded-full flex items-center justify-center font-medium text-[10px] text-white shrink-0 shadow-2xs ${getAvatarColor(
-                                                            isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.owner || 'Admin')
-                                                        )}`}
-                                                        title={`Chủ sở hữu: ${isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.owner || 'tôi')}`}
-                                                    >
-                                                        {(isEffectiveOwner ? (currentUser?.name ? currentUser.name.charAt(0) : 'T') : (effectiveDetailFile?.ownerAvatar || 'A'))[0].toUpperCase()}
-                                                    </div>
+                                                    <UserAvatar
+                                                        name={ownerName}
+                                                        email={effectiveDetailFile?.uploadedByEmail}
+                                                        avatarUrl={(effectiveDetailFile as any)?.uploadedByAvatarUrl || (effectiveDetailFile as any)?.avatarUrl}
+                                                        isCurrentUser={isEffectiveOwner}
+                                                        size="md"
+                                                        title={`${ownerName} (Chủ sở hữu)`}
+                                                    />
 
-                                                    {/* Org / Department icon */}
-                                                    <div
-                                                        className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0 shadow-2xs"
-                                                        title="Thành viên tổ chức"
-                                                    >
-                                                        <Users className="w-3 h-3" />
-                                                    </div>
+                                                    {/* Biểu tượng Toàn công ty nếu visibility là COMPANY */}
+                                                    {visibility === 'COMPANY' && (
+                                                        <div
+                                                            className="w-6 h-6 rounded-full bg-[#E8DEF8] dark:bg-purple-950/60 text-[#1D192B] dark:text-purple-300 flex items-center justify-center text-[10px] font-medium shrink-0 shadow-2xs"
+                                                            title="Toàn bộ nhân viên công ty"
+                                                        >
+                                                            <Building2 className="w-3.5 h-3.5" />
+                                                        </div>
+                                                    )}
+
+                                                    {/* Danh sách phòng ban được chia sẻ (từ DB) */}
+                                                    {sharedDepts.map((d) => (
+                                                        <div
+                                                            key={`dept-${d.id}-${d.subjectId}`}
+                                                            className="h-6 px-2 rounded-full bg-[#EDF2FA] dark:bg-blue-950/50 text-[#0B57D0] dark:text-blue-300 flex items-center gap-1 text-[11px] font-medium shrink-0 border border-blue-200/60 dark:border-blue-800/60"
+                                                            title={`Phòng ban: ${d.subjectName} (${d.level === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}${d.inherited ? ` - Kế thừa từ ${d.inheritedFromName || 'thư mục'}` : ''})`}
+                                                        >
+                                                            <Building2 className="w-3 h-3 shrink-0" />
+                                                            <span className="truncate max-w-[80px]">{d.subjectName}</span>
+                                                        </div>
+                                                    ))}
+
+                                                    {/* Danh sách user được chia sẻ (từ DB) */}
+                                                    {sharedUsers.map((u) => (
+                                                        <UserAvatar
+                                                            key={`user-${u.id}-${u.subjectId}`}
+                                                            name={u.subjectName}
+                                                            email={u.subjectDetail}
+                                                            size="md"
+                                                            title={`${u.subjectName} (${u.level === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}${u.inherited ? ` - Kế thừa từ ${u.inheritedFromName || 'thư mục'}` : ''})`}
+                                                        />
+                                                    ))}
                                                 </div>
 
                                                 <p className="text-[11.5px] text-[#444746] dark:text-[#C4C7C5] leading-normal pt-0.5">
-                                                    {isEffectiveOwner
-                                                        ? 'Do bạn sở hữu. Bất kỳ ai có kết nối Internet và có đường liên kết này đều có thể xem.'
-                                                        : `Do ${effectiveDetailFile?.owner || 'cộng tác viên'} sở hữu. Bạn có quyền xem tài liệu này.`}
+                                                    {accessDescription}
                                                 </p>
 
                                                 <button
                                                     type="button"
                                                     onClick={() => {
                                                         if (effectiveDetailFile) {
-                                                            router.push(
-                                                                `/files/${effectiveDetailFile.id}/permissions`
-                                                            );
+                                                            setShareTarget({
+                                                                isOpen: true,
+                                                                fileId: effectiveDetailFile.id,
+                                                                fileName: effectiveDetailFile.name,
+                                                            });
                                                         }
                                                     }}
                                                     className="mt-1 inline-flex items-center justify-center px-3.5 py-1 rounded-full border border-gray-300 dark:border-slate-700 text-[11.5px] font-medium text-[#0B57D0] dark:text-[#7CBBF3] hover:bg-blue-50 dark:hover:bg-slate-800 transition cursor-pointer"
@@ -2146,16 +2260,34 @@ export default function HomePage() {
                                         );
                                     })()}
 
-                                    {/* 3. Giới hạn về mức bảo mật */}
-                                    <div className="space-y-1.5 pt-0.5">
-                                        <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
-                                            <Shield className="w-3.5 h-3.5 text-[#444746] dark:text-[#C4C7C5]" />
-                                            <span>Giới hạn về mức bảo mật</span>
-                                        </div>
-                                        <div className="bg-[#F0F4F9] dark:bg-slate-800/60 rounded-xl p-3 text-[11px] text-[#444746] dark:text-[#C4C7C5] leading-relaxed">
-                                            Không có giới hạn nào được áp dụng. Nếu quy định hạn chế được áp dụng thì sẽ xuất hiện tại đây.
-                                        </div>
-                                    </div>
+                                    {/* 3. Giới hạn về mức bảo mật (theo DB) */}
+                                    {(() => {
+                                        const visibility = effectiveDetailFile?.visibility || 'INHERIT';
+                                        let securityNote = 'Không có giới hạn nào được áp dụng. Nếu quy định hạn chế được áp dụng thì sẽ xuất hiện tại đây.';
+                                        if (visibility === 'PRIVATE') {
+                                            securityNote = 'Tài liệu được bảo vệ riêng tư. Chỉ chủ sở hữu mới có quyền truy cập.';
+                                        } else if (visibility === 'RESTRICTED') {
+                                            securityNote = 'Tài liệu áp dụng quy định hạn chế (ACL) theo danh sách phòng ban và người dùng được cấp quyền cụ thể.';
+                                        } else if (visibility === 'COMPANY') {
+                                            securityNote = 'Áp dụng quy định truy cập nội bộ toàn công ty.';
+                                        } else if (visibility === 'INHERIT') {
+                                            securityNote = effectiveDetailFile?.folderName
+                                                ? `Áp dụng quy định kế thừa phân quyền từ thư mục "${effectiveDetailFile.folderName}".`
+                                                : 'Không có giới hạn riêng. Kế thừa theo cấu hình phân quyền trong Drive của bạn.';
+                                        }
+
+                                        return (
+                                            <div className="space-y-1.5 pt-0.5">
+                                                <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
+                                                    <Shield className="w-3.5 h-3.5 text-[#444746] dark:text-[#C4C7C5]" />
+                                                    <span>Giới hạn về mức bảo mật</span>
+                                                </div>
+                                                <div className="bg-[#F0F4F9] dark:bg-slate-800/60 rounded-xl p-3 text-[11px] text-[#444746] dark:text-[#C4C7C5] leading-relaxed">
+                                                    {securityNote}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     {/* 4. Thông tin chi tiết về tệp */}
                                     {(() => {
@@ -2273,42 +2405,11 @@ export default function HomePage() {
                                     })()}
                                 </>
                             ) : (
-                                /* ── TAB HOẠT ĐỘNG (ACTIVITY TIMELINE) ── */
-                                <div className="space-y-4">
-                                    <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                                        Lịch sử gần đây
-                                    </span>
-
-                                    <div className="relative pl-5 border-l-2 border-blue-200 dark:border-slate-700 space-y-4">
-                                        <div className="relative">
-                                            <div className="absolute -left-[27px] top-0 w-3.5 h-3.5 rounded-full bg-blue-600 ring-4 ring-white dark:ring-slate-900" />
-                                            <p className="font-semibold text-gray-800 dark:text-slate-200">
-                                                Đã cập nhật chỉ mục AI Semantic Vector
-                                            </p>
-                                            <p className="text-[10px] text-gray-400">
-                                                {effectiveDetailFile?.updatedAt || 'Hôm nay'} · Hệ thống RAG Engine
-                                            </p>
-                                        </div>
-
-                                        <div className="relative">
-                                            <div className="absolute -left-[27px] top-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-4 ring-white dark:ring-slate-900" />
-                                            <p className="font-semibold text-gray-800 dark:text-slate-200">
-                                                Tải lên tài liệu thành công
-                                            </p>
-                                            <p className="text-[10px] text-gray-400">
-                                                Bởi {effectiveDetailFile?.owner || 'Chủ sở hữu'}
-                                            </p>
-                                        </div>
-
-                                        <div className="relative">
-                                            <div className="absolute -left-[27px] top-0 w-3.5 h-3.5 rounded-full bg-purple-500 ring-4 ring-white dark:ring-slate-900" />
-                                            <p className="font-semibold text-gray-800 dark:text-slate-200">
-                                                Khởi tạo quyền truy cập mặc định
-                                            </p>
-                                            <p className="text-[10px] text-gray-400">Kế thừa phân quyền phòng ban</p>
-                                        </div>
-                                    </div>
-                                </div>
+                                /* ── TAB HOẠT ĐỘNG (GOOGLE DRIVE STANDARD) ── */
+                                <FileActivityDrawerTab
+                                    file={effectiveDetailFile}
+                                    activityLogs={activityLogs}
+                                />
                             )}
                         </div>
                     </div>
@@ -2615,7 +2716,13 @@ export default function HomePage() {
                 onDownloadFolder={handleDownloadFolder}
                 onRenameFolder={handleStartRenameFolder}
                 onAskGemini={(f) => router.push(`/ai?folderId=${f.id}&folderName=${encodeURIComponent(f.name)}`)}
-                onShareFolder={(f) => router.push(`/files/permissions?folderId=${f.id}&name=${encodeURIComponent(f.name)}`)}
+                onShareFolder={(f) => {
+                    setShareTarget({
+                        isOpen: true,
+                        folderId: f.id,
+                        folderName: f.name,
+                    });
+                }}
                 onFolderInfo={() => setShowInfoPanel(true)}
                 onDeleteFolder={handleRequestDeleteFolder}
             />
@@ -2837,6 +2944,25 @@ export default function HomePage() {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* Share / RBAC Permissions Modal */}
+            {shareTarget.isOpen && (
+                <ShareModal
+                    isOpen={shareTarget.isOpen}
+                    onClose={() => setShareTarget({ isOpen: false })}
+                    folderId={shareTarget.folderId}
+                    folderName={shareTarget.folderName}
+                    fileId={shareTarget.fileId}
+                    fileName={shareTarget.fileName}
+                    onSuccess={() => {
+                        if (effectiveDetailFile && effectiveDetailFile.id) {
+                            fileManagementService.getFilePermissions(effectiveDetailFile.id)
+                                .then((perms) => setDetailPermissions(perms || []))
+                                .catch(() => {});
+                        }
+                    }}
+                />
             )}
         </div>
     );

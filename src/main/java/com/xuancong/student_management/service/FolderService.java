@@ -13,9 +13,13 @@ import com.xuancong.student_management.entity.enums.PermissionLevel;
 import com.xuancong.student_management.entity.enums.PermissionSubjectType;
 import com.xuancong.student_management.entity.enums.UserRole;
 import com.xuancong.student_management.entity.FileItem;
+import com.xuancong.student_management.entity.FilePermission;
+import com.xuancong.student_management.entity.enums.AccessRequestStatus;
 import com.xuancong.student_management.repository.CompanyRepository;
 import com.xuancong.student_management.repository.DepartmentRepository;
 import com.xuancong.student_management.repository.FileItemRepository;
+import com.xuancong.student_management.repository.FilePermissionRepository;
+import com.xuancong.student_management.repository.AccessRequestRepository;
 import com.xuancong.student_management.repository.FolderPermissionRepository;
 import com.xuancong.student_management.repository.FolderRepository;
 import com.xuancong.student_management.repository.UserRepository;
@@ -43,6 +47,8 @@ public class FolderService {
     private final CompanyRepository companyRepository;
     private final DepartmentRepository departmentRepository;
     private final UserRepository userRepository;
+    private final FilePermissionRepository filePermissionRepository;
+    private final AccessRequestRepository accessRequestRepository;
 
     @Lazy
     @Autowired
@@ -238,35 +244,67 @@ public class FolderService {
         return folder;
     }
 
-    private Set<Long> getVisibleFolderIds(User user, List<Folder> allFolders) {
+    public Set<Long> getVisibleFolderIds(User user, List<Folder> allFolders) {
         Set<Long> visibleIds = new HashSet<>();
 
-        // 1. Duyệt quyền ở cấp thư mục (trực tiếp hoặc kế thừa qua cây cha)
+        // 1. Chỉ hiển thị các thư mục mà người dùng có quyền truy cập (trực tiếp hoặc kế thừa qua cây cha)
         for (Folder f : allFolders) {
             if (isFolderAccessible(user, f)) {
                 addFolderAndAncestors(f, visibleIds);
             }
         }
 
-        // 2. Ngoại lệ: Nếu có ít nhất 1 file bên trong thư mục con được cấp quyền xem riêng cho user
+        // 2. YÊU CẦU: Nếu cấu hình chỉ định cụ thể trong mục share thì người đó có quyền xem được cấu trúc thư mục tới file đó.
+        // Còn khi sao chép link về xin quyền thì KHÔNG được xem cấu trúc thư mục mà chỉ được nằm ở mục "Được chia sẻ với tôi".
         try {
-            if (fileManagementService != null) {
+            if (user != null && user.getRole() != UserRole.ADMIN) {
                 List<FileItem> activeFiles = fileItemRepository.findByDeletedAtIsNull();
                 for (FileItem file : activeFiles) {
                     if (file.getFolder() != null && !visibleIds.contains(file.getFolder().getId())) {
-                        if (fileManagementService.hasFileAccess(file, user, PermissionLevel.VIEWER)) {
+                        if (isExplicitlySharedInShareModal(file, user)) {
                             addFolderAndAncestors(file.getFolder(), visibleIds);
                         }
                     }
                 }
             }
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
 
         return visibleIds;
     }
 
-    private boolean isFolderAccessible(User user, Folder folder) {
+    private boolean isExplicitlySharedInShareModal(FileItem file, User user) {
+        if (file == null || user == null) return false;
+
+        // Nếu quyền truy cập đến từ yêu cầu xin quyền qua link (sao chép link về xin quyền):
+        // => KHÔNG ĐƯỢC XEM CẤU TRÚC THƯ MỤC!
+        boolean isFromLinkRequest = accessRequestRepository.existsByRequesterIdAndFileIdAndStatus(
+                user.getId(), file.getId(), AccessRequestStatus.APPROVED
+        );
+        if (isFromLinkRequest) {
+            return false;
+        }
+
+        List<FilePermission> permissions = filePermissionRepository.findByFileId(file.getId());
+        if (permissions == null || permissions.isEmpty()) {
+            return false;
+        }
+
+        for (FilePermission p : permissions) {
+            // Chỉ định cụ thể cho USER
+            if (p.getSubjectType() == PermissionSubjectType.USER && p.getSubjectId().equals(user.getId())) {
+                return true;
+            }
+            // Chỉ định cụ thể cho PHÒNG BAN mà user trực thuộc
+            if (user.getDepartment() != null && p.getSubjectType() == PermissionSubjectType.DEPARTMENT
+                    && p.getSubjectId().equals(user.getDepartment().getId())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public boolean isFolderAccessible(User user, Folder folder) {
         if (user == null) return true;
         if (user.getRole() == UserRole.ADMIN) return true;
 
@@ -276,6 +314,11 @@ public class FolderService {
 
         if (folder.getDefaultDepartment() != null && user.getDepartment() != null
                 && folder.getDefaultDepartment().getId().equals(user.getDepartment().getId())) {
+            return true;
+        }
+
+        if (user.getDepartment() != null && folder.getName() != null
+                && folder.getName().trim().equalsIgnoreCase(user.getDepartment().getName().trim())) {
             return true;
         }
 

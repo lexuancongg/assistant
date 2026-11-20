@@ -8,6 +8,7 @@ import {
     Search,
     ShieldCheck,
     Shield,
+    Building2,
     Trash2,
     Loader2,
     RefreshCw,
@@ -76,7 +77,7 @@ import FileThumbnailPreview from '@/components/files/FileThumbnailPreview';
 import FolderContextMenu, { FolderContextTarget } from '@/components/common/FolderContextMenu';
 import { generateFileThumbnail } from '@/utils/thumbnailGenerator';
 import forderService from '@/services/forder/forderService';
-import fileManagementService, { FileItemDto } from '@/services/files/fileManagementService';
+import fileManagementService, { FileItemDto, FilePermissionDto } from '@/services/files/fileManagementService';
 import { ForderCreateRequest } from '@/models/forder/forder';
 import toast from 'react-hot-toast';
 import ShareModal from '@/components/files/permissions/ShareModal';
@@ -84,6 +85,8 @@ import FolderActionMenu, { calculateFolderMenuPosition, FolderMenuData } from '@
 import FileContextMenu, { calculateMenuPosition, FileContextMenuData } from '@/components/files/FileContextMenu';
 import VersionManagementModal from '@/components/files/VersionManagementModal';
 import OnlyOfficeEditorModal from '@/components/files/OnlyOfficeEditorModal';
+import UserAvatar from '@/components/common/UserAvatar';
+import FileActivityDrawerTab from '@/components/files/FileActivityDrawerTab';
 
 import apiClient, { API_ROOT, normalizeUrl } from '@/utils/api/apiClientFixed';
 
@@ -272,6 +275,8 @@ function FilesContent() {
     const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
     const [detailActiveTab, setDetailActiveTab] = useState<'details' | 'activity'>('details');
     const [activeDetailFile, setActiveDetailFile] = useState<FileItemDto | null>(null);
+    const [detailPermissions, setDetailPermissions] = useState<FilePermissionDto[]>([]);
+    const [isLoadingDetailPermissions, setIsLoadingDetailPermissions] = useState(false);
 
     // Row Action Menu (3-dot)
     const [activeRowMenuId, setActiveRowMenuId] = useState<string | number | null>(null);
@@ -724,6 +729,7 @@ function FilesContent() {
         name?: string;
         email?: string;
         role?: string;
+        avatarUrl?: string;
         department?: { name: string };
     }>({
         name: '',
@@ -805,6 +811,7 @@ function FilesContent() {
                             name: parsed.name,
                             email: parsed.email,
                             role: parsed.role ? parsed.role.replace('ROLE_', '') : 'ADMIN',
+                            avatarUrl: parsed.avatarUrl || '',
                             department: dept ? { name: dept } : undefined,
                         });
                     }
@@ -981,10 +988,26 @@ function FilesContent() {
 
     const filesInFolder = useMemo(() => {
         if (selectedFolder === 'all' || !activeFolderIds) {
-            return files;
+            // Theo chuẩn Google Drive: Thư mục gốc "Drive của tôi" chỉ chứa file do chính người dùng sở hữu
+            // hoặc file nằm trong thư mục thuộc Drive của người dùng. File người khác chia sẻ sẽ nằm ở "Được chia sẻ với tôi".
+            return files.filter((f) => {
+                if (f.folderId) return true;
+                const isOwner = Boolean(
+                    (currentUser?.email && f.uploadedByEmail && currentUser.email.toLowerCase() === f.uploadedByEmail.toLowerCase()) ||
+                    (currentUser?.name && (
+                        (f.owner && currentUser.name.toLowerCase().includes(f.owner.toLowerCase())) ||
+                        (f.uploadedByName && currentUser.name.toLowerCase().includes(f.uploadedByName.toLowerCase())) ||
+                        (f.owner && f.owner.toLowerCase().includes(currentUser.name.toLowerCase())) ||
+                        (f.uploadedByName && f.uploadedByName.toLowerCase().includes(currentUser.name.toLowerCase()))
+                    )) ||
+                    f.owner === 'tôi' ||
+                    f.owner === 'me'
+                );
+                return isOwner;
+            });
         }
         return files.filter((f) => f.folderId && activeFolderIds.includes(f.folderId.toString()));
-    }, [files, selectedFolder, activeFolderIds]);
+    }, [files, selectedFolder, activeFolderIds, currentUser]);
 
     const chipCounts = useMemo(() => {
         return {
@@ -1368,6 +1391,36 @@ function FilesContent() {
         }
         return null;
     }, [activeDetailFile, selectedFileIds, files]);
+
+    // Fetch real file permissions from DB whenever detail file changes
+    useEffect(() => {
+        if (!effectiveDetailFile?.id) {
+            setDetailPermissions([]);
+            return;
+        }
+        let isCancelled = false;
+        setIsLoadingDetailPermissions(true);
+        fileManagementService.getFilePermissions(effectiveDetailFile.id)
+            .then((perms) => {
+                if (!isCancelled) {
+                    setDetailPermissions(perms || []);
+                }
+            })
+            .catch(() => {
+                if (!isCancelled) {
+                    setDetailPermissions([]);
+                }
+            })
+            .finally(() => {
+                if (!isCancelled) {
+                    setIsLoadingDetailPermissions(false);
+                }
+            });
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [effectiveDetailFile?.id]);
 
 
 
@@ -2239,9 +2292,12 @@ function FilesContent() {
 
                                                                 return (
                                                                     <div className="flex items-center gap-1.5 min-w-0" title={`Chủ sở hữu: ${subFolder.ownerName || folderOwnerDisplayName}`}>
-                                                                        <div className={`w-5 h-5 rounded-full text-white font-medium text-[9px] flex items-center justify-center shrink-0 shadow-2xs ${folderAvatarColor}`}>
-                                                                            {folderOwnerAvatarLetter}
-                                                                        </div>
+                                                                        <UserAvatar
+                                                                            name={folderOwnerDisplayName}
+                                                                            email={subFolder.ownerEmail}
+                                                                            isCurrentUser={isFolderOwner}
+                                                                            size="sm"
+                                                                        />
                                                                         <span className="truncate text-[12px] max-w-[120px]">{folderOwnerDisplayName}</span>
                                                                     </div>
                                                                 );
@@ -2307,6 +2363,7 @@ function FilesContent() {
                                                     key={file.id}
                                                     draggable={canMove}
                                                     onClick={() => handleRowClick(file)}
+                                                    onDoubleClick={() => handleOpenInGoogleDocs(file)}
                                                     onContextMenu={(e) => handleContextMenu(file, e)}
                                                     onDragStart={(e) => {
                                                         if (!canMove) {
@@ -2355,6 +2412,11 @@ function FilesContent() {
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         handleRowClick(file);
+                                                                        handleOpenInGoogleDocs(file);
+                                                                    }}
+                                                                    onDoubleClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleOpenInGoogleDocs(file);
                                                                     }}
                                                                     className="font-normal text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3] group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate max-w-[240px] sm:max-w-[340px] transition-colors hover:underline text-left cursor-pointer"
                                                                     title={file.name}
@@ -2382,11 +2444,13 @@ function FilesContent() {
                                                     {/* Owner (Chủ sở hữu) */}
                                                     <td className="px-4 py-2 whitespace-nowrap w-36 text-[#444746] dark:text-[#C4C7C5] font-normal">
                                                         <div className="flex items-center gap-1.5 min-w-0">
-                                                            <div
-                                                                className={`w-5 h-5 rounded-full font-medium text-[9px] flex items-center justify-center shrink-0 text-white shadow-2xs ${avatarClass}`}
-                                                            >
-                                                                {ownerAvatarLetter}
-                                                            </div>
+                                                            <UserAvatar
+                                                                name={ownerDisplayName}
+                                                                email={file.uploadedByEmail}
+                                                                avatarUrl={(file as any).uploadedByAvatarUrl || (file as any).avatarUrl}
+                                                                isCurrentUser={isOwner}
+                                                                size="sm"
+                                                            />
                                                             <span className="truncate text-[12px] max-w-[120px]">
                                                                 {ownerDisplayName}
                                                             </span>
@@ -2623,6 +2687,7 @@ function FilesContent() {
                                         }}
                                         onContextMenu={(e) => handleContextMenu(file, e)}
                                         onClick={() => handleRowClick(file)}
+                                        onDoubleClick={() => handleOpenInGoogleDocs(file)}
                                         className={`bg-[#f0f4f9] hover:bg-[#e6edf7] dark:bg-slate-800/80 dark:hover:bg-slate-800 rounded-2xl p-3 flex flex-col justify-between transition-all duration-150 border group relative shadow-2xs hover:shadow-sm cursor-pointer ${
                                             isSelected
                                                 ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/60 dark:bg-blue-950/40'
@@ -2642,7 +2707,11 @@ function FilesContent() {
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             handleRowClick(file);
-                                                            setShowDetailsDrawer(true);
+                                                            handleOpenInGoogleDocs(file);
+                                                        }}
+                                                        onDoubleClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleOpenInGoogleDocs(file);
                                                         }}
                                                         className="text-xs font-medium text-gray-800 dark:text-slate-100 truncate hover:underline cursor-pointer"
                                                         title={file.name}
@@ -2695,10 +2764,10 @@ function FilesContent() {
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     handleRowClick(file);
-                                                    setShowDetailsDrawer(true);
+                                                    handleOpenInGoogleDocs(file);
                                                 }}
                                                 className="w-full h-28 my-2 rounded-lg bg-white dark:bg-slate-950 border border-gray-200/80 dark:border-slate-800 overflow-hidden cursor-pointer shadow-2xs hover:shadow-xs transition relative group/preview"
-                                                title={`Xem trước: ${file.name}`}
+                                                title={`Mở tệp: ${file.name}`}
                                             >
                                                 <FileThumbnailPreview id={file.id} name={file.name} fileType={file.fileType} />
                                             </div>
@@ -2707,11 +2776,13 @@ function FilesContent() {
                                         {/* Bottom Card Info: Avatar + Open Button */}
                                         <div className="mt-1 flex items-center justify-between pt-1">
                                             <div className="flex items-center gap-1.5 min-w-0">
-                                                <div
-                                                    className={`w-5 h-5 rounded-full font-medium text-[9px] flex items-center justify-center shrink-0 text-white shadow-2xs ${avatarClass}`}
-                                                >
-                                                    {ownerAvatarLetter}
-                                                </div>
+                                                <UserAvatar
+                                                    name={ownerDisplayName}
+                                                    email={file.uploadedByEmail}
+                                                    avatarUrl={(file as any).uploadedByAvatarUrl || (file as any).avatarUrl}
+                                                    isCurrentUser={isOwner}
+                                                    size="sm"
+                                                />
                                                 <span className="text-[11px] text-gray-500 dark:text-slate-400 truncate">
                                                     {ownerDisplayName}
                                                 </span>
@@ -2825,7 +2896,7 @@ function FilesContent() {
                                         </div>
                                     )}
 
-                                    {/* 2. Người có quyền truy cập (Who has access) */}
+                                    {/* 2. Người có quyền truy cập (Who has access - theo dữ liệu thật từ DB) */}
                                     {(() => {
                                         const isEffectiveOwner = !!(
                                             (currentUser?.email && effectiveDetailFile?.uploadedByEmail && currentUser.email.toLowerCase() === effectiveDetailFile.uploadedByEmail.toLowerCase()) ||
@@ -2835,43 +2906,101 @@ function FilesContent() {
                                             ))
                                         );
 
+                                        const ownerName = isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'Chủ sở hữu');
+                                        const visibility = effectiveDetailFile?.visibility || 'INHERIT';
+
+                                        // Danh sách các phòng ban và user được cấp quyền từ DB
+                                        const sharedDepts = detailPermissions.filter((p) => p.subjectType === 'DEPARTMENT');
+                                        const sharedUsers = detailPermissions.filter((p) => p.subjectType === 'USER');
+
+                                        // Tạo câu mô tả quyền truy cập thực tế theo chuẩn Google Drive & DB
+                                        let accessDescription = '';
+                                        if (visibility === 'COMPANY') {
+                                            accessDescription = isEffectiveOwner
+                                                ? 'Do bạn sở hữu. Bất kỳ ai trong nội bộ công ty đều có thể truy cập.'
+                                                : `Do ${ownerName} sở hữu. Toàn bộ nhân viên công ty có quyền xem.`;
+                                        } else if (visibility === 'PRIVATE') {
+                                            accessDescription = isEffectiveOwner
+                                                ? 'Do bạn sở hữu. Chỉ mình bạn có quyền truy cập (Riêng tư).'
+                                                : `Do ${ownerName} sở hữu. Được đặt ở chế độ riêng tư.`;
+                                        } else if (visibility === 'RESTRICTED') {
+                                            if (sharedDepts.length > 0 || sharedUsers.length > 0) {
+                                                const parts = [];
+                                                if (sharedDepts.length > 0) parts.push(`${sharedDepts.length} phòng ban`);
+                                                if (sharedUsers.length > 0) parts.push(`${sharedUsers.length} người dùng`);
+                                                accessDescription = `Do ${isEffectiveOwner ? 'bạn' : ownerName} sở hữu. Đã chia sẻ với ${parts.join(', ')}.`;
+                                            } else {
+                                                accessDescription = `Do ${isEffectiveOwner ? 'bạn' : ownerName} sở hữu. Chỉ những người và nhóm được cấp quyền mới có thể xem.`;
+                                            }
+                                        } else {
+                                            // INHERIT (mặc định)
+                                            if (effectiveDetailFile?.folderName) {
+                                                accessDescription = `Do ${isEffectiveOwner ? 'bạn' : ownerName} sở hữu. Quyền truy cập được kế thừa từ thư mục "${effectiveDetailFile.folderName}".`;
+                                            } else {
+                                                accessDescription = `Do ${isEffectiveOwner ? 'bạn' : ownerName} sở hữu. Được bảo vệ trong Drive của bạn.`;
+                                            }
+                                        }
+
                                         return (
                                             <div className="space-y-1.5 pt-0.5">
                                                 <h4 className="text-[12.5px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
                                                     Người có quyền truy cập
                                                 </h4>
 
-                                                <div className="flex items-center gap-1.5 pt-0.5">
+                                                <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
                                                     {/* Owner avatar */}
-                                                    <div
-                                                        className={`w-6 h-6 rounded-full flex items-center justify-center font-medium text-[10px] text-white shrink-0 shadow-2xs ${getAvatarColor(
-                                                            isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'Admin')
-                                                        )}`}
-                                                        title={`Chủ sở hữu: ${isEffectiveOwner ? 'tôi' : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'Người dùng')}`}
-                                                    >
-                                                        {(isEffectiveOwner ? (currentUser?.name ? currentUser.name.charAt(0) : 'T') : (effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'A')[0]).toUpperCase()}
-                                                    </div>
+                                                    <UserAvatar
+                                                        name={ownerName}
+                                                        email={effectiveDetailFile?.uploadedByEmail}
+                                                        avatarUrl={(effectiveDetailFile as any)?.uploadedByAvatarUrl || (effectiveDetailFile as any)?.avatarUrl}
+                                                        isCurrentUser={isEffectiveOwner}
+                                                        size="md"
+                                                        title={`${ownerName} (Chủ sở hữu)`}
+                                                    />
 
-                                                    {/* Org / Department icon */}
-                                                    <div
-                                                        className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0 shadow-2xs"
-                                                        title="Thành viên tổ chức"
-                                                    >
-                                                        <Users className="w-3 h-3" />
-                                                    </div>
+                                                    {/* Biểu tượng Toàn công ty nếu visibility là COMPANY */}
+                                                    {visibility === 'COMPANY' && (
+                                                        <div
+                                                            className="w-6 h-6 rounded-full bg-[#E8DEF8] dark:bg-purple-950/60 text-[#1D192B] dark:text-purple-300 flex items-center justify-center text-[10px] font-medium shrink-0 shadow-2xs"
+                                                            title="Toàn bộ nhân viên công ty"
+                                                        >
+                                                            <Building2 className="w-3.5 h-3.5" />
+                                                        </div>
+                                                    )}
+
+                                                    {/* Danh sách phòng ban được chia sẻ (từ DB) */}
+                                                    {sharedDepts.map((d) => (
+                                                        <div
+                                                            key={`dept-${d.id}-${d.subjectId}`}
+                                                            className="h-6 px-2 rounded-full bg-[#EDF2FA] dark:bg-blue-950/50 text-[#0B57D0] dark:text-blue-300 flex items-center gap-1 text-[11px] font-medium shrink-0 border border-blue-200/60 dark:border-blue-800/60"
+                                                            title={`Phòng ban: ${d.subjectName} (${d.level === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}${d.inherited ? ` - Kế thừa từ ${d.inheritedFromName || 'thư mục'}` : ''})`}
+                                                        >
+                                                            <Building2 className="w-3 h-3 shrink-0" />
+                                                            <span className="truncate max-w-[80px]">{d.subjectName}</span>
+                                                        </div>
+                                                    ))}
+
+                                                    {/* Danh sách user được chia sẻ (từ DB) */}
+                                                    {sharedUsers.map((u) => (
+                                                        <UserAvatar
+                                                            key={`user-${u.id}-${u.subjectId}`}
+                                                            name={u.subjectName}
+                                                            email={u.subjectDetail}
+                                                            size="md"
+                                                            title={`${u.subjectName} (${u.level === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}${u.inherited ? ` - Kế thừa từ ${u.inheritedFromName || 'thư mục'}` : ''})`}
+                                                        />
+                                                    ))}
                                                 </div>
 
                                                 <p className="text-[11.5px] text-[#444746] dark:text-[#C4C7C5] leading-normal pt-0.5">
-                                                    {isEffectiveOwner
-                                                        ? 'Do bạn sở hữu. Bất kỳ ai có kết nối Internet và có đường liên kết này đều có thể xem.'
-                                                        : `Do ${effectiveDetailFile?.uploadedByName || effectiveDetailFile?.owner || 'cộng tác viên'} sở hữu. Bạn có quyền xem tài liệu này.`}
+                                                    {accessDescription}
                                                 </p>
 
                                                 <button
                                                     type="button"
                                                     onClick={() => {
                                                         if (effectiveDetailFile) {
-                                                            if (isAdmin) {
+                                                            if (isAdmin || isEffectiveOwner) {
                                                                 setShareTarget({
                                                                     isOpen: true,
                                                                     fileId: effectiveDetailFile.id,
@@ -2890,16 +3019,34 @@ function FilesContent() {
                                         );
                                     })()}
 
-                                    {/* 3. Giới hạn về mức bảo mật */}
-                                    <div className="space-y-1.5 pt-0.5">
-                                        <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
-                                            <Shield className="w-3.5 h-3.5 text-[#444746] dark:text-[#C4C7C5]" />
-                                            <span>Giới hạn về mức bảo mật</span>
-                                        </div>
-                                        <div className="bg-[#F0F4F9] dark:bg-slate-800/60 rounded-xl p-3 text-[11px] text-[#444746] dark:text-[#C4C7C5] leading-relaxed">
-                                            Không có giới hạn nào được áp dụng. Nếu quy định hạn chế được áp dụng thì sẽ xuất hiện tại đây.
-                                        </div>
-                                    </div>
+                                    {/* 3. Giới hạn về mức bảo mật (theo DB) */}
+                                    {(() => {
+                                        const visibility = effectiveDetailFile?.visibility || 'INHERIT';
+                                        let securityNote = 'Không có giới hạn nào được áp dụng. Nếu quy định hạn chế được áp dụng thì sẽ xuất hiện tại đây.';
+                                        if (visibility === 'PRIVATE') {
+                                            securityNote = 'Tài liệu được bảo vệ riêng tư. Chỉ chủ sở hữu mới có quyền truy cập.';
+                                        } else if (visibility === 'RESTRICTED') {
+                                            securityNote = 'Tài liệu áp dụng quy định hạn chế (ACL) theo danh sách phòng ban và người dùng được cấp quyền cụ thể.';
+                                        } else if (visibility === 'COMPANY') {
+                                            securityNote = 'Áp dụng quy định truy cập nội bộ toàn công ty.';
+                                        } else if (visibility === 'INHERIT') {
+                                            securityNote = effectiveDetailFile?.folderName
+                                                ? `Áp dụng quy định kế thừa phân quyền từ thư mục "${effectiveDetailFile.folderName}".`
+                                                : 'Không có giới hạn riêng. Kế thừa theo cấu hình phân quyền trong Drive của bạn.';
+                                        }
+
+                                        return (
+                                            <div className="space-y-1.5 pt-0.5">
+                                                <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
+                                                    <Shield className="w-3.5 h-3.5 text-[#444746] dark:text-[#C4C7C5]" />
+                                                    <span>Giới hạn về mức bảo mật</span>
+                                                </div>
+                                                <div className="bg-[#F0F4F9] dark:bg-slate-800/60 rounded-xl p-3 text-[11px] text-[#444746] dark:text-[#C4C7C5] leading-relaxed">
+                                                    {securityNote}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     {/* 4. Thông tin chi tiết về tệp */}
                                     {(() => {
@@ -3016,42 +3163,8 @@ function FilesContent() {
                                     })()}
                                 </>
                             ) : (
-                                /* ── TAB HOẠT ĐỘNG (ACTIVITY TIMELINE) ── */
-                                <div className="space-y-4">
-                                    <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                                        Lịch sử gần đây
-                                    </span>
-
-                                    <div className="relative pl-5 border-l-2 border-blue-200 dark:border-slate-700 space-y-4">
-                                        <div className="relative">
-                                            <div className="absolute -left-[27px] top-0 w-3.5 h-3.5 rounded-full bg-blue-600 ring-4 ring-white dark:ring-slate-900" />
-                                            <p className="font-semibold text-gray-800 dark:text-slate-200">
-                                                Đã cập nhật chỉ mục AI Semantic Vector
-                                            </p>
-                                            <p className="text-[10px] text-gray-400">
-                                                {effectiveDetailFile?.updatedAt || 'Hôm nay'} · Hệ thống RAG Engine
-                                            </p>
-                                        </div>
-
-                                        <div className="relative">
-                                            <div className="absolute -left-[27px] top-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-4 ring-white dark:ring-slate-900" />
-                                            <p className="font-semibold text-gray-800 dark:text-slate-200">
-                                                Tải lên tài liệu thành công
-                                            </p>
-                                            <p className="text-[10px] text-gray-400">
-                                                Bởi {effectiveDetailFile?.uploadedByName || 'Chủ sở hữu'}
-                                            </p>
-                                        </div>
-
-                                        <div className="relative">
-                                            <div className="absolute -left-[27px] top-0 w-3.5 h-3.5 rounded-full bg-purple-500 ring-4 ring-white dark:ring-slate-900" />
-                                            <p className="font-semibold text-gray-800 dark:text-slate-200">
-                                                Khởi tạo quyền truy cập mặc định
-                                            </p>
-                                            <p className="text-[10px] text-gray-400">Kế thừa phân quyền phòng ban</p>
-                                        </div>
-                                    </div>
-                                </div>
+                                /* ── TAB HOẠT ĐỘNG (GOOGLE DRIVE STANDARD) ── */
+                                <FileActivityDrawerTab file={effectiveDetailFile} />
                             )}
                         </div>
                     </div>

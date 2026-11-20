@@ -3,6 +3,7 @@
 import React, { Suspense, useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import UserAvatar from '@/components/common/UserAvatar';
 import {
     LayoutDashboard,
     Home,
@@ -119,9 +120,11 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
     const searchParams = useSearchParams();
     const activeFolderId = searchParams?.get('folderId') || null;
 
-    const [user, setUser] = useState<{ name: string; role: string }>({
+    const [user, setUser] = useState<{ name: string; role: string; email?: string; avatarUrl?: string }>({
         name: '',
         role: '',
+        email: '',
+        avatarUrl: '',
     });
 
     // Folder tree state for "Drive của tôi" (default collapsed on initial load)
@@ -150,7 +153,9 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                         const parsed = JSON.parse(stored);
                         const name = parsed.name || parsed.username || parsed.email || 'Người dùng';
                         const role = (parsed.role || '').replace('ROLE_', '').toUpperCase();
-                        setUser({ name, role });
+                        const email = parsed.email || '';
+                        const avatarUrl = parsed.avatarUrl || '';
+                        setUser({ name, role, email, avatarUrl });
                     } catch (e) {}
                 }
             }
@@ -558,7 +563,20 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
             return (
                 <div key={node.id} className="w-full">
                     <div
-                        onClick={() => router.push(`/files?folderId=${node.id}&folderName=${encodeURIComponent(node.name)}`)}
+                        onClick={() => {
+                            if (hasChildren) {
+                                setExpandedFolderIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(nodeIdStr) && isCurrentActive) {
+                                        next.delete(nodeIdStr);
+                                    } else {
+                                        next.add(nodeIdStr);
+                                    }
+                                    return next;
+                                });
+                            }
+                            router.push(`/files?folderId=${node.id}&folderName=${encodeURIComponent(node.name)}`);
+                        }}
                         onDragOver={(e) => handleFolderDragOver(node, e)}
                         onDragLeave={(e) => handleFolderDragLeave(node, e)}
                         onDrop={(e) => handleFolderDrop(node.id, node.name, e)}
@@ -744,7 +762,10 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
                         {isOpen ? (
                             <div className="w-full">
                                 <div
-                                    onClick={() => router.push('/files')}
+                                    onClick={() => {
+                                        setIsDriveExpanded((prev) => (!isDriveActive || activeFolderId ? true : !prev));
+                                        router.push('/files');
+                                    }}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
@@ -960,9 +981,13 @@ function SidebarContent({ isOpen, setIsOpen }: SidebarProps) {
             <div className="p-2 border-t border-gray-100 dark:border-slate-800/80 shrink-0">
                 <div className="flex items-center justify-between p-1 rounded-full hover:bg-gray-100/70 dark:hover:bg-slate-800/70 transition-colors">
                     <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-medium text-[11px] flex items-center justify-center shrink-0">
-                            {userInitials}
-                        </div>
+                        <UserAvatar
+                            name={user.name}
+                            email={user.email}
+                            avatarUrl={user.avatarUrl}
+                            isCurrentUser
+                            size="base"
+                        />
                         {isOpen && (
                             <div className="min-w-0">
                                 <p className="text-[12px] font-medium text-gray-900 dark:text-slate-100 truncate">

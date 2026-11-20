@@ -11,6 +11,11 @@ export interface ActivityLogDto {
     fileType?: string | null;
     ownerName?: string | null;
     location?: string | null;
+    actorEmail?: string | null;
+    actorAvatarUrl?: string | null;
+    changeDescription?: string | null;
+    metadata?: Record<string, any> | null;
+    createdAtIso?: string | null;
 }
 
 class ActivityService {

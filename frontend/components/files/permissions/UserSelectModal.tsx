@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { X, Search, User, Check, Mail } from 'lucide-react';
 import { UserDto } from '@/services/user/userService';
+import UserAvatar from '@/components/common/UserAvatar';
 
 interface UserSelectModalProps {
     isOpen: boolean;
@@ -118,11 +119,12 @@ export default function UserSelectModal({
                                     }`}
                                 >
                                     <div className="flex items-center gap-2.5 min-w-0">
-                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 transition ${
-                                            isChecked ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'
-                                        }`}>
-                                            {initial}
-                                        </div>
+                                        <UserAvatar
+                                            name={user.name}
+                                            email={user.email}
+                                            avatarUrl={user.avatarUrl}
+                                            size="base"
+                                        />
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-1.5">
                                                 <p className="text-xs font-semibold text-gray-900 truncate">{user.name}</p>

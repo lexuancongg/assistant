@@ -312,6 +312,61 @@ class EnterpriseAgentEngine:
             "sentenceDetails": sentence_details
         }
 
+    def _check_forbidden_access(
+        self,
+        question: str,
+        forbidden_files: List[str],
+        available_files: Optional[List[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Security Guard Agent: Thẩm định xem người dùng có đang cố tình tra cứu hoặc tóm tắt
+        tài liệu mà tài khoản hiện tại không có quyền truy cập hay không.
+        """
+        if not forbidden_files:
+            return None
+
+        guard_prompt = f"""Bạn là Security Guard Agent chuyên kiểm soát quyền truy cập tài liệu doanh nghiệp.
+Nhiệm vụ: Thẩm định xem câu hỏi của người dùng có đang nhắm tới, hỏi về, hoặc yêu cầu tóm tắt/tra cứu một tài liệu nằm trong danh sách [TÀI LIỆU KHÔNG CÓ QUYỀN TRUY CẬP] hay không.
+Lưu ý:
+- Người dùng có thể dịch nghĩa (ví dụ: SNS = mạng xã hội, share = chia sẻ, spec/spect = tài liệu kỹ thuật/chức năng), dùng từ đồng nghĩa hoặc trích dẫn từ khóa đặc trưng của tệp.
+- Nếu câu hỏi KHÔNG liên quan đến bất kỳ tệp nào trong [TÀI LIỆU KHÔNG CÓ QUYỀN TRUY CẬP] hoặc chỉ hỏi về tệp trong [TÀI LIỆU ĐƯỢC PHÉP TRUY CẬP]: isTargetingForbidden = false.
+
+[TÀI LIỆU KHÔNG CÓ QUYỀN TRUY CẬP]:
+{json.dumps(forbidden_files, ensure_ascii=False)}
+
+[TÀI LIỆU ĐƯỢC PHÉP TRUY CẬP]:
+{json.dumps(available_files or [], ensure_ascii=False)}
+
+Câu hỏi của người dùng: "{question}"
+
+BẮT BUỘC TRẢ VỀ JSON:
+{{
+  "isTargetingForbidden": true/false,
+  "matchedFile": "tên tệp bị hạn chế nếu có hoặc null",
+  "reason": "giải thích ngắn gọn lý do"
+}}"""
+        try:
+            response = retry(
+                lambda: self.client.models.generate_content(
+                    model=self.model,
+                    contents=guard_prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "temperature": 0.0,
+                    },
+                )
+            )
+            raw = response.text.strip()
+            if raw.startswith("```json"): raw = raw[7:]
+            if raw.startswith("```"): raw = raw[3:]
+            if raw.endswith("```"): raw = raw[:-3]
+            data = json.loads(raw.strip())
+            if data.get("isTargetingForbidden"):
+                return data
+        except Exception:
+            pass
+        return None
+
     def run_workflow(
         self,
         question: str,
@@ -321,6 +376,7 @@ class EnterpriseAgentEngine:
         company_id: Optional[Any] = None,
         persona: Optional[str] = None,
         available_files: Optional[List[str]] = None,
+        forbidden_files: Optional[List[str]] = None,
         history: Optional[List[Any]] = None,
         model_provider: Optional[str] = "gemini",
         folder_name: Optional[str] = None,
@@ -352,6 +408,32 @@ class EnterpriseAgentEngine:
                 action="Nạp danh mục tệp và cấu trúc thư mục thực tế từ Drive",
                 outputSummary=f"Đã nạp metadata: {folder_name or 'Drive'} ({len(available_files or [])} tệp, {len(sub_folder_names or [])} thư mục con)."
             ))
+
+        # -------------------------------------------------------------
+        # 0.5. SECURITY GUARD AGENT: Kiểm soát quyền hạn truy cập tài liệu (RBAC)
+        # -------------------------------------------------------------
+        if forbidden_files:
+            forbidden_check = self._check_forbidden_access(
+                question=question,
+                forbidden_files=forbidden_files,
+                available_files=available_files
+            )
+            if forbidden_check and forbidden_check.get("isTargetingForbidden"):
+                matched_file = forbidden_check.get("matchedFile", "Tài liệu bị giới hạn")
+                reason = forbidden_check.get("reason", "Người dùng không có quyền truy cập")
+                traces.append(AgentTraceStep(
+                    agentName="SecurityGuardAgent",
+                    action="Kiểm soát phân quyền dữ liệu nội bộ (RBAC Security Guardrail)",
+                    outputSummary=f"Phát hiện truy vấn liên quan đến tài liệu bị giới hạn quyền truy cập ('{matched_file}'). Hệ thống đã kích hoạt cơ chế bảo vệ an toàn thông tin ({reason}).",
+                    status="BLOCKED"
+                ))
+                return AgentWorkflowResult(
+                    answer="Bạn không có quyền truy cập vào tài liệu này hoặc tài liệu không khả dụng trong phạm vi quyền hạn của bạn.",
+                    intent="ACCESS_DENIED",
+                    groundednessScore=1.0,
+                    reasoningTrace=traces,
+                    sources=[]
+                )
 
         # -------------------------------------------------------------
         # 1. ROUTER AGENT: Phân loại ý định thông minh bằng LLM Structured Output
@@ -392,11 +474,21 @@ class EnterpriseAgentEngine:
         # 3. RERANK AGENT: Hybrid Cross-Scoring
         # -------------------------------------------------------------
         reranked_chunks = self.reranker_service.rerank(query=question, candidates=candidate_chunks)
+
+        # Lọc các đoạn trích có độ liên quan thực tế (Relevance Threshold & Anti-Drift Guardrail)
+        RELEVANT_THRESHOLD = 0.42
+        relevant_chunks = [
+            c for c in reranked_chunks
+            if float(c.get("rerank_score", 0.0)) >= RELEVANT_THRESHOLD
+            and (float(c.get("lexical_score", 0.0)) > 0.04 or float(c.get("dense_score", 0.0)) >= 0.68 or c.get("exact_bonus", 0.0) > 0)
+        ]
+        reranked_chunks = relevant_chunks
+
         top_score = reranked_chunks[0].get("rerank_score", 0.0) if reranked_chunks else 0.0
         traces.append(AgentTraceStep(
             agentName="RerankerAgent",
             action="Tái xếp hạng ngữ cảnh bằng Hybrid BM25 + Vector Fusion",
-            outputSummary=f"Chọn lọc ra Top {len(reranked_chunks)} đoạn văn bản tối ưu (Điểm tương đồng cao nhất: {top_score:.2f})."
+            outputSummary=f"Chọn lọc ra Top {len(reranked_chunks)} đoạn văn bản tối ưu đạt ngưỡng liên quan (Điểm tương đồng cao nhất: {top_score:.2f})."
         ))
 
         # -------------------------------------------------------------
@@ -420,18 +512,24 @@ class EnterpriseAgentEngine:
             if history_lines:
                 history_text = "### LỊCH SỬ CUỘC TRÒ CHUYỆN GẦN ĐÂY:\n" + "\n".join(history_lines) + "\n\n"
 
-        system_prompt = f"""Bạn là Trợ lý AI Cấp cao Doanh nghiệp (Enterprise AI Assistant) thông minh, chuẩn xác và súc tích.
+        system_prompt = f"""Bạn là Trợ lý AI Cấp cao Doanh nghiệp (Enterprise AI Assistant) thông minh, chuẩn xác và tuân thủ nghiêm ngặt bảo mật thông tin.
 
 ### QUY TẮC PHẢN HỒI (BẮT BUỘC TUÂN THỦ):
 1. **TRỰC DIỆN, NGẮN GỌN**: Vào thẳng câu trả lời ngay từ câu đầu tiên. TUYỆT ĐỐI KHÔNG chào hỏi (CẤM "Chào bạn...", "Với tư cách là..."), KHÔNG kết luận xã giao.
-2. **CHỈ NÊU TÊN TỆP**: Khi chỉ ra tệp chứa thông tin, chỉ ghi tên tệp. TUYỆT ĐỐI KHÔNG ghi thêm chú thích số thứ tự thừa như `(tài liệu số 1 trong danh sách)`.
-2. **ĐÚNG Ý ĐỊNH**: Tập trung trả lời trực diện theo đúng trọng tâm câu hỏi của người dùng.
-4. **CHÍNH XÁC & DỰA TRÊN DỮ LIỆU**:
-   - Trả lời chính xác dựa trên Ngữ cảnh trích xuất.
-   - Chỉ trả lời "Không tìm thấy thông tin phù hợp trong các tài liệu hiện có." khi các đoạn trích thực sự không có thông tin liên quan.
+2. **KIỂM SOÁT PHẠM VI & ĐỐI TƯỢNG TÀI LIỆU (QUAN TRỌNG NHẤT)**:
+   - Danh sách các tệp người dùng CÓ QUYỀN TRUY CẬP nằm trong [CẤU TRÚC THƯ MỤC & DANH MỤC TÀI LIỆU HIỆN CÓ CỦA HỆ THỐNG].
+   - Khi người dùng hỏi tóm tắt, tra cứu hoặc hỏi về một file/tài liệu cụ thể (ví dụ: "tóm tắt file...", "nội dung file...", "spect...", "tài liệu..."):
+     + Nếu tệp đó KHÔNG NẰM TRONG danh mục tài liệu được phép của người dùng, HOẶC
+     + [NGỮ CẢNH TRÍCH XUẤT] không có nội dung của tệp mà người dùng yêu cầu (hoặc rỗng / chỉ là các tệp không liên quan):
+     => TUYỆT ĐỐI NGHIÊM CẤM lấy một tệp khác không liên quan trong danh sách để trả lời thay thế!
+     => BẮT BUỘC trả lời: "Không tìm thấy nội dung tài liệu phù hợp trong phạm vi truy cập của bạn hoặc bạn không có quyền truy cập vào tài liệu này."
+3. **CHỈ NÊU TÊN TỆP**: Khi chỉ ra tệp chứa thông tin, chỉ ghi tên tệp. TUYỆT ĐỐI KHÔNG ghi thêm chú thích số thứ tự thừa như `(tài liệu số 1 trong danh sách)`.
+4. **ĐÚNG Ý ĐỊNH**: Tập trung trả lời trực diện theo đúng trọng tâm câu hỏi của người dùng.
+5. **CHÍNH XÁC & DỰA TRÊN DỮ LIỆU**:
+   - Trả lời chính xác dựa trên Ngữ cảnh trích xuất của đúng tài liệu liên quan.
    - Khi câu hỏi về sơ đồ / quy trình / luồng hoạt động: Bắt buộc trình bày rõ ràng trình tự các bước tuần tự (Bước 1 -> Bước 2 -> ...) và điều kiện rẽ nhánh (Nếu ... thì ...), đảm bảo bảo toàn tính logic của sơ đồ.
    - Khi câu hỏi về bảng biểu, số liệu: Trình bày số liệu đối chiếu chuẩn xác dưới dạng bảng hoặc gạch đầu dòng chi tiết.
-4. **ĐỊNH DẠNG**: Trình bày Markdown ngắn gọn, in đậm các từ khóa, con số, điều khoản quan trọng."""
+6. **ĐỊNH DẠNG**: Trình bày Markdown ngắn gọn, in đậm các từ khóa, con số, điều khoản quan trọng."""
 
         metadata_section = ""
         if metadata_context_str:
@@ -442,7 +540,7 @@ class EnterpriseAgentEngine:
 
         user_content = f"""Ý định truy vấn: {detected_intent}
 {history_text}{metadata_section}### NGỮ CẢNH TRÍCH XUẤT XÁC THỰC TỪ NỘI DUNG TÀI LIỆU:
-{context_str if context_str else "(Không có đoạn trích nào)"}
+{context_str if context_str else "(Không có đoạn trích nào đạt độ tương đồng phù hợp trong các tài liệu được phép)"}
 
 ---
 ### CÂU HỎI CỦA NGƯỜI DÙNG:
@@ -450,6 +548,7 @@ class EnterpriseAgentEngine:
 
 ---
 ### YÊU CẦU:
+- Khi người dùng hỏi về một tệp cụ thể mà tệp đó không có trong danh mục tài liệu được phép hoặc ngữ cảnh không có nội dung tệp đó: Tuyệt đối không lấy tệp khác thay thế, trả lời ngay rằng không tìm thấy hoặc không có quyền truy cập.
 - Khi người dùng hỏi về danh sách file, số lượng file, thư mục con hoặc cấu trúc thư mục: Bắt buộc dựa vào mục [CẤU TRÚC THƯ MỤC & DANH MỤC TÀI LIỆU HIỆN CÓ CỦA HỆ THỐNG] để trả lời chính xác số lượng và liệt kê đầy đủ tên các tệp/thư mục. TUYỆT ĐỐI KHÔNG dùng các đoạn trích nội dung tài liệu để bịa đặt hoặc nhầm lẫn số lượng file.
 - Khi người dùng hỏi về nội dung, dữ kiện, điều khoản bên trong tài liệu: Dựa vào [NGỮ CẢNH TRÍCH XUẤT XÁC THỰC TỪ NỘI DUNG TÀI LIỆU] để trả lời và trích dẫn chuẩn xác.
 - Trả lời trực diện, đúng trọng tâm, không chào hỏi, không kết luận thừa."""

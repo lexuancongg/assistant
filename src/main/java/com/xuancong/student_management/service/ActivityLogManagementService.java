@@ -171,11 +171,24 @@ public class ActivityLogManagementService {
             ownerName = actorName;
         }
 
-        String action = actionLabel(log.getActionType().name());
+        String action = actionLabel(log);
         String type = log.getActionType().name().toLowerCase();
         String timestamp = FMT.format(log.getCreatedAt());
 
-        return new ActivityLogResponse(log.getId(), actorName, action, targetName, timestamp, type, fileId, fileType, ownerName, location);
+        String actorEmail = log.getActor() != null ? log.getActor().getEmail() : null;
+        String actorAvatarUrl = log.getActor() != null ? log.getActor().getAvatarUrl() : null;
+        String changeDesc = null;
+        if (log.getMetadata() != null && log.getMetadata().containsKey("changeDescription")) {
+            Object cd = log.getMetadata().get("changeDescription");
+            if (cd != null) changeDesc = cd.toString();
+        }
+        String createdAtIso = log.getCreatedAt() != null ? log.getCreatedAt().toString() : null;
+
+        return new ActivityLogResponse(
+                log.getId(), actorName, action, targetName, timestamp, type,
+                fileId, fileType, ownerName, location,
+                actorEmail, actorAvatarUrl, changeDesc, log.getMetadata(), createdAtIso
+        );
     }
 
     private String buildFolderPath(Folder folder) {
@@ -186,15 +199,21 @@ public class ActivityLogManagementService {
         return folder.getName();
     }
 
-    private String actionLabel(String type) {
-        return switch (type) {
-            case "UPLOAD"            -> "đã upload file";
-            case "SHARE"             -> "đã chia sẻ file";
-            case "DOWNLOAD"          -> "đã tải xuống file";
-            case "DELETE"            -> "đã xóa file";
-            case "UPDATE"            -> "đã khôi phục file";
-            case "PERMISSION_CHANGE" -> "đã thay đổi quyền file";
-            default                  -> "đã thao tác với file";
+    private String actionLabel(ActivityLog log) {
+        if (log.getMetadata() != null && "MOVE_FILE".equals(log.getMetadata().get("action"))) {
+            return "đã di chuyển một mục";
+        }
+        if (log.getMetadata() != null && ("ONLYOFFICE_NEW_VERSION".equals(log.getMetadata().get("action")) || "ONLYOFFICE_OVERWRITE".equals(log.getMetadata().get("action")))) {
+            return "đã chỉnh sửa một mục";
+        }
+        return switch (log.getActionType()) {
+            case UPLOAD            -> "đã tải lên một mục";
+            case SHARE             -> "đã chia sẻ một mục";
+            case DOWNLOAD          -> "đã tải xuống một mục";
+            case DELETE            -> "đã xóa một mục";
+            case UPDATE            -> "đã chỉnh sửa một mục";
+            case PERMISSION_CHANGE -> "đã thay đổi quyền một mục";
+            default                -> "đã thao tác một mục";
         };
     }
 }

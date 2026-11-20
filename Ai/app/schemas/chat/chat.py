@@ -39,6 +39,7 @@ class RagRequest(BaseModel):
     folderName: Optional[str] = None
     subFolderNames: Optional[List[str]] = None
     availableFiles: Optional[List[str]] = None
+    forbiddenFiles: Optional[List[str]] = None
 
 
 class RagResponse(BaseModel):
@@ -64,6 +65,7 @@ class OverviewRequest(BaseModel):
     folderName: Optional[str] = None
     subFolderNames: Optional[List[str]] = None
     availableFiles: Optional[List[str]] = None
+    forbiddenFiles: Optional[List[str]] = None
 
 
 class OverviewResponse(BaseModel):

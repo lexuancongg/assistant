@@ -1,12 +1,13 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { Search, Plus, MoreVertical, X, Loader2 } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Search, Plus, MoreHorizontal, X, Loader2, Check } from 'lucide-react';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
 import userService, { UserDto } from '@/services/user/userService';
 import toast from 'react-hot-toast';
+import UserAvatar from '@/components/common/UserAvatar';
 
 export default function UsersPage() {
-    usePageBreadcrumb(['Quản lý người dùng']);
+    usePageBreadcrumb(['Bảo mật & Quản trị', 'Quản lý nhân viên']);
     const [users, setUsers] = useState<UserDto[]>([]);
     const [query, setQuery] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -17,6 +18,18 @@ export default function UsersPage() {
     const [loading, setLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
     const [togglingId, setTogglingId] = useState<string | number | null>(null);
+    const [openMenuId, setOpenMenuId] = useState<string | number | null>(null);
+
+    useEffect(() => {
+        const handleClose = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest('[data-user-menu]')) {
+                setOpenMenuId(null);
+            }
+        };
+        window.addEventListener('mousedown', handleClose);
+        return () => window.removeEventListener('mousedown', handleClose);
+    }, []);
 
     const loadUsers = async (silent = false) => {
         if (!silent) setLoading(true);
@@ -50,14 +63,14 @@ export default function UsersPage() {
                 password: password.trim(),
                 role
             });
-            toast.success('Tạo người dùng thành công!');
+            toast.success('Tạo nhân viên thành công!');
             setShowCreateModal(false);
             setName('');
             setEmail('');
             setPassword('');
             await loadUsers(true);
         } catch (err: any) {
-            toast.error('Tạo người dùng thất bại: ' + (err?.message || err));
+            toast.error('Tạo nhân viên thất bại: ' + (err?.message || err));
         } finally {
             setIsCreating(false);
         }
@@ -68,7 +81,7 @@ export default function UsersPage() {
         setTogglingId(id);
         try {
             await userService.updateStatus(id, nextStatus);
-            toast.success('Đã cập nhật trạng thái người dùng!');
+            toast.success(nextStatus === 'ACTIVE' ? 'Đã kích hoạt tài khoản!' : 'Đã tạm khóa tài khoản!');
             await loadUsers(true);
         } catch (err: any) {
             toast.error('Cập nhật trạng thái thất bại: ' + (err?.message || err));
@@ -77,156 +90,241 @@ export default function UsersPage() {
         }
     };
 
+    const formatRole = (r?: string) => {
+        if (r === 'ADMIN') return 'Quản trị viên';
+        if (r === 'MANAGER') return 'Quản lý';
+        return 'Nhân viên';
+    };
+
     return (
-        <div className="px-6 pt-3 pb-6 relative">
-            <div className="flex items-center justify-between pb-3 mb-2 shrink-0 select-none">
-                <h1 className="text-[20px] font-normal text-[#1F1F1F] dark:text-slate-100 tracking-normal">
-                    Quản lý người dùng
+        <div className="px-6 pt-3 pb-6 relative min-h-[calc(100vh-64px)] flex flex-col font-sans select-none">
+            {/* Header đồng bộ chuẩn Google Drive */}
+            <div className="flex items-center justify-between pb-3 shrink-0">
+                <h1 className="text-[20px] font-normal text-[#1F1F1F] dark:text-[#E3E3E3] tracking-normal">
+                    Quản lý nhân viên
                 </h1>
                 <button
+                    type="button"
                     onClick={() => setShowCreateModal(true)}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                    className="h-[36px] px-4 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] text-white text-[13px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer shadow-none"
                 >
-                    <Plus className="w-4 h-4" strokeWidth={2} />
-                    Thêm người dùng
+                    <Plus className="w-4 h-4" />
+                    <span>Thêm nhân viên</span>
                 </button>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200">
-                <div className="px-5 pt-4 pb-3">
-                    <div className="relative w-72">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={2} />
+            {/* Main Card */}
+            <div className="flex-1 bg-white dark:bg-[#1E1F20] rounded-2xl border border-[#E0E0E0] dark:border-neutral-800 p-6 flex flex-col justify-between shadow-xs">
+                <div>
+                    {/* Search Box chuẩn Google Drive */}
+                    <div className="relative w-72 mb-4">
+                        <Search className="w-4 h-4 text-[#747775] absolute left-3 top-2.5 pointer-events-none" />
                         <input
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Tìm kiếm người dùng..."
-                            className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors"
+                            placeholder="Tìm kiếm nhân viên..."
+                            className="w-full pl-9 pr-4 py-1.5 text-[13px] rounded-full bg-[#EDF2FC] dark:bg-[#282A2C] text-[#1F1F1F] dark:text-[#E3E3E3] placeholder:text-[#747775] border-0 focus:bg-white dark:focus:bg-[#1E1F20] focus:outline-none focus:ring-1 focus:ring-[#0B57D0] transition"
                         />
+                    </div>
+
+                    {/* Table */}
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse table-fixed">
+                            <thead>
+                                <tr className="border-b border-[#E0E0E0] dark:border-neutral-800 text-[13px] font-normal text-[#444746] dark:text-neutral-400 h-11">
+                                    <th className="py-2 px-3 font-normal w-[32%]">Họ và tên</th>
+                                    <th className="py-2 px-3 font-normal w-[32%]">Email</th>
+                                    <th className="py-2 px-3 font-normal w-[18%]">Vai trò</th>
+                                    <th className="py-2 px-3 font-normal w-[12%]">Trạng thái</th>
+                                    <th className="py-2 px-3 font-normal w-16 text-center">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#F0F0F0] dark:divide-neutral-800/60">
+                                {loading ? (
+                                    [1, 2, 3, 4].map((i) => (
+                                        <tr key={i} className="h-12 animate-pulse">
+                                            <td className="py-2 px-3">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-neutral-800 shrink-0" />
+                                                    <div className="h-3.5 bg-slate-200 dark:bg-neutral-800 rounded w-28" />
+                                                </div>
+                                            </td>
+                                            <td className="py-2 px-3"><div className="h-3.5 bg-slate-200 dark:bg-neutral-800 rounded w-44" /></td>
+                                            <td className="py-2 px-3"><div className="h-3.5 bg-slate-200 dark:bg-neutral-800 rounded w-20" /></td>
+                                            <td className="py-2 px-3"><div className="h-3.5 bg-slate-200 dark:bg-neutral-800 rounded w-20" /></td>
+                                            <td className="py-2 px-3 text-center"><div className="h-3.5 bg-slate-200 dark:bg-neutral-800 rounded w-6 mx-auto" /></td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    filtered.map((user) => {
+                                        const initial = (user.avatarInitial || user.name?.charAt(0) || '?').toUpperCase();
+                                        const isActionOpen = openMenuId === user.id;
+
+                                        return (
+                                            <tr
+                                                key={user.id}
+                                                className="h-12 hover:bg-[#F8FAFD] dark:hover:bg-neutral-800/40 text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3] transition-colors"
+                                            >
+                                                <td className="py-2 px-3">
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <UserAvatar
+                                                            name={user.name}
+                                                            email={user.email}
+                                                            avatarUrl={user.avatarUrl}
+                                                            size="base"
+                                                        />
+                                                        <span className="font-medium text-[#1F1F1F] dark:text-[#E3E3E3] truncate">
+                                                            {user.name}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-2 px-3 text-[#747775] truncate">
+                                                    {user.email}
+                                                </td>
+                                                <td className="py-2 px-3 text-[#1F1F1F] dark:text-[#E3E3E3]">
+                                                    {formatRole(user.role)}
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span
+                                                            className={`w-2 h-2 rounded-full shrink-0 inline-block ${
+                                                                user.status?.toUpperCase() === 'ACTIVE'
+                                                                    ? 'bg-[#137333]'
+                                                                    : 'bg-[#D93025]'
+                                                            }`}
+                                                        />
+                                                        <span className="text-[13px] text-[#444746] dark:text-neutral-400">
+                                                            {user.status?.toUpperCase() === 'ACTIVE' ? 'Hoạt động' : 'Tạm khóa'}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-2 px-3 text-center">
+                                                    <div className="relative inline-block" data-user-menu>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setOpenMenuId(isActionOpen ? null : user.id);
+                                                            }}
+                                                            className="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#444746] dark:text-neutral-400 hover:text-[#1F1F1F] dark:hover:text-white inline-flex items-center justify-center transition cursor-pointer"
+                                                            title="Thao tác"
+                                                        >
+                                                            <MoreHorizontal className="w-4 h-4" />
+                                                        </button>
+
+                                                        {isActionOpen && (
+                                                            <div
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="absolute right-0 top-full mt-1 bg-white dark:bg-[#282A2C] rounded-[4px] shadow-[0_2px_8px_rgba(60,64,67,0.2)] border border-gray-100 dark:border-neutral-700 py-1.5 z-50 w-44 animate-in fade-in duration-100 text-left"
+                                                            >
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setOpenMenuId(null);
+                                                                        handleToggleStatus(user.id, user.status);
+                                                                    }}
+                                                                    className="w-full flex items-center justify-between px-3.5 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-neutral-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer transition-colors"
+                                                                >
+                                                                    <span>
+                                                                        {user.status?.toUpperCase() === 'ACTIVE' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+                                                                    </span>
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+
+                                {!loading && filtered.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="py-16 text-center text-[13px] text-[#747775]">
+                                            Không tìm thấy nhân viên nào
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
-                <table className="w-full text-sm">
-                    <thead>
-                        <tr className="text-left text-xs text-gray-400 border-y border-gray-100">
-                            <th className="font-medium px-5 py-2.5">Họ và tên</th>
-                            <th className="font-medium px-5 py-2.5">Email</th>
-                            <th className="font-medium px-5 py-2.5">Vai trò</th>
-                            <th className="font-medium px-5 py-2.5">Trạng thái</th>
-                            <th className="font-medium px-5 py-2.5 w-16">Thao tác</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading ? (
-                            [1, 2, 3, 4].map(i => (
-                                <tr key={i} className="animate-pulse border-b border-gray-50">
-                                    <td className="px-5 py-3"><div className="h-4 bg-gray-200 rounded w-36"></div></td>
-                                    <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-44"></div></td>
-                                    <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-16"></div></td>
-                                    <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-20"></div></td>
-                                    <td className="px-5 py-3"><div className="h-4 bg-gray-100 rounded w-8"></div></td>
-                                </tr>
-                            ))
-                        ) : (
-                            filtered.map((user) => (
-                                <tr key={user.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors">
-                                    <td className="px-5 py-2.5">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-blue-100 text-blue-700">
-                                                <span className="text-xs font-bold">{user.avatarInitial || user.name?.charAt(0) || '?'}</span>
-                                            </div>
-                                            <span className="text-gray-800 font-medium">{user.name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-5 py-2.5 text-gray-500">{user.email}</td>
-                                    <td className="px-5 py-2.5 text-gray-600">{user.role}</td>
-                                    <td className="px-5 py-2.5">
-                                        <button
-                                            onClick={() => handleToggleStatus(user.id, user.status)}
-                                            disabled={togglingId === user.id}
-                                            className={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
-                                                user.status?.toUpperCase() === 'ACTIVE' ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-red-50 text-red-500 hover:bg-red-100'
-                                            }`}
-                                            title="Click để đổi trạng thái"
-                                        >
-                                            {togglingId === user.id ? 'Đang lưu...' : (user.status?.toUpperCase() === 'ACTIVE' ? 'Hoạt động' : 'Tạm khóa')}
-                                        </button>
-                                    </td>
-                                    <td className="px-5 py-2.5">
-                                        <button className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Tùy chọn">
-                                            <MoreVertical className="w-4 h-4" strokeWidth={2} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                        {!loading && filtered.length === 0 && (
-                            <tr>
-                                <td colSpan={5} className="px-5 py-8 text-center text-gray-400">
-                                    Không tìm thấy người dùng
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
+                {/* Footer Pagination chuẩn Google Drive */}
+                <div className="flex items-center justify-between pt-4 border-t border-[#E0E0E0] dark:border-neutral-800 mt-6 text-[12.5px] text-[#747775]">
+                    <span>
+                        Hiển thị 1–{filtered.length} trong {filtered.length} kết quả
+                    </span>
+                    <span className="w-7 h-7 rounded-full bg-[#0B57D0] text-white text-[12px] font-medium flex items-center justify-center">
+                        1
+                    </span>
+                </div>
             </div>
 
+            {/* Modal Thêm người dùng chuẩn Material 3 */}
             {showCreateModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-                    <div className="bg-white rounded-xl w-full max-w-md p-5">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
+                    <div className="bg-white dark:bg-[#282A2C] rounded-2xl w-full max-w-md p-6 shadow-2xl border border-gray-100 dark:border-neutral-700">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-base font-semibold text-gray-900">Thêm người dùng mới</h2>
-                            <button onClick={() => setShowCreateModal(false)} className="p-1 rounded hover:bg-gray-100 text-gray-400">
+                            <h2 className="text-[18px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">Thêm nhân viên mới</h2>
+                            <button
+                                onClick={() => setShowCreateModal(false)}
+                                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-700 text-gray-500 transition cursor-pointer"
+                            >
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
-                        <form onSubmit={handleCreateUser} className="flex flex-col gap-3">
+                        <form onSubmit={handleCreateUser} className="flex flex-col gap-3.5">
                             <div>
-                                <label className="text-xs text-gray-600">Họ và tên</label>
+                                <label className="text-[12px] font-medium text-[#444746] dark:text-neutral-400">Họ và tên</label>
                                 <input
                                     type="text"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg text-sm mt-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                    placeholder="Nhập họ và tên..."
+                                    className="w-full px-3.5 py-2 border border-[#DADCE0] dark:border-neutral-700 rounded-lg text-[13px] mt-1 outline-none focus:border-[#0B57D0] transition bg-transparent"
                                     required
                                 />
                             </div>
                             <div>
-                                <label className="text-xs text-gray-600">Email</label>
+                                <label className="text-[12px] font-medium text-[#444746] dark:text-neutral-400">Email</label>
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg text-sm mt-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                    placeholder="user@enterprise.ai"
+                                    className="w-full px-3.5 py-2 border border-[#DADCE0] dark:border-neutral-700 rounded-lg text-[13px] mt-1 outline-none focus:border-[#0B57D0] transition bg-transparent"
                                     required
                                 />
                             </div>
                             <div>
-                                <label className="text-xs text-gray-600">Mật khẩu</label>
+                                <label className="text-[12px] font-medium text-[#444746] dark:text-neutral-400">Mật khẩu</label>
                                 <input
                                     type="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg text-sm mt-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                    placeholder="••••••••"
+                                    className="w-full px-3.5 py-2 border border-[#DADCE0] dark:border-neutral-700 rounded-lg text-[13px] mt-1 outline-none focus:border-[#0B57D0] transition bg-transparent"
                                     required
                                 />
                             </div>
                             <div>
-                                <label className="text-xs text-gray-600">Vai trò</label>
+                                <label className="text-[12px] font-medium text-[#444746] dark:text-neutral-400">Vai trò</label>
                                 <select
                                     value={role}
                                     onChange={(e) => setRole(e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg text-sm mt-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-full px-3.5 py-2 border border-[#DADCE0] dark:border-neutral-700 rounded-lg text-[13px] mt-1 outline-none focus:border-[#0B57D0] transition bg-transparent"
                                 >
-                                    <option value="USER">USER</option>
-                                    <option value="MANAGER">MANAGER</option>
-                                    <option value="ADMIN">ADMIN</option>
+                                    <option value="USER" className="dark:bg-[#1E1F20]">Nhân viên</option>
+                                    <option value="MANAGER" className="dark:bg-[#1E1F20]">Quản lý</option>
+                                    <option value="ADMIN" className="dark:bg-[#1E1F20]">Quản trị viên</option>
                                 </select>
                             </div>
-                            <div className="flex justify-end gap-2 mt-3">
+                            <div className="flex justify-end gap-2.5 mt-4 pt-2">
                                 <button
                                     type="button"
                                     onClick={() => setShowCreateModal(false)}
-                                    className="px-4 py-2 border rounded-lg text-sm"
+                                    className="h-[36px] px-4 rounded-full border border-[#747775]/40 hover:border-[#1F1F1F] dark:border-neutral-600 dark:hover:border-neutral-400 text-[13px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-[#F0F4F9] dark:hover:bg-neutral-800 transition cursor-pointer"
                                     disabled={isCreating}
                                 >
                                     Hủy
@@ -234,10 +332,10 @@ export default function UsersPage() {
                                 <button
                                     type="submit"
                                     disabled={isCreating}
-                                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                                    className="h-[36px] px-5 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] text-white text-[13px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer shadow-none disabled:opacity-50"
                                 >
                                     {isCreating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                                    Tạo người dùng
+                                    <span>Tạo nhân viên</span>
                                 </button>
                             </div>
                         </form>

@@ -13,6 +13,7 @@ import java.util.UUID;
 public interface ActivityLogRepository extends JpaRepository<ActivityLog, Long> {
     List<ActivityLog> findByCompanyIdOrderByCreatedAtDesc(Long companyId);
     List<ActivityLog> findAllByOrderByCreatedAtDesc();
+    List<ActivityLog> findTop5ByTargetFile_IdOrderByCreatedAtDesc(Long fileId);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE ActivityLog a SET a.targetFile = null WHERE a.targetFile.id = :fileId")

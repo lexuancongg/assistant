@@ -10,10 +10,12 @@ import {
     Presentation,
     FileBox,
     Loader2,
+    MoreHorizontal,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
 import accessRequestService, { AccessRequestDto } from '@/services/access/accessRequestService';
+import UserAvatar from '@/components/common/UserAvatar';
 
 // File Type icon config matching Google Drive
 function getFileTypeConfig(extOrType: string, isFolder = false) {
@@ -92,6 +94,18 @@ function AccessRequestsContent() {
 
     const [selectedRequest, setSelectedRequest] = useState<AccessRequestDto | null>(null);
     const [showDetailDrawer, setShowDetailDrawer] = useState(false);
+    const [openMenuId, setOpenMenuId] = useState<number | string | null>(null);
+
+    useEffect(() => {
+        const handleOutsideClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest('[data-action-menu]')) {
+                setOpenMenuId(null);
+            }
+        };
+        window.addEventListener('mousedown', handleOutsideClick);
+        return () => window.removeEventListener('mousedown', handleOutsideClick);
+    }, []);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -196,7 +210,7 @@ function AccessRequestsContent() {
             </div>
 
             {/* Google Material Tabs */}
-            <div className="flex items-center justify-between border-b border-[#E0E0E0] dark:border-neutral-800 px-6 shrink-0">
+            <div className="flex items-center border-b border-[#E0E0E0] dark:border-neutral-800 px-6 shrink-0">
                 <div className="flex items-center gap-6">
                     {userRole === 'ADMIN' && (
                         <>
@@ -263,29 +277,6 @@ function AccessRequestsContent() {
                         )}
                     </button>
                 </div>
-
-                {/* Filter Chips khi ở tab Tất cả hoặc Yêu cầu của tôi */}
-                {activeTab !== 'pending' && (
-                    <div className="flex items-center gap-1.5 pb-2">
-                        {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((st) => (
-                            <button
-                                key={st}
-                                type="button"
-                                onClick={() => setStatusFilter(st)}
-                                className={`px-3 py-1 rounded-full text-[12px] font-medium transition cursor-pointer ${
-                                    statusFilter === st
-                                        ? 'bg-[#EDF2FA] text-[#0B57D0] dark:bg-neutral-800 dark:text-[#A8C7FA]'
-                                        : 'text-[#444746] dark:text-neutral-400 hover:bg-[#F0F4F9] dark:hover:bg-neutral-800'
-                                }`}
-                            >
-                                {st === 'ALL' && 'Tất cả'}
-                                {st === 'PENDING' && 'Chờ duyệt'}
-                                {st === 'APPROVED' && 'Đã duyệt'}
-                                {st === 'REJECTED' && 'Đã từ chối'}
-                            </button>
-                        ))}
-                    </div>
-                )}
             </div>
 
             {/* Danh sách Table */}
@@ -366,9 +357,12 @@ function AccessRequestsContent() {
                                                 {/* 2. Người yêu cầu */}
                                                 <td className="py-2 px-3">
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <div className="w-6 h-6 rounded-full bg-[#0B57D0] text-white flex items-center justify-center font-medium text-[11px] shrink-0">
-                                                            {initial}
-                                                        </div>
+                                                        <UserAvatar
+                                                            name={req.requesterName}
+                                                            email={req.requesterEmail}
+                                                            avatarUrl={req.requesterAvatar}
+                                                            size="md"
+                                                        />
                                                         <span className="truncate text-[13px] text-[#1F1F1F] dark:text-[#E3E3E3]">
                                                             {req.requesterName || req.requesterEmail}
                                                         </span>
@@ -387,24 +381,56 @@ function AccessRequestsContent() {
 
                                                 {/* 5. Thao tác */}
                                                 <td className="py-2 pr-3 text-right">
-                                                    {req.status === 'PENDING' && activeTab === 'pending' && userRole === 'ADMIN' ? (
-                                                        <div className="flex items-center justify-end gap-2">
+                                                    {req.status === 'PENDING' && userRole === 'ADMIN' ? (
+                                                        <div className="relative inline-block text-right" data-action-menu>
                                                             <button
                                                                 type="button"
                                                                 disabled={isBusy}
-                                                                onClick={(e) => handleReject(req, e)}
-                                                                className="h-[30px] px-3.5 rounded-full border border-[#747775]/40 hover:border-[#1F1F1F] dark:border-neutral-600 dark:hover:border-neutral-400 text-[12.5px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-[#F0F4F9] dark:hover:bg-neutral-800 transition cursor-pointer disabled:opacity-50 inline-flex items-center justify-center"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setOpenMenuId(openMenuId === req.id ? null : req.id);
+                                                                }}
+                                                                className={`w-8 h-8 rounded-full inline-flex items-center justify-center transition cursor-pointer ${
+                                                                    openMenuId === req.id
+                                                                        ? 'bg-[#E8EAED] dark:bg-neutral-700 text-[#1F1F1F]'
+                                                                        : 'text-[#444746] dark:text-neutral-400 hover:text-[#1F1F1F] hover:bg-[#1F1F1F]/8 dark:hover:bg-white/10'
+                                                                }`}
+                                                                title="Thao tác"
                                                             >
-                                                                Từ chối
+                                                                {isBusy ? (
+                                                                    <Loader2 className="w-4 h-4 animate-spin text-[#0B57D0]" />
+                                                                ) : (
+                                                                    <MoreHorizontal className="w-4 h-4" />
+                                                                )}
                                                             </button>
-                                                            <button
-                                                                type="button"
-                                                                disabled={isBusy}
-                                                                onClick={(e) => handleApprove(req, e)}
-                                                                className="h-[30px] px-4 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:scale-[0.98] text-[12.5px] font-medium text-white transition cursor-pointer disabled:opacity-50 shadow-none inline-flex items-center justify-center"
-                                                            >
-                                                                Duyệt
-                                                            </button>
+
+                                                            {openMenuId === req.id && (
+                                                                <div
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="absolute right-0 top-full mt-1 bg-white dark:bg-[#282A2C] rounded-[4px] shadow-[0_2px_8px_rgba(60,64,67,0.2)] border border-gray-100 dark:border-neutral-700 py-1.5 z-50 w-36 animate-in fade-in duration-100 text-left"
+                                                                >
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            setOpenMenuId(null);
+                                                                            handleApprove(req, e);
+                                                                        }}
+                                                                        className="w-full flex items-center justify-between px-3.5 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-neutral-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer transition-colors"
+                                                                    >
+                                                                        <span>Duyệt</span>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            setOpenMenuId(null);
+                                                                            handleReject(req, e);
+                                                                        }}
+                                                                        className="w-full flex items-center justify-between px-3.5 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-neutral-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer transition-colors"
+                                                                    >
+                                                                        <span>Không duyệt</span>
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ) : req.status === 'PENDING' ? (
                                                         <span className="text-[13px] text-[#444746] dark:text-neutral-400">
@@ -504,12 +530,12 @@ function AccessRequestsContent() {
 
                             {/* Actions trong drawer */}
                             {selectedRequest.status === 'PENDING' && userRole === 'ADMIN' && (
-                                <div className="pt-2 flex items-center gap-2">
+                                <div className="pt-2 flex items-center justify-end gap-2">
                                     <button
                                         type="button"
                                         disabled={actionLoadingId === selectedRequest.id}
                                         onClick={() => handleReject(selectedRequest)}
-                                        className="flex-1 py-1.5 rounded-full text-[13px] font-medium text-[#444746] hover:bg-[#F0F4F9] dark:hover:bg-neutral-800 border border-[#DADCE0] dark:border-neutral-700 transition cursor-pointer"
+                                        className="h-[32px] px-4 rounded-full text-[13px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3] hover:bg-[#1F1F1F]/8 dark:hover:bg-white/10 transition cursor-pointer"
                                     >
                                         Từ chối
                                     </button>
@@ -517,7 +543,7 @@ function AccessRequestsContent() {
                                         type="button"
                                         disabled={actionLoadingId === selectedRequest.id}
                                         onClick={() => handleApprove(selectedRequest)}
-                                        className="flex-1 py-1.5 rounded-full text-[13px] font-medium text-white bg-[#0B57D0] hover:bg-[#0842A0] transition cursor-pointer shadow-none"
+                                        className="h-[32px] px-5 rounded-full text-[13px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3] bg-[#E8EAED] hover:bg-[#DADCE0] dark:bg-neutral-800 dark:hover:bg-neutral-700 transition cursor-pointer shadow-none"
                                     >
                                         Duyệt
                                     </button>

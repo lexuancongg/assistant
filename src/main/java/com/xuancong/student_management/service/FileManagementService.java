@@ -5,6 +5,7 @@ import com.xuancong.student_management.dto.file.FilePermissionResponse;
 import com.xuancong.student_management.dto.file.FilePermissionUpdateRequest;
 import com.xuancong.student_management.dto.file.FileVersionResponse;
 import com.xuancong.student_management.dto.file.TrashItemResponse;
+import com.xuancong.student_management.entity.ActivityLog;
 import com.xuancong.student_management.entity.Company;
 import com.xuancong.student_management.entity.Department;
 import com.xuancong.student_management.entity.DocumentChunk;
@@ -96,7 +97,17 @@ public class FileManagementService {
     private final UserStarredFileRepository userStarredFileRepository;
     private final DocumentChunkRepository documentChunkRepository;
     private final AccessRequestRepository accessRequestRepository;
-    private final java.util.concurrent.ConcurrentHashMap<Long, com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest> pendingSaveOptions = new java.util.concurrent.ConcurrentHashMap<>();
+    public static class PendingSaveOption {
+        private final com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest request;
+        private final User user;
+        public PendingSaveOption(com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest request, User user) {
+            this.request = request;
+            this.user = user;
+        }
+        public com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest getRequest() { return request; }
+        public User getUser() { return user; }
+    }
+    private final java.util.concurrent.ConcurrentHashMap<Long, PendingSaveOption> pendingSaveOptions = new java.util.concurrent.ConcurrentHashMap<>();
 
     @org.springframework.beans.factory.annotation.Value("${onlyoffice.url:http://localhost:8083}")
     private String onlyOfficeUrl;
@@ -156,15 +167,35 @@ public class FileManagementService {
         if (currentUser == null) {
             return List.of();
         }
+
+        List<Folder> allFolders = folderRepository.findAll();
+        Set<Long> visibleFolderIds = folderService.getVisibleFolderIds(currentUser, allFolders);
+
         return fileItemRepository.findByDeletedAtIsNull()
                 .stream()
                 .filter(f -> {
-                    // Loại bỏ các tệp do chính user hiện tại tải lên
+                    // 1. Loại bỏ các tệp do chính user hiện tại tải lên
                     if (f.getUploadedBy() != null && f.getUploadedBy().getId().equals(currentUser.getId())) {
                         return false;
                     }
-                    // Phải có quyền xem trở lên
-                    return hasFileAccess(f, currentUser, PermissionLevel.VIEWER);
+
+                    // 2. Phải có quyền xem trở lên
+                    if (!hasFileAccess(f, currentUser, PermissionLevel.VIEWER)) {
+                        return false;
+                    }
+
+                    // 3. Nếu tệp này nằm trong một thư mục mà user ĐÃ THẤY trên cây thư mục Drive của mình
+                    // (Ví dụ: thư mục RTW thuộc bộ phận của user, hoặc thư mục đã được hiển thị theo cấu trúc thư mục tới file đó),
+                    // thì tệp này thuộc về cây thư mục đó trong "Drive của tôi", KHÔNG ĐƯỢC nằm ở "Được chia sẻ với tôi".
+                    if (f.getFolder() != null && visibleFolderIds.contains(f.getFolder().getId())) {
+                        return false;
+                    }
+
+                    // 4. Các trường hợp:
+                    // - File không nằm trong thư mục nào (folderId == null) được chia sẻ cho user
+                    // - File nằm trong thư mục mà user KHÔNG được xem cấu trúc thư mục (như file sao chép link về xin quyền, file chia sẻ qua link)
+                    // => BẮT BUỘC nằm ở mục "Được chia sẻ với tôi"!
+                    return true;
                 })
                 .map(this::toFileResponse)
                 .toList();
@@ -1133,8 +1164,27 @@ public class FileManagementService {
     /** Lấy danh sách phân quyền của file */
     @Transactional(readOnly = true)
     public List<FilePermissionResponse> getPermissions(Long fileId) {
+        FileItem file = getOrThrow(fileId);
         List<FilePermission> list = filePermissionRepository.findByFileId(fileId);
-        return list.stream().map(this::toPermissionResponse).toList();
+        if (list != null && !list.isEmpty()) {
+            return list.stream().map(p -> toPermissionResponse(p, false, null)).toList();
+        }
+
+        // Nếu file đang ở chế độ INHERIT và nằm trong thư mục, kế thừa từ cây thư mục cha
+        FileVisibility visibility = file.getVisibility() != null ? file.getVisibility() : FileVisibility.INHERIT;
+        if (visibility == FileVisibility.INHERIT && file.getFolder() != null) {
+            Folder curr = file.getFolder();
+            while (curr != null) {
+                List<FolderPermission> parentList = folderPermissionRepository.findByFolderId(curr.getId());
+                if (parentList != null && !parentList.isEmpty()) {
+                    final String parentName = curr.getName();
+                    return parentList.stream().map(fp -> toFolderPermissionToFileResponse(fileId, fp, true, parentName)).toList();
+                }
+                curr = curr.getParent();
+            }
+        }
+
+        return List.of();
     }
 
     /** Cập nhật phân quyền cho file (lưu trực tiếp vào CSDL) */
@@ -1182,6 +1232,10 @@ public class FileManagementService {
     }
 
     private FilePermissionResponse toPermissionResponse(FilePermission p) {
+        return toPermissionResponse(p, false, null);
+    }
+
+    private FilePermissionResponse toPermissionResponse(FilePermission p, boolean inherited, String inheritedFromName) {
         String name = "Không xác định";
         String detail = "";
 
@@ -1207,7 +1261,41 @@ public class FileManagementService {
                 name,
                 detail,
                 p.getLevel(),
+                inherited,
+                inheritedFromName,
                 p.getCreatedAt()
+        );
+    }
+
+    private FilePermissionResponse toFolderPermissionToFileResponse(Long fileId, FolderPermission fp, boolean inherited, String inheritedFromName) {
+        String name = "Không xác định";
+        String detail = "";
+
+        if (fp.getSubjectType() == PermissionSubjectType.DEPARTMENT) {
+            Department dept = departmentRepository.findById(fp.getSubjectId()).orElse(null);
+            if (dept != null) {
+                name = dept.getName();
+                detail = "Phòng ban";
+            }
+        } else if (fp.getSubjectType() == PermissionSubjectType.USER) {
+            User u = userRepository.findById(fp.getSubjectId()).orElse(null);
+            if (u != null) {
+                name = u.getName() != null ? u.getName() : u.getEmail();
+                detail = u.getEmail();
+            }
+        }
+
+        return new FilePermissionResponse(
+                fp.getId(),
+                fileId,
+                fp.getSubjectType(),
+                fp.getSubjectId(),
+                name,
+                detail,
+                fp.getLevel(),
+                inherited,
+                inheritedFromName,
+                fp.getCreatedAt()
         );
     }
 
@@ -1648,8 +1736,33 @@ public class FileManagementService {
     @Transactional
     public void setOnlyOfficeSaveOptions(Long fileId, com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest request) {
         if (request != null) {
-            log.info("Setting pending ONLYOFFICE save options for file {}: mode={}, desc={}", fileId, request.getSaveMode(), request.getChangeDescription());
-            pendingSaveOptions.put(fileId, request);
+            User currentUser = getAuthenticatedUser();
+            log.info("Setting pending ONLYOFFICE save options for file {}: mode={}, desc={}, user={}",
+                    fileId, request.getSaveMode(), request.getChangeDescription(), currentUser != null ? currentUser.getEmail() : "anonymous");
+            pendingSaveOptions.put(fileId, new PendingSaveOption(request, currentUser));
+
+            if (request.getChangeDescription() != null && !request.getChangeDescription().isBlank()) {
+                String desc = request.getChangeDescription().trim();
+                try {
+                    List<ActivityLog> recentLogs = activityLogRepository.findTop5ByTargetFile_IdOrderByCreatedAtDesc(fileId);
+                    Instant cutoff = Instant.now().minusSeconds(600);
+                    for (ActivityLog al : recentLogs) {
+                        if (al.getCreatedAt() != null && al.getCreatedAt().isAfter(cutoff) && al.getActionType() == ActivityType.UPDATE) {
+                            Map<String, Object> m = al.getMetadata() != null ? new HashMap<>(al.getMetadata()) : new HashMap<>();
+                            m.put("changeDescription", desc);
+                            al.setMetadata(m);
+                            if (currentUser != null) {
+                                al.setActor(currentUser);
+                            }
+                            activityLogRepository.save(al);
+                            log.info("Updated existing recent activity log {} with changeDescription: {}", al.getId(), desc);
+                            break;
+                        }
+                    }
+                } catch (Exception ex) {
+                    log.warn("Could not backfill changeDescription into recent activity log for file {}: {}", fileId, ex.getMessage());
+                }
+            }
         }
     }
 
@@ -1674,7 +1787,9 @@ public class FileManagementService {
 
         Integer status = payload != null && payload.get("status") instanceof Number ? ((Number) payload.get("status")).intValue() : null;
         if (status != null && (status == 2 || status == 6)) {
-            com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest options = pendingSaveOptions.remove(fileId);
+            PendingSaveOption pending = pendingSaveOptions.remove(fileId);
+            com.xuancong.student_management.dto.file.OnlyOfficeSaveOptionsRequest options = pending != null ? pending.getRequest() : null;
+            User editorUser = pending != null && pending.getUser() != null ? pending.getUser() : null;
             if (options != null && "DISCARD".equalsIgnoreCase(options.getSaveMode())) {
                 log.info("ONLYOFFICE save discarded by user choice for file {}", fileId);
                 return Map.of("error", 0);
@@ -1740,12 +1855,18 @@ public class FileManagementService {
                             log.warn("Could not trigger AI re-indexing for file {}: {}", fileId, aiEx.getMessage());
                         }
 
+                        Map<String, Object> meta = new HashMap<>();
+                        meta.put("action", "ONLYOFFICE_OVERWRITE");
+                        meta.put("fileName", file.getName());
+                        if (options != null && options.getChangeDescription() != null && !options.getChangeDescription().isBlank()) {
+                            meta.put("changeDescription", options.getChangeDescription().trim());
+                        }
                         activityLogManagementService.logActivity(
                                 file.getCompany(),
-                                file.getUploadedBy(),
+                                editorUser != null ? editorUser : file.getUploadedBy(),
                                 com.xuancong.student_management.entity.enums.ActivityType.UPDATE,
                                 file,
-                                Map.of("action", "ONLYOFFICE_OVERWRITE", "fileName", file.getName())
+                                meta
                         );
                         log.info("ONLYOFFICE overwrite successfully processed for file {}", fileId);
                     } else {
@@ -1782,7 +1903,7 @@ public class FileManagementService {
                         }
                         activityLogManagementService.logActivity(
                                 file.getCompany(),
-                                file.getUploadedBy(),
+                                editorUser != null ? editorUser : file.getUploadedBy(),
                                 com.xuancong.student_management.entity.enums.ActivityType.UPDATE,
                                 file,
                                 meta

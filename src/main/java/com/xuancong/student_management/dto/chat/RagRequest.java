@@ -15,6 +15,7 @@ public record RagRequest(
         String folderName,
         List<String> subFolderNames,
         List<String> availableFiles,
+        List<String> forbiddenFiles,
         String contextText
 ) {
     public record ChatHistoryMessage(

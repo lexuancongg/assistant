@@ -43,10 +43,11 @@ Nhiệm vụ của bạn là hỗ trợ người dùng tra cứu, phân tích t�
    - **Khi người dùng hỏi về bảng biểu, số liệu so sánh**:
      + Trình bày rõ ràng hoặc dưới dạng bảng Markdown, giữ nguyên số liệu chính xác trong tài liệu, không làm tròn sai lệch.
 
-3. **TRUNG THỰC VÀ GIỚI HẠN THÔNG TIN**:
-   - Chỉ trả lời dựa trên thông tin thực tế trong [DANH SÁCH TÀI LIỆU HIỆN CÓ] hoặc [NGỮ CẢNH TRÍCH XUẤT].
+3. **TRUNG THỰC VÀ BẢO MẬT PHẠM VI TRUY CẬP (RẤT QUAN TRỌNG)**:
+   - Khi người dùng hỏi về một file/tài liệu cụ thể mà không có trong danh mục tài liệu được phép hoặc không có trong ngữ cảnh trích xuất: TUYỆT ĐỐI KHÔNG dùng tài liệu khác để trả lời thay thế.
+   - Bắt buộc trả lời: *"Không tìm thấy nội dung tài liệu phù hợp trong các tài liệu bạn có quyền truy cập hoặc bạn không có quyền truy cập vào tài liệu này."*
+   - Chỉ trả lời dựa trên thông tin thực tế trong các đoạn trích nội dung của đúng tài liệu liên quan.
    - Không tự suy diễn hay bịa đặt thông tin.
-   - Nếu ngữ cảnh không có thông tin, chỉ trả lời 1 câu duy nhất: *"Không tìm thấy thông tin phù hợp trong các tài liệu hiện có."*
 
 4. **ĐỊNH DẠNG**:
    - Sử dụng Markdown chuẩn, gạch đầu dòng (`-`), in đậm từ khóa cốt lõi giúp người dùng nắm bắt thông tin ngay tức thì."""
@@ -85,6 +86,7 @@ class ChatService:
                 folder_name=getattr(request, "folderName", None),
                 sub_folder_names=getattr(request, "subFolderNames", None),
                 available_files=getattr(request, "availableFiles", None),
+                forbidden_files=getattr(request, "forbiddenFiles", None),
                 context_text=getattr(request, "contextText", None),
             )
             return RagResponse(
@@ -132,7 +134,13 @@ class ChatService:
 
         # Áp dụng Hybrid Cross-Scoring Reranker (Dense + Lexical BM25 + Exact Match)
         reranked_hits = self.reranker_service.rerank(query=request.question, candidates=raw_hits)
-        top_hits = reranked_hits[:DEFAULT_TOP_K]
+        RELEVANT_THRESHOLD = 0.42
+        relevant_hits = [
+            hit for hit in reranked_hits
+            if float(hit.get("rerank_score", 0.0)) >= RELEVANT_THRESHOLD
+            and (float(hit.get("lexical_score", 0.0)) > 0.04 or float(hit.get("dense_score", 0.0)) >= 0.68 or hit.get("exact_bonus", 0.0) > 0)
+        ]
+        top_hits = relevant_hits[:DEFAULT_TOP_K]
 
         sources = [
             SourceChunk(

@@ -161,6 +161,9 @@ export default function OnlyOfficeEditorModal({
                 changeDescription: changeDescription.trim() || undefined
             });
             toast.success('Đang lưu tài liệu...');
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('activity-log-updated'));
+            }
             if (onFileSaved) onFileSaved();
         } catch (err: any) {
             toast.error(err?.message || 'Có lỗi xảy ra khi lưu tùy chọn');

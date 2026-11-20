@@ -20,6 +20,7 @@ import userService, { UserDto } from '@/services/user/userService';
 import forderService, { FolderPermissionDto } from '@/services/forder/forderService';
 import fileManagementService from '@/services/files/fileManagementService';
 import toast from 'react-hot-toast';
+import UserAvatar from '@/components/common/UserAvatar';
 
 interface ShareModalProps {
     isOpen: boolean;
@@ -156,6 +157,18 @@ export default function ShareModal({
                     setOwner(usersData[0]);
                 }
 
+                let isAuthorizedToManageOwner = false;
+                try {
+                    const stored = localStorage.getItem('user');
+                    if (stored) {
+                        const u = JSON.parse(stored);
+                        if (u.role === 'ADMIN' || (fileDetail?.uploadedByEmail && u.email === fileDetail.uploadedByEmail)) {
+                            isAuthorizedToManageOwner = true;
+                        }
+                    }
+                } catch (e) {}
+                setCanManageOwner(isAuthorizedToManageOwner);
+
                 if (fileDetail?.visibility === 'COMPANY') setScope('Toàn công ty');
                 else if (fileDetail?.visibility === 'PRIVATE') setScope('Riêng tư');
                 else setScope('Hạn chế');
@@ -172,6 +185,8 @@ export default function ShareModal({
                             name: d ? d.name : p.subjectName || 'Phòng ban',
                             memberCount: d?.members ? d.members.length : 0,
                             level: p.level === 'EDITOR' ? 'EDITOR' : 'VIEWER',
+                            isInherited: p.inherited,
+                            inheritedFromName: p.inheritedFromName,
                         });
                     } else if (p.subjectType === 'USER') {
                         const u = usersData.find((x) => String(x.id) === String(p.subjectId));
@@ -181,6 +196,8 @@ export default function ShareModal({
                             name: u ? u.name : p.subjectName || 'Người dùng',
                             email: u ? u.email : p.subjectDetail || '',
                             level: p.level as any,
+                            isInherited: p.inherited,
+                            inheritedFromName: p.inheritedFromName,
                         });
                     }
                 });
@@ -634,9 +651,12 @@ export default function ShareModal({
                                                 className="w-full flex items-center justify-between px-2.5 py-2 hover:bg-[#F0F4F9] dark:hover:bg-slate-700/60 rounded-lg text-left transition cursor-pointer"
                                             >
                                                 <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-full bg-[#D3E3FD] text-[#041E49] font-medium text-[13px] flex items-center justify-center shrink-0">
-                                                        {(user.name || user.email).charAt(0).toUpperCase()}
-                                                    </div>
+                                                    <UserAvatar
+                                                        name={user.name}
+                                                        email={user.email}
+                                                        avatarUrl={(user as any).avatarUrl}
+                                                        size="lg"
+                                                    />
                                                     <div className="min-w-0 truncate">
                                                         <div className="truncate text-[13.5px] font-medium text-[#1F1F1F] dark:text-[#E3E3E3]">
                                                             {user.name}
@@ -670,9 +690,13 @@ export default function ShareModal({
                                 {owner && (
                                     <div className="flex items-center justify-between py-0.5">
                                         <div className="flex items-center gap-3 min-w-0">
-                                            <div className="w-8 h-8 rounded-full bg-[#3F51B5] text-white flex items-center justify-center font-medium text-[13px] shrink-0">
-                                                {(owner.name || owner.email).charAt(0).toUpperCase()}
-                                            </div>
+                                            <UserAvatar
+                                                name={owner.name}
+                                                email={owner.email}
+                                                avatarUrl={owner.avatarUrl}
+                                                isCurrentUser={isCurrentUserOwner}
+                                                size="lg"
+                                            />
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate">
@@ -754,9 +778,12 @@ export default function ShareModal({
                                                                                             }`}
                                                                                         >
                                                                                             <div className="flex items-center gap-2.5 min-w-0">
-                                                                                                <div className="w-6 h-6 rounded-full bg-[#0B57D0] text-white text-[10px] flex items-center justify-center shrink-0 font-medium">
-                                                                                                    {(u.name || u.email).charAt(0).toUpperCase()}
-                                                                                                </div>
+                                                                                                <UserAvatar
+                                                                                                    name={u.name}
+                                                                                                    email={u.email}
+                                                                                                    avatarUrl={u.avatarUrl}
+                                                                                                    size="md"
+                                                                                                />
                                                                                                 <div className="min-w-0">
                                                                                                     <div className="truncate font-medium text-[12.5px]">{u.name}</div>
                                                                                                     <div className="truncate text-[11px] text-[#444746] dark:text-slate-400">{u.email}</div>
@@ -786,9 +813,12 @@ export default function ShareModal({
                                                                                             }`}
                                                                                         >
                                                                                             <div className="flex items-center gap-2.5 min-w-0">
-                                                                                                <div className="w-6 h-6 rounded-full bg-gray-400 text-white text-[10px] flex items-center justify-center shrink-0">
-                                                                                                    {(u.name || u.email).charAt(0).toUpperCase()}
-                                                                                                </div>
+                                                                                                <UserAvatar
+                                                                                                    name={u.name}
+                                                                                                    email={u.email}
+                                                                                                    avatarUrl={u.avatarUrl}
+                                                                                                    size="md"
+                                                                                                />
                                                                                                 <div className="min-w-0">
                                                                                                     <div className="truncate font-medium text-[12.5px]">{u.name}</div>
                                                                                                     <div className="truncate text-[11px] text-[#444746] dark:text-slate-400">{u.email}</div>
@@ -839,34 +869,12 @@ export default function ShareModal({
                                                     <div className="w-8 h-8 rounded-full bg-[#E8DEF8] dark:bg-purple-950/60 text-[#1D192B] dark:text-purple-300 flex items-center justify-center shrink-0">
                                                         <Building2 className="w-4 h-4" />
                                                     </div>
-                                                    <div className="min-w-0">
-                                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                                            <span className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate font-normal">
-                                                                {dept.name}
-                                                            </span>
-                                                            {dept.isInherited && (
-                                                                <span className="text-[11px] text-[#444746] dark:text-slate-400 bg-[#F0F4F9] dark:bg-slate-800 px-1.5 py-0.5 rounded font-normal shrink-0">
-                                                                    Kế thừa từ {dept.inheritedFromName ? `"${dept.inheritedFromName}"` : 'thư mục cha'}
-                                                                </span>
-                                                            )}
+                                                    <div className="min-w-0" title={dept.isInherited ? `Kế thừa từ ${dept.inheritedFromName || 'thư mục cha'}` : undefined}>
+                                                        <div className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate font-normal">
+                                                            {dept.name}
                                                         </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-[12px] text-[#444746] dark:text-slate-400">
-                                                                {dept.memberCount} thành viên
-                                                            </span>
-                                                            {deptMembers.length > 0 && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => toggleDeptExpand(dept.id)}
-                                                                    className="text-[12px] text-[#0B57D0] dark:text-[#A8C7FA] hover:underline font-medium inline-flex items-center gap-0.5 cursor-pointer"
-                                                                >
-                                                                    {isExpanded ? (
-                                                                        <>Thu gọn <ChevronUp className="w-3 h-3" /></>
-                                                                    ) : (
-                                                                        <>Xem thành viên <ChevronDown className="w-3 h-3" /></>
-                                                                    )}
-                                                                </button>
-                                                            )}
+                                                        <div className="text-[12px] text-[#444746] dark:text-slate-400 truncate">
+                                                            Nhóm • {dept.memberCount || deptMembers.length || 0} thành viên
                                                         </div>
                                                     </div>
                                                 </div>
@@ -878,26 +886,26 @@ export default function ShareModal({
                                                         onClick={() => setOpenDropdownId(openDropdownId === dropdownKey ? null : dropdownKey)}
                                                         className="h-[32px] px-2 rounded-[4px] hover:bg-[#F0F4F9] dark:hover:bg-slate-800 text-[13.5px] font-normal text-[#1F1F1F] dark:text-[#E3E3E3] flex items-center gap-1 transition cursor-pointer"
                                                     >
-                                                        <span>{dept.level === 'EDITOR' ? 'Người chỉnh sửa' : 'Người xem'}</span>
+                                                        <span>{dept.level === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}</span>
                                                         <ChevronDown className="w-4 h-4 text-[#444746]" />
                                                     </button>
 
                                                     {openDropdownId === dropdownKey && (
-                                                        <div className="absolute right-0 top-full mt-1 bg-white dark:bg-[#282A2C] rounded-[4px] shadow-[0_2px_8px_rgba(60,64,67,0.2)] border border-gray-100 dark:border-slate-700 py-1.5 z-[60] w-52 animate-in fade-in duration-100">
+                                                        <div className="absolute right-0 top-full mt-1 bg-white dark:bg-[#282A2C] rounded-[4px] shadow-[0_2px_8px_rgba(60,64,67,0.2)] border border-gray-100 dark:border-slate-700 py-1.5 z-[60] w-48 animate-in fade-in duration-100">
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleDeptLevelChange(dept.id, 'VIEWER')}
-                                                                className="w-full flex items-center justify-between px-4 py-2.5 text-left text-[13.5px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
+                                                                className="w-full flex items-center justify-between px-4 py-2 text-left text-[13.5px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
                                                             >
-                                                                <span>Người xem</span>
+                                                                <span>Xem</span>
                                                                 {dept.level === 'VIEWER' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                             </button>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleDeptLevelChange(dept.id, 'EDITOR')}
-                                                                className="w-full flex items-center justify-between px-4 py-2.5 text-left text-[13.5px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
+                                                                className="w-full flex items-center justify-between px-4 py-2 text-left text-[13.5px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
                                                             >
-                                                                <span>Người chỉnh sửa</span>
+                                                                <span>Chỉnh sửa</span>
                                                                 {dept.level === 'EDITOR' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                             </button>
                                                             <div className="border-t border-gray-100 dark:border-slate-700 my-1" />
@@ -907,7 +915,7 @@ export default function ShareModal({
                                                                     handleRemoveDepartment(dept.id);
                                                                     setOpenDropdownId(null);
                                                                 }}
-                                                                className="w-full px-4 py-2.5 text-left text-[13.5px] hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 cursor-pointer"
+                                                                className="w-full px-4 py-2 text-left text-[13.5px] hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 cursor-pointer"
                                                             >
                                                                 Xóa quyền
                                                             </button>
@@ -923,10 +931,10 @@ export default function ShareModal({
                                                         const currentOverride = memberOverrides[String(member.userId)] || 'INHERIT';
                                                         const memberDropdownKey = `member-${member.userId}`;
 
-                                                        // Nếu không override thì hiển thị đúng quyền của phòng ban ("Người xem" hoặc "Người chỉnh sửa")
-                                                        let roleLabel = dept.level === 'EDITOR' ? 'Người chỉnh sửa' : 'Người xem';
-                                                        if (currentOverride === 'EDITOR') roleLabel = 'Người chỉnh sửa';
-                                                        if (currentOverride === 'VIEWER') roleLabel = 'Người xem';
+                                                        // Nếu không override thì hiển thị đúng quyền của phòng ban ("Xem" hoặc "Chỉnh sửa")
+                                                        let roleLabel = dept.level === 'EDITOR' ? 'Chỉnh sửa' : 'Xem';
+                                                        if (currentOverride === 'EDITOR') roleLabel = 'Chỉnh sửa';
+                                                        if (currentOverride === 'VIEWER') roleLabel = 'Xem';
                                                         if (currentOverride === 'DENY') roleLabel = 'Chặn truy cập';
 
                                                         return (
@@ -948,7 +956,7 @@ export default function ShareModal({
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Custom Dropdown cho từng thành viên: Hiển thị trực tiếp Người xem / Người chỉnh sửa */}
+                                                                {/* Custom Dropdown cho từng thành viên: Hiển thị trực tiếp Xem / Chỉnh sửa */}
                                                                 <div className="relative shrink-0 ml-2" data-dropdown-container>
                                                                     <button
                                                                         type="button"
@@ -960,23 +968,23 @@ export default function ShareModal({
                                                                     </button>
 
                                                                     {openDropdownId === memberDropdownKey && (
-                                                                        <div className="absolute right-0 top-full mt-1 bg-white dark:bg-[#282A2C] rounded-[4px] shadow-[0_2px_8px_rgba(60,64,67,0.2)] border border-gray-100 dark:border-slate-700 py-1.5 z-[60] w-52 animate-in fade-in duration-100">
+                                                                        <div className="absolute right-0 top-full mt-1 bg-white dark:bg-[#282A2C] rounded-[4px] shadow-[0_2px_8px_rgba(60,64,67,0.2)] border border-gray-100 dark:border-slate-700 py-1.5 z-[60] w-48 animate-in fade-in duration-100">
                                                                             {dept.level === 'VIEWER' ? (
                                                                                 <>
                                                                                     <button
                                                                                         type="button"
                                                                                         onClick={() => handleMemberOverride(member.userId, 'INHERIT')}
-                                                                                        className="w-full flex items-center justify-between px-4 py-2.5 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
+                                                                                        className="w-full flex items-center justify-between px-4 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
                                                                                     >
-                                                                                        <span>Người xem</span>
+                                                                                        <span>Xem</span>
                                                                                         {(currentOverride === 'INHERIT' || currentOverride === 'VIEWER') && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                                                     </button>
                                                                                     <button
                                                                                         type="button"
                                                                                         onClick={() => handleMemberOverride(member.userId, 'EDITOR')}
-                                                                                        className="w-full flex items-center justify-between px-4 py-2.5 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
+                                                                                        className="w-full flex items-center justify-between px-4 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
                                                                                     >
-                                                                                        <span>Người chỉnh sửa</span>
+                                                                                        <span>Chỉnh sửa</span>
                                                                                         {currentOverride === 'EDITOR' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                                                     </button>
                                                                                 </>
@@ -985,17 +993,17 @@ export default function ShareModal({
                                                                                     <button
                                                                                         type="button"
                                                                                         onClick={() => handleMemberOverride(member.userId, 'INHERIT')}
-                                                                                        className="w-full flex items-center justify-between px-4 py-2.5 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
+                                                                                        className="w-full flex items-center justify-between px-4 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
                                                                                     >
-                                                                                        <span>Người chỉnh sửa</span>
+                                                                                        <span>Chỉnh sửa</span>
                                                                                         {(currentOverride === 'INHERIT' || currentOverride === 'EDITOR') && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                                                     </button>
                                                                                     <button
                                                                                         type="button"
                                                                                         onClick={() => handleMemberOverride(member.userId, 'VIEWER')}
-                                                                                        className="w-full flex items-center justify-between px-4 py-2.5 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
+                                                                                        className="w-full flex items-center justify-between px-4 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
                                                                                     >
-                                                                                        <span>Người xem</span>
+                                                                                        <span>Xem</span>
                                                                                         {currentOverride === 'VIEWER' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                                                     </button>
                                                                                 </>
@@ -1043,26 +1051,22 @@ export default function ShareModal({
                                     }))
                                     .map((user) => {
                                         const userDropdownKey = `user-${user.id}`;
-                                        let userRoleText = 'Người xem';
-                                        if (user.level === 'EDITOR') userRoleText = 'Người chỉnh sửa';
+                                        let userRoleText = 'Xem';
+                                        if (user.level === 'EDITOR') userRoleText = 'Chỉnh sửa';
                                         if (user.level === 'DENY') userRoleText = 'Chặn truy cập';
 
                                         return (
                                             <div key={user.id} className="flex items-center justify-between py-0.5">
                                                 <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-full bg-[#D3E3FD] text-[#041E49] flex items-center justify-center font-medium text-[13px] shrink-0">
-                                                        {(user.name || user.email).charAt(0).toUpperCase()}
-                                                    </div>
-                                                    <div className="min-w-0">
-                                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                                            <span className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate font-normal">
-                                                                {user.name}
-                                                            </span>
-                                                            {user.isInherited && (
-                                                                <span className="text-[11px] text-[#444746] dark:text-slate-400 bg-[#F0F4F9] dark:bg-slate-800 px-1.5 py-0.5 rounded font-normal shrink-0">
-                                                                    Kế thừa từ {user.inheritedFromName ? `"${user.inheritedFromName}"` : 'thư mục cha'}
-                                                                </span>
-                                                            )}
+                                                    <UserAvatar
+                                                        name={user.name}
+                                                        email={user.email}
+                                                        avatarUrl={(user as any).avatarUrl}
+                                                        size="lg"
+                                                    />
+                                                    <div className="min-w-0" title={user.isInherited ? `Kế thừa từ ${user.inheritedFromName || 'thư mục cha'}` : undefined}>
+                                                        <div className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3] truncate font-normal">
+                                                            {user.name}
                                                         </div>
                                                         <div className="text-[12px] text-[#444746] dark:text-slate-400 truncate">
                                                             {user.email}
@@ -1087,7 +1091,7 @@ export default function ShareModal({
                                                                 onClick={() => handleUserLevelChange(user.id, 'VIEWER')}
                                                                 className="w-full flex items-center justify-between px-3.5 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
                                                             >
-                                                                <span>Người xem</span>
+                                                                <span>Xem</span>
                                                                 {user.level === 'VIEWER' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                             </button>
                                                             <button
@@ -1095,7 +1099,7 @@ export default function ShareModal({
                                                                 onClick={() => handleUserLevelChange(user.id, 'EDITOR')}
                                                                 className="w-full flex items-center justify-between px-3.5 py-2 text-left text-[13px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
                                                             >
-                                                                <span>Người chỉnh sửa</span>
+                                                                <span>Chỉnh sửa</span>
                                                                 {user.level === 'EDITOR' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                             </button>
 
@@ -1165,7 +1169,7 @@ export default function ShareModal({
                                             className="h-[28px] -ml-2 px-2 rounded-[4px] hover:bg-[#F0F4F9] dark:hover:bg-slate-800 text-[13.5px] font-normal text-[#1F1F1F] dark:text-[#E3E3E3] flex items-center gap-1 transition cursor-pointer"
                                         >
                                             <span>
-                                                {scope === 'Toàn công ty' ? 'Toàn công ty' : (scope === 'Riêng tư' ? 'Riêng tư' : 'Bị hạn chế')}
+                                                {scope === 'Toàn công ty' ? 'Toàn công ty' : (scope === 'Riêng tư' ? 'Riêng tư' : 'Hạn chế')}
                                             </span>
                                             <ChevronDown className="w-4 h-4 text-[#444746]" />
                                         </button>
@@ -1180,7 +1184,7 @@ export default function ShareModal({
                                                     }}
                                                     className="w-full flex items-center justify-between px-4 py-2.5 text-left text-[13.5px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
                                                 >
-                                                    <span>Bị hạn chế</span>
+                                                    <span>Hạn chế</span>
                                                     {scope === 'Hạn chế' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                                 </button>
                                                 <button
@@ -1214,47 +1218,40 @@ export default function ShareModal({
                                     onClick={() => setOpenDropdownId(openDropdownId === 'general-role-dropdown' ? null : 'general-role-dropdown')}
                                     className="h-[32px] px-2 rounded-[4px] hover:bg-[#F0F4F9] dark:hover:bg-slate-800 text-[13.5px] font-normal text-[#1F1F1F] dark:text-[#E3E3E3] flex items-center gap-1 transition cursor-pointer"
                                 >
-                                    <span>{generalRole === 'EDITOR' ? 'Người chỉnh sửa' : 'Người xem'}</span>
+                                    <span>{generalRole === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}</span>
                                     <ChevronDown className="w-4 h-4 text-[#444746]" />
                                 </button>
 
                                 {openDropdownId === 'general-role-dropdown' && (
-                                    <div className="absolute right-0 top-full mt-1 bg-white dark:bg-[#282A2C] rounded-[4px] shadow-[0_2px_8px_rgba(60,64,67,0.2)] border border-gray-100 dark:border-slate-700 py-2 z-50 w-64 animate-in fade-in duration-100">
+                                    <div className="absolute right-0 top-full mt-1 bg-white dark:bg-[#282A2C] rounded-[4px] shadow-[0_2px_8px_rgba(60,64,67,0.2)] border border-gray-100 dark:border-slate-700 py-1.5 z-50 w-44 animate-in fade-in duration-100">
                                         <div className="px-4 pt-1 pb-1.5 text-[11px] font-semibold text-[#444746] dark:text-slate-400 tracking-wider uppercase">
                                             VAI TRÒ
                                         </div>
 
-                                        {/* Tùy chọn 1: Người xem */}
+                                        {/* Tùy chọn 1: Xem */}
                                         <button
                                             type="button"
                                             onClick={() => {
                                                 setGeneralRole('VIEWER');
                                                 setOpenDropdownId(null);
                                             }}
-                                            className="w-full flex items-center gap-3 px-4 py-2 text-left text-[13.5px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
+                                            className="w-full flex items-center justify-between px-4 py-2 text-left text-[13.5px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
                                         >
-                                            <span className="w-4 flex items-center justify-center shrink-0">
-                                                {generalRole === 'VIEWER' && <Check className="w-4 h-4 text-[#0B57D0]" />}
-                                            </span>
-                                            <span>Người xem</span>
+                                            <span>Xem</span>
+                                            {generalRole === 'VIEWER' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                         </button>
 
-                                        {/* Tùy chọn 2: Người chỉnh sửa (đã bỏ Người nhận xét) */}
+                                        {/* Tùy chọn 2: Chỉnh sửa */}
                                         <button
                                             type="button"
                                             onClick={() => {
                                                 setGeneralRole('EDITOR');
                                                 setOpenDropdownId(null);
                                             }}
-                                            className="w-full flex items-start gap-3 px-4 py-2 text-left hover:bg-[#F0F4F9] dark:hover:bg-slate-700 cursor-pointer"
+                                            className="w-full flex items-center justify-between px-4 py-2 text-left text-[13.5px] hover:bg-[#F0F4F9] dark:hover:bg-slate-700 text-[#1F1F1F] dark:text-[#E3E3E3] cursor-pointer"
                                         >
-                                            <span className="w-4 flex items-center justify-center shrink-0 mt-0.5">
-                                                {generalRole === 'EDITOR' && <Check className="w-4 h-4 text-[#0B57D0]" />}
-                                            </span>
-                                            <div className="flex flex-col">
-                                                <span className="text-[13.5px] text-[#1F1F1F] dark:text-[#E3E3E3]">Người chỉnh sửa</span>
-                                                <span className="text-[12px] text-[#444746] dark:text-slate-400">Sắp xếp, thêm và chỉnh sửa tệp</span>
-                                            </div>
+                                            <span>Chỉnh sửa</span>
+                                            {generalRole === 'EDITOR' && <Check className="w-4 h-4 text-[#0B57D0]" />}
                                         </button>
                                     </div>
                                 )}

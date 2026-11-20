@@ -43,6 +43,7 @@ import fileManagementService, { TrashItemDto } from '@/services/files/fileManage
 import toast from 'react-hot-toast';
 
 import FileThumbnailPreview from '@/components/files/FileThumbnailPreview';
+import UserAvatar from '@/components/common/UserAvatar';
 
 // File Type Configuration (Matches Google Drive & Home page)
 function getFileTypeConfig(extOrType: string) {
@@ -947,9 +948,11 @@ export default function TrashPage() {
                                             {/* Bottom row */}
                                             <div className="flex items-center justify-between mt-2 pt-1 border-t border-gray-100 dark:border-slate-800/60 text-[11px] text-[#444746] dark:text-slate-400">
                                                 <div className="flex items-center gap-1.5 truncate">
-                                                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-medium ${getAvatarColor(item.deletedBy)}`}>
-                                                        {(item.deletedBy || 'T')[0].toUpperCase()}
-                                                    </div>
+                                                    <UserAvatar
+                                                        name={isOwnerMe ? 'tôi' : item.deletedBy}
+                                                        isCurrentUser={Boolean(isOwnerMe)}
+                                                        size="xs"
+                                                    />
                                                     <span className="truncate">{isOwnerMe ? 'tôi' : item.deletedBy}</span>
                                                 </div>
                                                 <span className="shrink-0">{item.size || '33 KB'}</span>
@@ -1223,11 +1226,11 @@ export default function TrashPage() {
                 {/* 2. Chủ sở hữu Column */}
                 <td className="py-2 px-3">
                     <div className="flex items-center gap-2 min-w-0">
-                        <div
-                            className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0 ${getAvatarColor(ownerDisplay)}`}
-                        >
-                            {(ownerDisplay || 'T')[0].toUpperCase()}
-                        </div>
+                        <UserAvatar
+                            name={ownerDisplay}
+                            isCurrentUser={Boolean(isOwnerMe)}
+                            size="sm"
+                        />
                         <span className="truncate text-[12px] text-[#444746] dark:text-slate-300">
                             {ownerDisplay}
                         </span>

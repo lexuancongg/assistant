@@ -39,6 +39,7 @@ import toast from 'react-hot-toast';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
 import fileManagementService, { FileItemDto } from '@/services/files/fileManagementService';
 import FileThumbnailPreview from '@/components/files/FileThumbnailPreview';
+import UserAvatar from '@/components/common/UserAvatar';
 
 // Interface for Shared Item from real Database
 interface SharedItem {
@@ -747,11 +748,12 @@ function SharedWithMeContent() {
                                                         {/* 2. Column: Người chia sẻ */}
                                                         <td className="py-1 px-3 text-[#444746] dark:text-slate-400 font-normal">
                                                             <div className="flex items-center gap-2 min-w-0">
-                                                                <div
-                                                                    className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] shrink-0 ${avatarClass}`}
-                                                                >
-                                                                    {initial}
-                                                                </div>
+                                                                <UserAvatar
+                                                                    name={item.sharedByName || item.sharedByEmail}
+                                                                    email={item.sharedByEmail}
+                                                                    avatarUrl={(item as any).sharedByAvatarUrl}
+                                                                    size="sm"
+                                                                />
                                                                 <span
                                                                     className="truncate text-[12px]"
                                                                     title={item.sharedByEmail}
@@ -848,11 +850,12 @@ function SharedWithMeContent() {
                                         {/* Bottom Metadata: Avatar + Sharer email */}
                                         <div className="mt-1 flex items-center justify-between min-w-0">
                                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                                <div
-                                                    className={`w-4.5 h-4.5 rounded-full flex items-center justify-center font-bold text-[8.5px] shrink-0 ${avatarClass}`}
-                                                >
-                                                    {initial}
-                                                </div>
+                                                <UserAvatar
+                                                    name={item.sharedByName || item.sharedByEmail}
+                                                    email={item.sharedByEmail}
+                                                    avatarUrl={(item as any).sharedByAvatarUrl}
+                                                    size="xs"
+                                                />
                                                 <span
                                                     className="text-[11px] text-gray-500 dark:text-slate-400 truncate"
                                                     title={item.sharedByEmail}
@@ -908,13 +911,12 @@ function SharedWithMeContent() {
                                         </h3>
                                         <div className="p-3 bg-white dark:bg-slate-950 border border-gray-200/80 dark:border-slate-800 rounded-xl flex items-center justify-between">
                                             <div className="flex items-center gap-2">
-                                                <div
-                                                    className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${getAvatarColor(
-                                                        selectedItem.sharedByEmail
-                                                    )}`}
-                                                >
-                                                    {selectedItem.sharedByEmail.charAt(0).toUpperCase()}
-                                                </div>
+                                                <UserAvatar
+                                                    name={selectedItem.sharedByName || selectedItem.sharedByEmail}
+                                                    email={selectedItem.sharedByEmail}
+                                                    avatarUrl={(selectedItem as any).sharedByAvatarUrl}
+                                                    size="base"
+                                                />
                                                 <div className="min-w-0">
                                                     <p className="font-medium text-gray-800 dark:text-slate-200 truncate">
                                                         {selectedItem.sharedByName || selectedItem.sharedByEmail}

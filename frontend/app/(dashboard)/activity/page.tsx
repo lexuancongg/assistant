@@ -23,7 +23,6 @@ import {
     Download,
     Clock,
     X,
-    RefreshCw,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -32,6 +31,7 @@ import activityService, { ActivityLogDto } from '@/services/activity/activitySer
 import accessRequestService, { AccessRequestDto } from '@/services/access/accessRequestService';
 import { WsNotification } from '@/hooks/useWebSocketNotification';
 import FileThumbnailPreview from '@/components/files/FileThumbnailPreview';
+import UserAvatar from '@/components/common/UserAvatar';
 
 // Unified Activity Item interface
 interface UnifiedActivityItem {
@@ -184,7 +184,6 @@ export default function ActivityPage() {
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
     const [showInfoPanel, setShowInfoPanel] = useState(false);
     const [visibleCount, setVisibleCount] = useState(20);
-    const [processingRequestId, setProcessingRequestId] = useState<string | number | null>(null);
     const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
 
     // Current user state
@@ -290,34 +289,6 @@ export default function ActivityPage() {
         document.addEventListener('click', handleClickOutside);
         return () => document.removeEventListener('click', handleClickOutside);
     }, []);
-
-    // Handle Access Request approval
-    const handleApprove = async (id: string | number, name: string) => {
-        setProcessingRequestId(id);
-        try {
-            await accessRequestService.approveRequest(id);
-            toast.success(`Đã cấp quyền cho ${name}`);
-            setRequests((prev) => prev.filter((r) => r.id.toString() !== id.toString()));
-        } catch {
-            toast.error('Không thể phê duyệt yêu cầu');
-        } finally {
-            setProcessingRequestId(null);
-        }
-    };
-
-    // Handle Access Request rejection
-    const handleReject = async (id: string | number, name: string) => {
-        setProcessingRequestId(id);
-        try {
-            await accessRequestService.rejectRequest(id);
-            toast.success(`Đã từ chối yêu cầu của ${name}`);
-            setRequests((prev) => prev.filter((r) => r.id.toString() !== id.toString()));
-        } catch {
-            toast.error('Không thể từ chối yêu cầu');
-        } finally {
-            setProcessingRequestId(null);
-        }
-    };
 
     // Merge and unify items into Google Drive format
     const unifiedItems: UnifiedActivityItem[] = useMemo(() => {
@@ -569,11 +540,11 @@ export default function ActivityPage() {
                                                     {/* 3. Chủ sở hữu Column */}
                                                     <td className="py-2 px-3 text-[#444746] dark:text-slate-400 font-normal">
                                                         <div className="flex items-center gap-1.5 min-w-0">
-                                                            <div
-                                                                className={`w-4 h-4 rounded-full flex items-center justify-center font-medium text-[8px] shrink-0 ${avatarClass}`}
-                                                            >
-                                                                {initial}
-                                                            </div>
+                                                            <UserAvatar
+                                                                name={ownerDisplay}
+                                                                isCurrentUser={isOwnerMe}
+                                                                size="xs"
+                                                            />
                                                             <span className="truncate text-[11.5px]">
                                                                 {ownerDisplay}
                                                             </span>
@@ -594,38 +565,6 @@ export default function ActivityPage() {
                                                     {/* 5. Menu Action Column */}
                                                     <td className="py-2 pr-3 text-right">
                                                         <div className="flex items-center justify-end gap-0.5">
-                                                            {/* Quick Approve/Reject for requests */}
-                                                            {item.kind === 'REQUEST' && item.accessRequest && (
-                                                                <div
-                                                                    className="flex items-center gap-1 mr-1"
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                >
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={processingRequestId === item.rawId}
-                                                                        onClick={() => handleReject(item.rawId, item.actorName)}
-                                                                        className="p-1 rounded-full text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
-                                                                        title="Từ chối yêu cầu"
-                                                                    >
-                                                                        <X className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={processingRequestId === item.rawId}
-                                                                        onClick={() => handleApprove(item.rawId, item.actorName)}
-                                                                        className="flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-full transition shadow-2xs cursor-pointer"
-                                                                        title="Duyệt quyền"
-                                                                    >
-                                                                        {processingRequestId === item.rawId ? (
-                                                                            <RefreshCw className="w-3 h-3 animate-spin" />
-                                                                        ) : (
-                                                                            <Check className="w-3 h-3 stroke-[2.5]" />
-                                                                        )}
-                                                                        Duyệt
-                                                                    </button>
-                                                                </div>
-                                                            )}
-
                                                             {/* Quick hover action buttons */}
                                                             <div
                                                                 className="items-center gap-0.5 transition-opacity hidden group-hover:flex"
@@ -796,11 +735,11 @@ export default function ActivityPage() {
 
                                             {/* Bottom Information: Google Drive single-line style */}
                                             <div className="mt-1 flex items-center gap-2 min-w-0">
-                                                <div
-                                                    className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] shrink-0 shadow-2xs ${avatarClass}`}
-                                                >
-                                                    {initial}
-                                                </div>
+                                                <UserAvatar
+                                                    name={ownerDisplay}
+                                                    isCurrentUser={isOwnerMe}
+                                                    size="sm"
+                                                />
                                                 <span
                                                     className="text-[11px] text-gray-600 dark:text-slate-300 truncate"
                                                     title={`${item.actionText}${item.timestamp ? ` • ${item.timestamp}` : ''}`}

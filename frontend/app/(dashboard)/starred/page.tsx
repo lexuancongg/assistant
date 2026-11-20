@@ -37,6 +37,7 @@ import toast from 'react-hot-toast';
 import { usePageBreadcrumb } from '@/lib/breadcrumb-context';
 import fileManagementService, { FileItemDto } from '@/services/files/fileManagementService';
 import FileThumbnailPreview from '@/components/files/FileThumbnailPreview';
+import UserAvatar from '@/components/common/UserAvatar';
 
 // File Type visual configuration matching Google Drive
 function getFileTypeConfig(extOrType: string) {
@@ -204,7 +205,7 @@ export default function StarredPage() {
     const router = useRouter();
 
     // Current user context
-    const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; email?: string }>({});
+    const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; email?: string; avatarUrl?: string }>({});
 
     // Starred IDs & Files state
     const [starredIds, setStarredIds] = useState<string[]>([]);
@@ -930,11 +931,13 @@ export default function StarredPage() {
                                                 {/* 2. Chủ sở hữu Column */}
                                                 <td className="py-2 px-3 text-[#444746] dark:text-slate-400 font-normal">
                                                     <div className="flex items-center gap-1.5 min-w-0">
-                                                        <div
-                                                            className={`w-4 h-4 rounded-full flex items-center justify-center font-medium text-[8px] shrink-0 ${avatarClass}`}
-                                                        >
-                                                            {initial}
-                                                        </div>
+                                                        <UserAvatar
+                                                            name={ownerDisplay}
+                                                            email={(file as any).uploadedByEmail || (file as any).ownerEmail}
+                                                            avatarUrl={ownerIsMe ? currentUser.avatarUrl : ((file as any).uploadedByAvatarUrl || (file as any).ownerAvatarUrl)}
+                                                            isCurrentUser={ownerIsMe}
+                                                            size="xs"
+                                                        />
                                                         <span className="truncate text-[11.5px]">
                                                             {ownerDisplay}
                                                         </span>
@@ -1059,11 +1062,13 @@ export default function StarredPage() {
                                         {/* Bottom Metadata: Single line with Avatar + Star + Date */}
                                         <div className="mt-1 flex items-center justify-between min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                <div
-                                                    className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] shrink-0 shadow-2xs ${avatarClass}`}
-                                                >
-                                                    {initial}
-                                                </div>
+                                                <UserAvatar
+                                                    name={ownerDisplay}
+                                                    email={(file as any).uploadedByEmail || (file as any).ownerEmail}
+                                                    avatarUrl={ownerIsMe ? currentUser.avatarUrl : ((file as any).uploadedByAvatarUrl || (file as any).ownerAvatarUrl)}
+                                                    isCurrentUser={ownerIsMe}
+                                                    size="sm"
+                                                />
                                                 <span
                                                     className="text-[11px] text-gray-600 dark:text-slate-300 truncate"
                                                     title={`${ownerDisplay} • ${formatGoogleDriveDate(file.updatedAt)}`}

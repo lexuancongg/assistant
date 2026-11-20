@@ -355,6 +355,8 @@ export interface FilePermissionDto {
     subjectName: string;
     subjectDetail: string;
     level: 'VIEWER' | 'EDITOR' | 'DENY';
+    inherited?: boolean;
+    inheritedFromName?: string;
     createdAt: string;
 }
 

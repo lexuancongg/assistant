@@ -349,6 +349,7 @@ public class ChatService {
         String folderName = null;
         List<String> subFolderNames = new ArrayList<>();
         List<String> availableFiles = new ArrayList<>();
+        List<String> forbiddenFiles = new ArrayList<>();
 
         try {
             List<FileItem> allActiveFiles = fileItemRepository.findByDeletedAtIsNullOrderByCreatedAtDesc();
@@ -357,6 +358,13 @@ public class ChatService {
             // Permission-Aware RAG: Chỉ nạp các tài liệu mà người dùng có quyền VIEWER
             List<FileItem> activeFiles = allActiveFiles.stream()
                     .filter(f -> fileManagementService.hasFileAccess(f, finalUser, PermissionLevel.VIEWER))
+                    .toList();
+
+            forbiddenFiles = allActiveFiles.stream()
+                    .filter(f -> !activeFiles.contains(f))
+                    .map(FileItem::getName)
+                    .filter(Objects::nonNull)
+                    .distinct()
                     .toList();
 
             String targetFileId = chatRequest.fileId();
@@ -490,6 +498,7 @@ public class ChatService {
                             .folderName(folderName)
                             .subFolderNames(subFolderNames)
                             .availableFiles(availableFiles)
+                            .forbiddenFiles(forbiddenFiles)
                             .build()
             );
         } catch (Exception e) {

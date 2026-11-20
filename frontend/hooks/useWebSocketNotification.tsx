@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Client, IMessage } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import toast from 'react-hot-toast';
+import { X } from 'lucide-react';
 import { API_ROOT } from '@/utils/api/apiClientFixed';
 
 export interface WsNotification {
@@ -109,7 +110,6 @@ export function useWebSocketNotification() {
             gain.connect(ctx.destination);
             osc.start();
             osc.stop(ctx.currentTime + 0.4);
-            // Clean up AudioContext to prevent memory leaks in Chrome/Edge
             setTimeout(() => {
                 try {
                     ctx.close();
@@ -135,7 +135,6 @@ export function useWebSocketNotification() {
             } catch (e) {}
 
             if (notif.uploaderId != null && currentUserId != null && String(notif.uploaderId) === String(currentUserId)) {
-                // Không hiển thị pop-up và không phát âm thanh cho chính người tải lên
                 return;
             }
 
@@ -146,55 +145,50 @@ export function useWebSocketNotification() {
                 new CustomEvent('new_ws_notification', { detail: notif })
             );
 
-            // Trigger sleek Toast Notification
+            // Toast chuẩn Google Drive Dark Snackbar giống trang Home / Files
             toast.custom(
                 (t) => (
                     <div
                         className={`${
-                            t.visible ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-2 opacity-0 scale-95 pointer-events-none'
-                        } max-w-md w-full bg-white/95 dark:bg-[#18181b]/95 backdrop-blur-xl shadow-[0_12px_36px_-6px_rgba(0,0,0,0.12),0_4px_12px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)] rounded-2xl pointer-events-auto flex p-4 border border-blue-200/80 dark:border-blue-900/60 border-l-4 border-l-blue-500 transition-all duration-300 ease-out`}
+                            t.visible
+                                ? 'translate-y-0 opacity-100 scale-100'
+                                : 'translate-y-2 opacity-0 scale-95 pointer-events-none'
+                        } flex items-center justify-between gap-4 bg-[#202124] text-white px-4 py-2.5 rounded-[4px] shadow-2xl border border-white/10 transition-all duration-200 select-none max-w-lg pointer-events-auto`}
                     >
-                        <div className="flex-1 w-0">
-                            <div className="flex items-start gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 border border-blue-500/20 font-bold text-sm flex items-center justify-center shrink-0">
-                                    {notif.uploaderAvatar || 'U'}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
-                                        <p className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-                                            {notif.title || 'Thông báo mới'}
-                                        </p>
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                                    </div>
-                                    <p className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mt-0.5 truncate">
-                                        {notif.fileName || 'Tài liệu mới'}
-                                    </p>
-                                    <p className="text-[11.5px] text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-2">
-                                        {notif.message}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex flex-col justify-between pl-3 border-l border-neutral-100 dark:border-neutral-800 ml-3 shrink-0">
+                        <span className="text-[13.5px] font-normal text-[#e8eaed] tracking-tight truncate max-w-sm">
+                            {notif.message || notif.title || 'Thông báo mới'}
+                        </span>
+                        <div className="flex items-center gap-3 shrink-0 ml-1">
                             <button
+                                type="button"
                                 onClick={() => {
                                     toast.dismiss(t.id);
-                                    router.push(notif.type === 'ACCESS_REQUEST' ? '/access-requests' : '/files');
+                                    if (notif.type === 'ACCESS_REQUEST') {
+                                        router.push('/access-requests');
+                                    } else if (notif.fileId) {
+                                        router.push(`/files?fileId=${notif.fileId}`);
+                                    } else if (notif.folderId) {
+                                        router.push(`/files?folderId=${notif.folderId}`);
+                                    } else {
+                                        router.push('/files');
+                                    }
                                 }}
-                                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition"
+                                className="text-white hover:text-[#8ab4f8] font-medium text-[13.5px] hover:underline cursor-pointer transition px-1 py-0.5"
                             >
-                                Xem ngay
+                                Xem
                             </button>
                             <button
+                                type="button"
                                 onClick={() => toast.dismiss(t.id)}
-                                className="text-[11px] text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 transition text-right"
+                                className="p-1 text-gray-400 hover:text-white rounded-full transition cursor-pointer hover:bg-white/10"
+                                title="Đóng"
                             >
-                                Đóng
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
                 ),
-                { duration: 6000, position: 'top-right' }
+                { duration: 6000, position: 'bottom-left' }
             );
         } catch (e) {
             console.error('Failed to parse WebSocket message:', e);

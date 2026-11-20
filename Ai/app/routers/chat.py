@@ -37,6 +37,8 @@ def agent_chat_endpoint(request: RagRequest):
             department_id=getattr(request, "departmentId", None),
             company_id=getattr(request, "companyId", None),
             persona=getattr(request, "persona", None),
+            available_files=getattr(request, "availableFiles", None),
+            forbidden_files=getattr(request, "forbiddenFiles", None),
             history=getattr(request, "history", None),
             model_provider=getattr(request, "modelProvider", "gemini"),
         )
